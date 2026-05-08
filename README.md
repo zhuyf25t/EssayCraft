@@ -39,15 +39,21 @@ DEEPSEEK_API_KEY=your_key_here
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-pro
 DEEPSEEK_FAST_MODEL=deepseek-v4-flash
+ESSAYCRAFT_FORCE_MOCK_AI=0
 ```
 
 Do not commit `.env.local`.
+
+For deterministic demos and tests, set `ESSAYCRAFT_FORCE_MOCK_AI=1`. The app then uses the server-side mock provider even if `.env.local` contains a DeepSeek key.
 
 ## Validation
 
 ```bash
 npm run typecheck
 npm run lint
+npm run test
+npm run smoke
+npm run test:e2e
 npm run build
 ```
 

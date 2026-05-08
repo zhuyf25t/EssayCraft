@@ -25,8 +25,13 @@
 ```bash
 npm run typecheck
 npm run lint
+npm run test
+npm run smoke
+npm run test:e2e
 npm run build
 ```
+
+`npm run test:e2e` starts a local Next dev server on port 3100 with `ESSAYCRAFT_FORCE_MOCK_AI=1`, so browser smoke tests do not wait for a configured provider key.
 
 ## Security checks
 

@@ -1,10 +1,10 @@
-# EssayCraft Autonomous Evolution Pack — Start Here
+# EssayCraft Autonomous Evolution Pack - Start Here
 
 This pack is designed to be copied into the root of `https://github.com/zhuyf25t/EssayCraft.git` before launching Codex.
 
 It contains:
 
-- a Next.js/TypeScript/Tailwind MVP scaffold,
+- a Next.js/TypeScript/Tailwind EssayCraft scaffold,
 - `AGENTS.md` durable rules,
 - project-scoped custom subagents in `.codex/agents/`,
 - reference mockup images,
@@ -32,4 +32,4 @@ Then open Codex on the repo and paste `CODEX_AUTONOMOUS_EVOLUTION_PROMPT.md`.
 
 ## Important
 
-Codex cannot access this zip unless you push its contents to the repository first. The GitHub repo is empty at the time this pack was created, so seeding the repo first is the safest path.
+Codex cannot access this zip unless you push its contents to the repository first. Seed the GitHub repo before starting autonomous implementation.
