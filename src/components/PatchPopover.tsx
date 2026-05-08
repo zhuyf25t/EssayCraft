@@ -44,14 +44,11 @@ export function PatchPopover({
         value={value}
         onChange={(event) => setValue(event.target.value)}
         onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing) return;
           if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
             event.preventDefault();
             save();
             return;
-          }
-          if (event.key === "Enter" && !event.shiftKey) {
-            event.preventDefault();
-            save();
           }
           if (event.key === "Escape") {
             event.preventDefault();
@@ -62,7 +59,7 @@ export function PatchPopover({
         className="min-h-24 w-full resize-y rounded-lg border border-blue-200 bg-white p-3 text-sm outline-none focus:ring-2 focus:ring-blue-300"
       />
       <div className="mt-2 flex items-center justify-between text-xs text-blue-800/70">
-        <span>Enter or Ctrl/Cmd+Enter saves. Shift+Enter creates a newline.</span>
+        <span>Ctrl/Cmd+Enter saves. Shift+Enter or Enter creates a newline.</span>
         <button className="btn-primary" onClick={save}>Save Patch</button>
       </div>
     </div>

@@ -4,6 +4,7 @@ import { useMemo, useRef, type ReactNode } from "react";
 import type { Annotation, Patch, TextRange } from "@/types/essaycraft";
 import { LABELS } from "@/lib/labels";
 import { annotationAtOffset, sentenceRangeAt } from "@/lib/annotations";
+import { patchAtOffset } from "@/lib/patches";
 import { countCharacters, countWords } from "@/lib/sentence";
 
 type EditorProps = {
@@ -26,7 +27,7 @@ export function Editor({ text, annotations, patches, selectedRange, onTextChange
   );
 
   const activePatch = useMemo(
-    () => patches.find((patch) => selectedRange.start >= patch.anchorStart && selectedRange.start <= patch.anchorEnd),
+    () => patchAtOffset(patches, selectedRange.start),
     [patches, selectedRange.start]
   );
 

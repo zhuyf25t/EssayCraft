@@ -1,5 +1,6 @@
 import type { Annotation, SegmentLabel } from "@/types/essaycraft";
-import { id } from "@/lib/utils";
+import { deterministicId } from "@/lib/utils";
+import { normalizeLineEndings } from "@/lib/textFormat";
 
 const LABEL_SEQUENCE: SegmentLabel[] = [
   "background",
@@ -18,7 +19,7 @@ type Range = {
 };
 
 export function normalizeText(value: string) {
-  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  return normalizeLineEndings(value);
 }
 
 export function normalizeAnnotations(text: string, annotations: Annotation[]) {
@@ -38,6 +39,35 @@ export function normalizeAnnotations(text: string, annotations: Annotation[]) {
   }
 
   return result;
+}
+
+export function exactAnnotations(text: string, annotations: Annotation[]) {
+  const normalizedText = normalizeText(text);
+  const warnings: string[] = [];
+  const sorted = annotations
+    .filter((annotation) => {
+      const valid =
+        annotation.start >= 0 &&
+        annotation.end > annotation.start &&
+        annotation.end <= normalizedText.length &&
+        normalizedText.slice(annotation.start, annotation.end) === annotation.text;
+      if (!valid) warnings.push(`Dropped invalid ${annotation.label} annotation at ${annotation.start}-${annotation.end}.`);
+      return valid;
+    })
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  const result: Annotation[] = [];
+  let lastEnd = -1;
+  for (const annotation of sorted) {
+    if (annotation.start < lastEnd) {
+      warnings.push(`Dropped overlapping ${annotation.label} annotation at ${annotation.start}-${annotation.end}.`);
+      continue;
+    }
+    result.push(annotation);
+    lastEnd = annotation.end;
+  }
+
+  return { annotations: result, warnings };
 }
 
 export function repairAnnotation(text: string, annotation: Annotation): Annotation | null {
@@ -69,7 +99,7 @@ export function buildMockAnnotations(text: string): Annotation[] {
   return sentenceRanges(text)
     .filter((range) => range.text.trim().length > 0)
     .map((range, index) => ({
-      id: id("ann"),
+      id: deterministicId("ann", `${range.start}:${range.end}:${range.text}:${index}`),
       start: range.start,
       end: range.end,
       text: range.text,
@@ -93,7 +123,7 @@ export function sentenceRangeAt(text: string, start: number, end = start): Range
   }
 
   const ranges = sentenceRanges(normalized);
-  const found = ranges.find((range) => boundedStart >= range.start && boundedStart <= range.end);
+  const found = ranges.find((range) => boundedStart >= range.start && boundedStart < range.end);
   if (found) return found;
 
   return {
@@ -136,7 +166,7 @@ export function findIssueRanges(text: string): Annotation[] {
 
   while ((match = pattern.exec(text)) !== null) {
     annotations.push({
-      id: id("ann"),
+      id: deterministicId("ann", `${match.index}:${match[0]}`),
       start: match.index,
       end: match.index + match[0].length,
       text: match[0],
@@ -150,7 +180,7 @@ export function findIssueRanges(text: string): Annotation[] {
 }
 
 export function annotationAtOffset(annotations: Annotation[], offset: number) {
-  return annotations.find((annotation) => offset >= annotation.start && offset <= annotation.end);
+  return annotations.find((annotation) => offset >= annotation.start && offset < annotation.end);
 }
 
 export function guessLabel(text: string, index = 0): SegmentLabel {
