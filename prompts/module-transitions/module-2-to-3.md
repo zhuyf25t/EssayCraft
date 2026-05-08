@@ -13,13 +13,13 @@ Input contract:
 Output contract:
 - `Introduction plan` with hook/importance, background, thesis, and thesis map.
 - At least two `Body paragraph N` sections when the source has enough branch material.
-- Each body paragraph must include `Topic sentence`, `Evidence to use`, `Analysis`, and `Link back`.
+- Each body paragraph must include `Topic sentence`, `Evidence to use`, `Analysis purpose`, and `Link back`.
 - Preserve branch-specific content. Do not write generic filler such as `Present the first reason` when branch text exists.
 - Include `Counterargument paragraph`.
 - Include `Conclusion plan`.
 
 Formatting: clear outline headings and bullets with blank lines. Do not write Module 4 full draft prose.
 
-Citation behavior: mark unsupported evidence with `[source needed]` or `[citation needed]`; never fabricate sources, authors, years, DOIs, URLs, journals, or reference entries. Use only source cards supplied by the student.
+Citation behavior: mark unsupported outline evidence with `[source needed: ...]`; never fabricate sources, authors, years, DOIs, URLs, journals, or reference entries. Use only source cards supplied by the student.
 
 Failure behavior: keep the outline scaffold and mark missing evidence explicitly.

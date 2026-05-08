@@ -14,6 +14,8 @@ If no source is available, mark the need:
 
 and/or add an `issue` annotation.
 
+In Modules 2 and 3, source needs are planning items. Prefer `source needed` or `[source needed: ...]` language there. Treat `[citation needed]` as a draft/referencing gap mainly in Modules 4 and 5.
+
 ## Source card model
 
 ```ts
@@ -55,6 +57,13 @@ Module 5 is not just a rewrite. It is a citation/source-integrity check:
 - Check whether each reference-list entry appears to be cited in text when possible.
 - Create source card placeholders for missing details.
 - Explain that sources have two halves: in-text citation and reference list entry.
+
+## Source Needs vs Citation Gaps
+
+- Source needs: planned evidence to search for in Modules 2 and 3.
+- Citation gaps: draft claims that need in-text citations in Modules 4 and 5.
+- Placeholder source cards are not real sources and cannot insert citations.
+- Reference previews are built only from student-supplied source card metadata.
 
 ## Future source search
 

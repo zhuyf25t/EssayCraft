@@ -73,7 +73,9 @@
 - [ ] Translate supports selected text and current module.
 - [ ] Translate supports English→Chinese and Chinese→English.
 - [ ] Translate previews side-by-side and does not overwrite automatically.
-- [ ] Applying translation snapshots first.
+- [ ] Translate modal is preview-only: create preview, copy translation, close.
+- [ ] Translate modal never mutates module text and never creates snapshots.
+- [ ] AI Assistant handles selected-text translation when the user wants preview/apply insertion.
 
 ## Export/final
 

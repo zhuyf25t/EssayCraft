@@ -115,3 +115,13 @@ Loop 3 - Product polish and browser validation:
 - Citation/source UX: Source Workbench now distinguishes manual source cards from source needs, exposes CARS checks, uses student-supplied/student-checked wording, and shows Module 5 citation/reference issue groups.
 - Translate: mock English/auto -> Chinese translation now returns visible Simplified Chinese, previews before apply, and snapshots before replacing module text.
 - Screenshots: `docs/product-reset-dashboard.png`, `docs/product-reset-module2-to3.png`, and `docs/product-reset-translate-cn.png`.
+
+## 13. Content Quality and Translation Update - 2026-05-08
+
+- Module 1 -> 2 now produces research/source-needs planning instead of treating every evidence need as a citation failure.
+- Module 2 -> 3 now preserves the student's branch claims, source needs, research question, thesis, and counterargument in a concrete outline.
+- Module 3 -> 4 now parses outline fields into real draft paragraphs and rejects meta-template phrases such as `The student should`, `Topic sentence:`, and `Evidence to use:`.
+- Fallback highlighting is structure-aware for `Topic`, `Research question`, `Working thesis`, `Thesis map`, `Evidence to look for`, `Source status`, `Analysis purpose`, and conclusion/counterargument labels.
+- Source Workbench now separates source needs from citation gaps. Module 2/3 planning needs are not displayed as draft citation failures.
+- Translate is now preview-only. It can create and copy a Chinese preview, but it never mutates module text and never creates snapshots.
+- Screenshots: `docs/content-quality-module2.png`, `docs/content-quality-module3.png`, `docs/content-quality-module4.png`, and `docs/translate-preview-only-cn.png`.

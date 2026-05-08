@@ -27,7 +27,7 @@ Update both the TypeScript registry and the markdown mirror when revising prompt
 - Do not generate HTML or colored spans.
 - Preserve the user's topic, stance, and voice where possible.
 - Never invent citations, authors, years, titles, journals, DOIs, URLs, or reference entries.
-- Use `[citation needed]`, `issue` labels, and source-card suggestions for unsupported factual claims.
+- Use source-needed planning language in Modules 2 and 3. Use `[citation needed]`, `issue` labels, and source-card suggestions for unsupported factual claims in draft/referencing modules.
 - Snapshot the target module before overwrite.
 - If the model is unsure, return a safe scaffold with clear placeholders instead of guessing.
 
@@ -60,7 +60,7 @@ Output should include:
 - each body paragraph: topic sentence, Evidence to use, analysis, link back,
 - counterargument paragraph,
 - conclusion plan,
-- citation-needed warnings.
+- source-needed planning markers.
 
 Formatting: clean outline with headings and bullets. Do not write Module 4 full draft prose.
 
@@ -78,9 +78,9 @@ Output should include:
 - conclusion or conclusion placeholder,
 - signal devices/metadiscourse,
 - hedging where appropriate,
-- `[citation needed]` for unsupported factual claims.
+- `[source needed: ...]` for outline evidence slots without a supplied source card.
 
-Formatting: paragraph prose with blank lines between paragraphs. Do not glue all sentences into one block.
+Formatting: paragraph prose with blank lines between paragraphs. Do not glue all sentences into one block. Do not write about outline labels such as `Introduction plan`, `Topic sentence`, `Evidence to use`, `Analysis purpose`, or `Link back`; use them only to compose real essay paragraphs.
 
 ## Module 4 To Module 5: Drafting To Referencing / Citation Check
 

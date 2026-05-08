@@ -12,6 +12,8 @@
 8. Copy rich text and paste into a rich editor.
 9. Download JSON.
 10. Go to Module 6 and click Download HTML; verify finish modal with image appears.
+11. Generate Module 4 from a Module 3 outline and verify the result is real essay prose, not a draft about `Introduction plan` or `Topic sentence`.
+12. Open Translate, create English -> Chinese preview, copy it, close it, and verify the editor text and snapshots did not change.
 
 ## API-key test
 
@@ -32,6 +34,15 @@ npm run build
 ```
 
 `npm run test:e2e` starts a local Next dev server on port 3210 by default with `ESSAYCRAFT_FORCE_MOCK_AI=1`, so browser smoke tests do not wait for a configured provider key. Override with `PLAYWRIGHT_PORT` if that port is occupied.
+
+Regression coverage includes:
+
+- Module 1 -> 2 source-needs planning.
+- Module 2 -> 3 branch-specific outline generation.
+- Module 3 -> 4 draft prose without outline-template phrases.
+- Fallback annotation labels for structured module text.
+- Source needs vs citation gaps.
+- Translate preview-only semantics.
 
 ## Security checks
 

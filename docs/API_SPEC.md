@@ -71,10 +71,11 @@ Response:
   sources: SourceCard[];
   globalFeedback: string[];
   warnings: string[];
+  providerMode: "deepseek" | "mock" | "fallback";
 }
 ```
 
-Constraint: no invented citations or references. Missing support is marked with `[citation needed]` and/or `issue`.
+Constraint: no invented citations or references. Modules 2 and 3 use source-needed planning language. Draft/referencing modules mark missing support with `[citation needed]` and/or `issue`.
 
 ## POST /api/assist
 
@@ -103,10 +104,11 @@ Response:
 ```ts
 {
   translatedText: string;
-  mode: "en-to-zh" | "zh-to-en";
+  mode: "en-to-zh" | "zh-to-en" | "auto-to-zh";
   annotations: Annotation[];
   warnings: string[];
+  providerMode: "deepseek" | "mock" | "fallback";
 }
 ```
 
-Translation never overwrites automatically. Applying snapshots first.
+Translation is preview-only. The route never mutates project state; the Translate modal can create a preview and copy text only. If the student wants translated wording inserted into the essay, use the AI Assistant preview/apply path.
