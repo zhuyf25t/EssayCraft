@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
-import type { GenerateNextResponse, ModuleNumber } from "@/types/essaycraft";
+import type { GenerateNextResponse, ModuleNumber, SourceCard } from "@/types/essaycraft";
 import { createAiClient, AI_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
-import { buildMockAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
+import { buildMockAnnotations, exactAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
+import { buildCitationAudit } from "@/lib/citationAudit";
 import { getTransitionPrompt } from "@/lib/moduleTransitionPrompts";
 import { buildGenerateNextMessages } from "@/lib/prompts";
 import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
+import { cleanGeneratedText } from "@/lib/textFormat";
 
 export async function POST(request: Request) {
   try {
@@ -34,19 +36,20 @@ export async function POST(request: Request) {
         throw new Error(`AI returned Module ${parsed.moduleNumber}, expected Module ${expectedTarget}.`);
       }
 
-      const text = parsed.text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+      const text = cleanGeneratedText(parsed.text, parsed.moduleNumber);
+      const exact = exactAnnotations(text, parsed.annotations);
       const normalized: GenerateNextResponse = {
         ...parsed,
         text,
-        annotations: normalizeAnnotations(text, parsed.annotations),
-        sources: parsed.sources,
+        annotations: exact.annotations,
+        sources: sanitizeGeneratedSources(parsed.sources, input.sourceSources),
         globalFeedback: parsed.globalFeedback ?? [],
-        warnings: parsed.warnings ?? []
+        warnings: [...(parsed.warnings ?? []), ...exact.warnings]
       };
 
       return NextResponse.json(normalized);
     } catch (aiError) {
-      const fallback = mockGenerate(input.topic, input.sourceModuleNumber, input.sourceText);
+      const fallback = mockGenerate(input.topic, input.sourceModuleNumber, input.sourceText, input.sourceSources);
       fallback.warnings.push(`DeepSeek generation unavailable; used mock output. ${aiError instanceof Error ? aiError.message : ""}`.trim());
       return NextResponse.json(fallback);
     }
@@ -56,10 +59,10 @@ export async function POST(request: Request) {
   }
 }
 
-function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6>, sourceText: string): GenerateNextResponse {
+function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6>, sourceText: string, sourceSources: SourceCard[] = []): GenerateNextResponse {
   const transition = getTransitionPrompt(sourceModuleNumber);
   const moduleNumber = transition.toModule;
-  const text = mockText(topic, sourceModuleNumber, sourceText);
+  const text = cleanGeneratedText(mockText(topic, sourceModuleNumber, sourceText, sourceSources), moduleNumber);
   const annotations = normalizeAnnotations(text, [...buildMockAnnotations(text), ...findIssueRanges(text)]);
 
   return {
@@ -67,13 +70,13 @@ function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6
     title: transition.name,
     text,
     annotations,
-    sources: [],
+    sources: sourceSources,
     globalFeedback: [`Mock generated Module ${moduleNumber} from Module ${sourceModuleNumber}.`],
     warnings: ["Mock mode did not verify any source metadata. Keep [citation needed] markers until real sources are added."]
   };
 }
 
-function mockText(topic: string, sourceModuleNumber: ModuleNumber, sourceText: string) {
+function mockText(topic: string, sourceModuleNumber: ModuleNumber, sourceText: string, sourceSources: SourceCard[]) {
   const preview = sourceText.trim().slice(0, 420) || topic;
 
   if (sourceModuleNumber === 1) {
@@ -136,15 +139,18 @@ In conclusion, balance is possible when individuals build mindful habits, platfo
   }
 
   if (sourceModuleNumber === 4) {
+    const audit = buildCitationAudit(sourceText, [], sourceSources);
     return `Citation-checked draft
 
-${preview}
+${sourceText.trim() || preview}
 
 Citation integrity checklist
-- In-text citations: Every factual claim, study claim, statistic, and source-based example needs a matching in-text citation.
-- Reference list entries: Every in-text citation needs a complete reference-list entry supplied by the user.
-- Missing support: Any claim marked [citation needed] should be connected to a real source before final submission.
-- Source cards: Add manual source cards for each source. EssayCraft has not verified external sources.
+- In-text citations found: ${audit.inTextCitations.length ? audit.inTextCitations.join("; ") : "none yet"}.
+- Citation-needed markers: ${audit.citationNeededMarkers.length}.
+- Evidence-like claims without citation: ${audit.evidenceWithoutCitation.length}.
+- Source cards supplied: ${sourceSources.length}.
+- Incomplete source cards: ${audit.incompleteSources.length}.
+- Reference list entries: Use only user-supplied source card metadata; EssayCraft has not verified external sources.
 - Paraphrase check: Confirm that source ideas are written in the student's own sentence structure.
 
 Unresolved issue: Do not create author names, dates, article titles, journals, URLs, or DOIs unless they come from a real source card.`;
@@ -171,4 +177,11 @@ Conclusion check
 - The final paragraph synthesizes the main points.
 - The ending answers why the argument matters.
 - No major new evidence is introduced in the conclusion.`;
+}
+
+function sanitizeGeneratedSources(generated: SourceCard[], userSources: SourceCard[]) {
+  if (!generated.length) return userSources;
+  const userIds = new Set(userSources.map((source) => source.id));
+  const preserved = generated.filter((source) => userIds.has(source.id));
+  return preserved.length ? preserved : userSources;
 }

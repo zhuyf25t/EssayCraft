@@ -3,7 +3,7 @@ import "server-only";
 import OpenAI from "openai";
 
 export function hasAiKey() {
-  return Boolean(process.env.DEEPSEEK_API_KEY);
+  return Boolean(process.env.DEEPSEEK_API_KEY) && process.env.ESSAYCRAFT_FORCE_MOCK_AI !== "1";
 }
 
 export function createAiClient() {

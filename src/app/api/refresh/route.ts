@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { RefreshResponse } from "@/types/essaycraft";
 import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
-import { buildMockAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
+import { buildMockAnnotations, exactAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
 import { buildRefreshMessages } from "@/lib/prompts";
 import { refreshRequestSchema, refreshResponseSchema } from "@/lib/schemas";
 
@@ -28,10 +28,11 @@ export async function POST(request: Request) {
       if (!raw) throw new Error("AI returned empty content.");
 
       const parsed = refreshResponseSchema.parse(JSON.parse(raw));
+      const exact = exactAnnotations(input.text, parsed.annotations);
       const normalized: RefreshResponse = {
-        annotations: normalizeAnnotations(input.text, parsed.annotations),
+        annotations: exact.annotations,
         globalFeedback: parsed.globalFeedback ?? [],
-        warnings: parsed.warnings ?? []
+        warnings: [...(parsed.warnings ?? []), ...exact.warnings]
       };
 
       return NextResponse.json(normalized);

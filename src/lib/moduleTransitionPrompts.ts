@@ -24,6 +24,7 @@ export type ModuleTransitionPrompt = {
   outputContract: string[];
   paragraphFormat: string;
   citationBehavior: string;
+  failureBehavior: string;
   systemPrompt: string;
   userPromptTemplate: string;
   validationRules: string[];
@@ -70,6 +71,7 @@ export const MODULE_TRANSITION_PROMPTS: Record<ModuleTransitionId, ModuleTransit
     ],
     paragraphFormat: "Headings and bullets are allowed. Keep sections separated by blank lines.",
     citationBehavior: "Do not create real citations. Suggest source types, search keywords, and [scholarly source needed] placeholders.",
+    failureBehavior: "If source text is too thin, return a short research plan with clear [citation needed] placeholders rather than inventing evidence.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 1 to Module 2 generator. Create a research and evidence plan.`,
     userPromptTemplate: `
 Input contains topic/question/thesis/early notes.
@@ -101,6 +103,7 @@ Do not fabricate sources. Use placeholders such as [scholarly source needed] or 
     ],
     paragraphFormat: "Use a clean outline with headings and bullets. Keep introduction/body/counterargument/conclusion sections separated by blank lines.",
     citationBehavior: "Use [citation needed] for evidence with no supplied source. Never fabricate sources.",
+    failureBehavior: "If evidence notes are incomplete, keep the outline scaffold and mark missing evidence explicitly.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 2 to Module 3 generator. Create a structured argumentative essay outline.`,
     userPromptTemplate: `
 Convert the research/evidence plan into Module 3: Outline.
@@ -134,6 +137,7 @@ Include counterargument/rebuttal if appropriate and a conclusion plan explaining
     ],
     paragraphFormat: "Use full paragraph prose. Separate each paragraph with a blank line (\\n\\n). Do not output all sentences in one block.",
     citationBehavior: "Use [citation needed] for unsupported factual claims. Never fabricate citations.",
+    failureBehavior: "If the outline is sparse, draft cautious paragraphs and avoid adding unsupported facts.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 3 to Module 4 generator. Create an academic argumentative draft.`,
     userPromptTemplate: `
 Convert the outline into Module 4: Drafting.
@@ -169,6 +173,7 @@ Do not invent citations; use [citation needed] for unsupported factual claims.
     ],
     paragraphFormat: "Preserve draft paragraphs first, then add a clearly separated citation checklist/workbench section.",
     citationBehavior: "Treat in-text citation and reference list as two halves. Mark missing citations and missing source details; never fabricate references.",
+    failureBehavior: "If citation data is missing, preserve the draft and append a checklist of unresolved source needs.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 4 to Module 5 generator. Review citation and source integrity.`,
     userPromptTemplate: `
 Create Module 5: Referencing / Citation Check.
@@ -205,6 +210,7 @@ Do not generate fake references.
     ],
     paragraphFormat: "Use final essay paragraphs first, then editing/proofreading/conclusion checklist sections separated by blank lines.",
     citationBehavior: "Preserve unresolved citation issues; do not add unsupported evidence or fake references.",
+    failureBehavior: "If unresolved citation issues remain, keep them visible and do not claim the essay is submission-ready.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 5 to Module 6 generator. Create final review and export-ready content.`,
     userPromptTemplate: `
 Create Module 6: Final Review / Conclusion / Export.

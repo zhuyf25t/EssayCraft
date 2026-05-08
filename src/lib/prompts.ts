@@ -81,6 +81,9 @@ ${transition.citationBehavior}
 Validation rules:
 ${transition.validationRules.map((item) => `- ${item}`).join("\n")}
 
+Failure behavior:
+${transition.failureBehavior}
+
 Return json only. Required JSON shape:
 {"moduleNumber":${transition.toModule},"title":"${transition.name}","text":"Paragraph 1...\\n\\nParagraph 2...","annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.85,"comment":"brief reason"}],"sources":[],"globalFeedback":["short feedback"],"warnings":[]}`;
 
