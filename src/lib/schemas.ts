@@ -9,6 +9,10 @@ export const moduleNumberSchema = z.union([
   z.literal(6)
 ]);
 
+export const sourceModuleNumberSchema = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]);
+
+export const targetModuleNumberSchema = z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(6)]);
+
 export const segmentLabelSchema = z.enum([
   "background",
   "thesis",
@@ -21,50 +25,126 @@ export const segmentLabelSchema = z.enum([
   "plain"
 ]);
 
-export const segmentSchema = z.object({
+export const rangeSchema = z
+  .object({
+    start: z.number().int().min(0),
+    end: z.number().int().min(0)
+  })
+  .refine((range) => range.end >= range.start, "Range end must be greater than or equal to start.");
+
+export const annotationSchema = z.object({
   id: z.string(),
+  start: z.number().int().min(0),
+  end: z.number().int().min(0),
   text: z.string(),
   label: segmentLabelSchema,
   confidence: z.number().min(0).max(1).optional(),
-  aiComment: z.string().optional()
+  comment: z.string().optional(),
+  sourceIds: z.array(z.string()).optional()
 });
 
 export const patchSchema = z.object({
   id: z.string(),
-  segmentId: z.string(),
+  anchorStart: z.number().int().min(0),
+  anchorEnd: z.number().int().min(0),
+  anchorQuote: z.string(),
   text: z.string(),
   createdAt: z.string(),
   resolved: z.boolean().optional()
 });
 
+export const sourceCardSchema = z.object({
+  id: z.string(),
+  title: z.string().optional(),
+  authors: z.array(z.string()).optional(),
+  year: z.string().optional(),
+  containerTitle: z.string().optional(),
+  publisher: z.string().optional(),
+  doi: z.string().optional(),
+  url: z.string().optional(),
+  sourceType: z.enum(["scholarly", "professional", "popular", "social", "unknown"]).optional(),
+  credibilityNotes: z.string().optional(),
+  userNotes: z.string().optional(),
+  verified: z.boolean().optional(),
+  placeholder: z.boolean().optional(),
+  createdAt: z.string()
+});
+
 export const refreshRequestSchema = z.object({
   topic: z.string(),
   moduleNumber: moduleNumberSchema,
-  segments: z.array(segmentSchema),
-  patches: z.array(patchSchema)
+  text: z.string(),
+  annotations: z.array(annotationSchema).default([]),
+  patches: z.array(patchSchema).default([]),
+  sources: z.array(sourceCardSchema).default([])
 });
 
 export const refreshResponseSchema = z.object({
-  segments: z.array(
-    z.object({
-      id: z.string(),
-      label: segmentLabelSchema,
-      confidence: z.number().min(0).max(1).optional(),
-      aiComment: z.string().optional()
-    })
-  ),
-  globalFeedback: z.array(z.string()).default([])
+  annotations: z.array(annotationSchema),
+  globalFeedback: z.array(z.string()).default([]),
+  warnings: z.array(z.string()).default([])
 });
 
 export const generateNextRequestSchema = z.object({
   topic: z.string(),
-  sourceModuleNumber: moduleNumberSchema,
-  sourceSegments: z.array(segmentSchema),
-  sourcePatches: z.array(patchSchema)
+  sourceModuleNumber: sourceModuleNumberSchema,
+  sourceTitle: z.string(),
+  sourceText: z.string(),
+  sourceAnnotations: z.array(annotationSchema).default([]),
+  sourcePatches: z.array(patchSchema).default([]),
+  sourceSources: z.array(sourceCardSchema).default([])
 });
 
 export const generateNextResponseSchema = z.object({
-  targetModuleNumber: moduleNumberSchema,
-  segments: z.array(segmentSchema),
-  summary: z.string().default("")
+  moduleNumber: targetModuleNumberSchema,
+  title: z.string(),
+  text: z.string(),
+  annotations: z.array(annotationSchema).default([]),
+  sources: z.array(sourceCardSchema).default([]),
+  globalFeedback: z.array(z.string()).default([]),
+  warnings: z.array(z.string()).default([])
+});
+
+export const assistantMessageSchema = z.object({
+  id: z.string(),
+  role: z.enum(["user", "assistant"]),
+  text: z.string(),
+  createdAt: z.string()
+});
+
+export const assistRequestSchema = z.object({
+  topic: z.string(),
+  moduleNumber: moduleNumberSchema,
+  moduleTitle: z.string(),
+  text: z.string(),
+  annotations: z.array(annotationSchema).default([]),
+  patches: z.array(patchSchema).default([]),
+  sources: z.array(sourceCardSchema).default([]),
+  selectedRange: rangeSchema.optional(),
+  selectedText: z.string().optional(),
+  action: z.string(),
+  history: z.array(assistantMessageSchema).default([])
+});
+
+export const assistResponseSchema = z.object({
+  reply: z.string(),
+  proposedText: z.string().optional(),
+  replaceRange: rangeSchema.optional(),
+  annotations: z.array(annotationSchema).default([]),
+  warnings: z.array(z.string()).default([])
+});
+
+export const translateRequestSchema = z.object({
+  topic: z.string(),
+  moduleNumber: moduleNumberSchema,
+  text: z.string(),
+  selectedRange: rangeSchema.optional(),
+  mode: z.enum(["en-to-zh", "zh-to-en"])
+});
+
+export const translateResponseSchema = z.object({
+  translatedText: z.string(),
+  mode: z.enum(["en-to-zh", "zh-to-en"]),
+  annotations: z.array(annotationSchema).default([]),
+  warnings: z.array(z.string()).default([])
 });

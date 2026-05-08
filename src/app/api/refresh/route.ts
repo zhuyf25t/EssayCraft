@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import type { RefreshResponse, Segment, SegmentLabel } from "@/types/essaycraft";
-import { createAiClient, AI_MODEL, hasAiKey } from "@/lib/ai-client";
+import type { RefreshResponse } from "@/types/essaycraft";
+import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
+import { buildMockAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
 import { buildRefreshMessages } from "@/lib/prompts";
 import { refreshRequestSchema, refreshResponseSchema } from "@/lib/schemas";
 
@@ -10,66 +11,47 @@ export async function POST(request: Request) {
     const input = refreshRequestSchema.parse(json);
 
     if (!hasAiKey()) {
-      return NextResponse.json(mockRefresh(input.segments));
+      return NextResponse.json(mockRefresh(input.text, "Mock refresh completed locally because no API key is configured."));
     }
 
-    const client = createAiClient();
-    const completion = await client.chat.completions.create({
-      model: AI_MODEL,
-      messages: buildRefreshMessages(input),
-      response_format: { type: "json_object" },
-      max_tokens: 4096,
-      temperature: 0.1
-    });
+    try {
+      const client = createAiClient();
+      const completion = await withAiTimeout(client.chat.completions.create({
+        model: AI_FAST_MODEL,
+        messages: buildRefreshMessages(input),
+        response_format: { type: "json_object" },
+        max_tokens: 4096,
+        temperature: 0.1
+      }));
 
-    const raw = completion.choices[0]?.message?.content;
-    if (!raw) throw new Error("AI returned empty content.");
+      const raw = completion.choices[0]?.message?.content;
+      if (!raw) throw new Error("AI returned empty content.");
 
-    const parsed = refreshResponseSchema.parse(JSON.parse(raw));
-    const idSet = new Set(input.segments.map((segment) => segment.id));
-    const byId = new Map(parsed.segments.filter((segment) => idSet.has(segment.id)).map((segment) => [segment.id, segment]));
+      const parsed = refreshResponseSchema.parse(JSON.parse(raw));
+      const normalized: RefreshResponse = {
+        annotations: normalizeAnnotations(input.text, parsed.annotations),
+        globalFeedback: parsed.globalFeedback ?? [],
+        warnings: parsed.warnings ?? []
+      };
 
-    const normalized: RefreshResponse = {
-      segments: input.segments.map((segment) => {
-        const updated = byId.get(segment.id);
-        return {
-          id: segment.id,
-          label: updated?.label ?? segment.label,
-          confidence: updated?.confidence,
-          aiComment: updated?.aiComment
-        };
-      }),
-      globalFeedback: parsed.globalFeedback ?? []
-    };
-
-    return NextResponse.json(normalized);
+      return NextResponse.json(normalized);
+    } catch (aiError) {
+      const fallback = mockRefresh(input.text, "Fallback refresh completed locally because the configured AI provider was unavailable.");
+      fallback.warnings.push(`DeepSeek refresh unavailable; used mock labels. ${aiError instanceof Error ? aiError.message : ""}`.trim());
+      return NextResponse.json(fallback);
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 400 });
   }
 }
 
-function mockRefresh(segments: Segment[]): RefreshResponse {
-  return {
-    segments: segments.map((segment) => ({
-      id: segment.id,
-      label: guessLabel(segment.text),
-      confidence: 0.61,
-      aiComment: "Mock label. Add DEEPSEEK_API_KEY to enable AI refresh."
-    })),
-    globalFeedback: ["Mock refresh completed locally because no API key is configured."]
-  };
-}
+function mockRefresh(text: string, message: string): RefreshResponse {
+  const annotations = normalizeAnnotations(text, [...buildMockAnnotations(text), ...findIssueRanges(text)]);
 
-function guessLabel(text: string): SegmentLabel {
-  const lower = text.toLowerCase();
-  if (lower.includes("this essay argues") || lower.includes("this paper will argue") || lower.includes("working thesis") || lower.includes("thesis")) return "thesis";
-  if (lower.includes("according to") || /\([a-z][a-z\s&.,-]+,\s*\d{4}\)/i.test(text)) return "evidence";
-  if (lower.includes("for example") || lower.includes("study") || lower.includes("research") || lower.includes("data") || lower.includes("evidence")) return "evidence";
-  if (lower.includes("because") || lower.includes("therefore") || lower.includes("this means") || lower.includes("as a result") || lower.includes("suggests")) return "analysis";
-  if (lower.includes("some argue") || lower.includes("however") || lower.includes("although") || lower.includes("counterargument")) return "counterargument";
-  if (lower.includes("in conclusion") || lower.includes("finally") || lower.includes("to conclude") || lower.includes("overall")) return "conclusion";
-  if (lower.includes("[citation needed]") || lower.includes("needs source")) return "issue";
-  if (lower.includes("topic:") || lower.includes("introduction") || lower.includes("background")) return "background";
-  return "plain";
+  return {
+    annotations,
+    globalFeedback: [message],
+    warnings: []
+  };
 }

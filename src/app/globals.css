@@ -8,34 +8,122 @@
 
 body {
   margin: 0;
-  background: #f8fafc;
+  background: #fbf7ef;
   color: #0f172a;
 }
 
 @layer components {
+  .bg-paper {
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(251, 247, 239, 0.92)),
+      #fbf7ef;
+  }
+
+  .panel {
+    @apply rounded-lg border border-slate-200 bg-white/95 p-4 shadow-sm;
+  }
+
+  .input {
+    @apply rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-800 outline-none transition focus:border-blue-300 focus:ring-2 focus:ring-blue-200;
+  }
+
   .btn-primary {
-    @apply rounded-xl border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply rounded-lg border border-blue-600 bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-secondary {
-    @apply rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-warning {
-    @apply rounded-xl border border-amber-300 bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-900 shadow-sm transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply rounded-lg border border-amber-300 bg-amber-100 px-3 py-2 text-sm font-semibold text-amber-900 shadow-sm transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-50;
   }
 
   .btn-danger {
-    @apply rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 shadow-sm transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50;
   }
 }
 
-.label-background { background: #fff3a3; }
-.label-thesis { background: #ffd1dc; }
-.label-evidence { background: #d9f7be; }
-.label-analysis { background: #cce7ff; }
-.label-counterargument { background: #ead7ff; }
-.label-citation { background: #eeeeee; }
-.label-conclusion { background: #ffd8a8; }
-.label-issue { background: #ffc9c9; border-bottom: 2px dashed #ef4444; }
+.editor-shell {
+  border: 1px solid #d7dde8;
+  border-radius: 10px;
+  background: #fffefb;
+  box-shadow: 3px 3px 0 rgba(30, 41, 59, 0.08);
+  overflow: hidden;
+}
+
+.editor-toolbar,
+.editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+  background: rgba(248, 250, 252, 0.82);
+  padding: 0.75rem 1rem;
+  font-size: 0.875rem;
+}
+
+.editor-footer {
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 0;
+  color: #64748b;
+  font-size: 0.75rem;
+}
+
+.editor-stack {
+  position: relative;
+  min-height: 58vh;
+  background: #fffefb;
+}
+
+.editor-backdrop,
+.editor-textarea {
+  box-sizing: border-box;
+  min-height: 58vh;
+  width: 100%;
+  padding: 1.25rem;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 18px;
+  line-height: 1.9;
+  letter-spacing: 0;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  tab-size: 2;
+}
+
+.editor-backdrop {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  overflow: auto;
+  color: transparent;
+}
+
+.editor-textarea {
+  position: relative;
+  z-index: 1;
+  display: block;
+  resize: vertical;
+  border: 0;
+  background: transparent;
+  color: #172033;
+  caret-color: #1d4ed8;
+  outline: none;
+}
+
+.highlight-backdrop {
+  color: transparent;
+  border-radius: 4px;
+  padding: 0.08em 0.12em;
+}
+
+.label-background { background: linear-gradient(180deg, rgba(255, 243, 163, 0.55), rgba(255, 243, 163, 0.92)); }
+.label-thesis { background: linear-gradient(180deg, rgba(255, 209, 220, 0.55), rgba(255, 209, 220, 0.92)); }
+.label-evidence { background: linear-gradient(180deg, rgba(217, 247, 190, 0.55), rgba(217, 247, 190, 0.92)); }
+.label-analysis { background: linear-gradient(180deg, rgba(204, 231, 255, 0.55), rgba(204, 231, 255, 0.94)); }
+.label-counterargument { background: linear-gradient(180deg, rgba(234, 215, 255, 0.55), rgba(234, 215, 255, 0.92)); }
+.label-citation { background: linear-gradient(180deg, rgba(238, 238, 238, 0.55), rgba(238, 238, 238, 0.95)); }
+.label-conclusion { background: linear-gradient(180deg, rgba(255, 216, 168, 0.55), rgba(255, 216, 168, 0.94)); }
+.label-issue { background: linear-gradient(180deg, rgba(255, 201, 201, 0.6), rgba(255, 201, 201, 0.96)); border-bottom: 2px dashed #ef4444; }
 .label-plain { background: transparent; }

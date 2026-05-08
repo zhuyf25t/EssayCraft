@@ -1,4 +1,5 @@
-import type { GenerateNextRequest, RefreshRequest } from "@/types/essaycraft";
+import type { AssistRequest, GenerateNextRequest, RefreshRequest, TranslateRequest } from "@/types/essaycraft";
+import { getTransitionPrompt } from "@/lib/moduleTransitionPrompts";
 
 export const COURSE_WORKFLOW_CONTEXT = `
 EssayCraft is based on a six-module argumentative essay journey:
@@ -10,39 +11,47 @@ Module 5: check ethical source use, plagiarism risk, in-text citations, and refe
 Module 6: edit and proofread for content, structure, clarity, style, grammar, punctuation, formatting, citations, and final readiness.
 `;
 
+const LABEL_RULES = "background, thesis, evidence, analysis, counterargument, citation, conclusion, issue, plain";
+
 export function buildRefreshMessages(input: RefreshRequest) {
   const system = `You are EssayCraft's academic writing annotation engine. Return strict json only.
 
 Task:
-Classify each sentence segment by rhetorical function.
+Annotate the current module text by rhetorical function.
 
 Allowed labels:
-background, thesis, evidence, analysis, counterargument, citation, conclusion, issue, plain.
+${LABEL_RULES}
 
 Rules:
 - Do not rewrite the user's text.
-- Do not merge, split, or remove segments.
-- Return exactly one label for every input segment id.
+- Return annotations with start/end offsets over the exact input text.
+- annotation.text must equal text.slice(start, end).
 - Respect user patches when they are reasonable.
 - Use issue when a factual/evidence claim appears to need a source but has no citation, or when the role is unclear.
 - Use evidence for source-based facts, data, examples, findings, or source claims.
 - Use analysis for reasoning, explanation, interpretation, or connecting evidence to thesis.
 - Use thesis only for the main arguable position or thesis map.
-- Use citation only when the segment's primary function is a source signal/citation rather than evidence content.
-- Include brief aiComment fields when helpful.
+- Use citation only when the range's primary function is a source signal/citation rather than evidence content.
+- Never invent citations, authors, years, titles, journals, URLs, or DOIs.
 - Output valid json matching this shape:
-{"segments":[{"id":"s1","label":"background","confidence":0.9,"aiComment":"brief reason"}],"globalFeedback":["one short comment"]}
+{"annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.9,"comment":"brief reason"}],"globalFeedback":["one short comment"],"warnings":[]}
 
 ${COURSE_WORKFLOW_CONTEXT}`;
 
   const user = `Topic: ${input.topic}
 Current module: ${input.moduleNumber}
 
-Segments:
-${JSON.stringify(input.segments.map(({ id, text, label }) => ({ id, text, currentLabel: label })), null, 2)}
+Full text:
+${JSON.stringify(input.text)}
+
+Existing annotations:
+${JSON.stringify(input.annotations, null, 2)}
 
 User patches:
-${JSON.stringify(input.patches.map(({ segmentId, text }) => ({ segmentId, text })), null, 2)}
+${JSON.stringify(input.patches, null, 2)}
+
+User source cards:
+${JSON.stringify(input.sources, null, 2)}
 
 Return json only.`;
 
@@ -53,41 +62,116 @@ Return json only.`;
 }
 
 export function buildGenerateNextMessages(input: GenerateNextRequest) {
-  const target = Math.min(6, input.sourceModuleNumber + 1);
+  const transition = getTransitionPrompt(input.sourceModuleNumber);
 
-  const system = `You are EssayCraft's academic writing workflow generator. Return strict json only.
+  const system = `${transition.systemPrompt}
 
-Task:
-Generate Module ${target} from Module ${input.sourceModuleNumber}.
+Use this transition-specific purpose:
+${transition.purpose}
+
+Output contract:
+${transition.outputContract.map((item) => `- ${item}`).join("\n")}
+
+Paragraph format:
+${transition.paragraphFormat}
+
+Citation behavior:
+${transition.citationBehavior}
+
+Validation rules:
+${transition.validationRules.map((item) => `- ${item}`).join("\n")}
+
+Return json only. Required JSON shape:
+{"moduleNumber":${transition.toModule},"title":"${transition.name}","text":"Paragraph 1...\\n\\nParagraph 2...","annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.85,"comment":"brief reason"}],"sources":[],"globalFeedback":["short feedback"],"warnings":[]}`;
+
+  const user = `Topic: ${input.topic}
+Source module: ${input.sourceModuleNumber}
+Target module: ${transition.toModule}
+Source title: ${input.sourceTitle}
+
+Source text:
+${JSON.stringify(input.sourceText)}
+
+Source annotations:
+${JSON.stringify(input.sourceAnnotations, null, 2)}
+
+Source patches:
+${JSON.stringify(input.sourcePatches, null, 2)}
+
+Source cards:
+${JSON.stringify(input.sourceSources, null, 2)}
+
+Teacher-editable transition instruction:
+${transition.userPromptTemplate}
+
+Return json only.`;
+
+  return [
+    { role: "system" as const, content: system },
+    { role: "user" as const, content: user }
+  ];
+}
+
+export function buildAssistMessages(input: AssistRequest) {
+  const system = `You are EssayCraft's AI Assistant. Return strict json only.
 
 Rules:
-- Preserve the user's topic, position, and existing useful wording.
-- Never invent specific sources, authors, years, statistics, DOIs, or citations that are not provided by the user.
-- If evidence is needed but missing, write [citation needed] in the text and label the segment as issue or evidence depending on the function.
-- Output sentence-level segments.
-- Each segment must have id, text, label, confidence, and optional aiComment.
-- Use labels from: background, thesis, evidence, analysis, counterargument, citation, conclusion, issue, plain.
-- Return json matching this shape:
-{"targetModuleNumber":2,"segments":[{"id":"gen-1","text":"...","label":"background","confidence":0.85,"aiComment":"..."}],"summary":"short description of what changed"}
-
-Module expectations:
-- 1 to 2: produce a planning/research map with argument branches, evidence needs, and source questions.
-- 2 to 3: produce an outline with introduction, body paragraph structure, counterargument, and conclusion plan.
-- 3 to 4: produce a coherent academic draft.
-- 4 to 5: produce citation/referencing review notes and mark missing citation needs.
-- 5 to 6: produce final revision/editing checklist and a polished final draft if enough text exists.
+- Help the student understand and revise their own writing.
+- Suggestions must be previewable; do not assume changes are applied.
+- Prefer selected-range replacement. Do not replace the full module unless explicitly requested.
+- Never invent citations or references. Use [citation needed] or source-search suggestions when sources are missing.
+- If you propose text, preserve the student's stance and paragraph breaks.
+- Output valid json:
+{"reply":"human-readable response","proposedText":"optional replacement","replaceRange":{"start":0,"end":10},"annotations":[],"warnings":[]}
 
 ${COURSE_WORKFLOW_CONTEXT}`;
 
   const user = `Topic: ${input.topic}
-Source module: ${input.sourceModuleNumber}
-Target module: ${target}
+Module ${input.moduleNumber}: ${input.moduleTitle}
+Requested action: ${input.action}
 
-Source segments:
-${JSON.stringify(input.sourceSegments.map(({ id, text, label }) => ({ id, text, label })), null, 2)}
+Selected range: ${JSON.stringify(input.selectedRange ?? null)}
+Selected text: ${JSON.stringify(input.selectedText ?? "")}
 
-Source patches:
-${JSON.stringify(input.sourcePatches.map(({ segmentId, text }) => ({ segmentId, text })), null, 2)}
+Full module text:
+${JSON.stringify(input.text)}
+
+Annotations:
+${JSON.stringify(input.annotations, null, 2)}
+
+Patches:
+${JSON.stringify(input.patches, null, 2)}
+
+Sources:
+${JSON.stringify(input.sources, null, 2)}
+
+Recent assistant history:
+${JSON.stringify(input.history?.slice(-6) ?? [], null, 2)}
+
+Return json only.`;
+
+  return [
+    { role: "system" as const, content: system },
+    { role: "user" as const, content: user }
+  ];
+}
+
+export function buildTranslateMessages(input: TranslateRequest) {
+  const system = `You are EssayCraft's bilingual academic translation assistant. Return strict json only.
+
+Rules:
+- Translate between English and Chinese using mode ${input.mode}.
+- Preserve academic meaning, citations, paragraph breaks, and bracketed placeholders such as [citation needed].
+- Do not overwrite the original. Return preview JSON only.
+- Never create new citations, authors, dates, or source details.
+- Output valid json:
+{"translatedText":"...","mode":"${input.mode}","annotations":[],"warnings":[]}`;
+
+  const user = `Topic: ${input.topic}
+Module: ${input.moduleNumber}
+Selected range: ${JSON.stringify(input.selectedRange ?? null)}
+Text to translate:
+${JSON.stringify(input.text)}
 
 Return json only.`;
 

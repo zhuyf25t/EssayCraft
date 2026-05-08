@@ -1,5 +1,7 @@
 # Data Model
 
+EssayCraft stores module writing as canonical plain text plus metadata. The editor does not store HTML, rich text fragments, or one editable span per sentence.
+
 ```ts
 type ModuleNumber = 1 | 2 | 3 | 4 | 5 | 6;
 
@@ -14,45 +16,55 @@ type SegmentLabel =
   | "issue"
   | "plain";
 
-type Segment = {
+type Annotation = {
   id: string;
+  start: number;
+  end: number;
   text: string;
   label: SegmentLabel;
   confidence?: number;
-  aiComment?: string;
+  comment?: string;
+  sourceIds?: string[];
 };
 
 type Patch = {
   id: string;
-  segmentId: string;
+  anchorStart: number;
+  anchorEnd: number;
+  anchorQuote: string;
   text: string;
   createdAt: string;
   resolved?: boolean;
 };
 
-type Snapshot = {
+type SourceCard = {
   id: string;
+  title?: string;
+  authors?: string[];
+  year?: string;
+  containerTitle?: string;
+  publisher?: string;
+  doi?: string;
+  url?: string;
+  sourceType?: "scholarly" | "professional" | "popular" | "social" | "unknown";
+  credibilityNotes?: string;
+  userNotes?: string;
+  verified?: boolean;
+  placeholder?: boolean;
   createdAt: string;
-  reason: string;
-  segments: Segment[];
-  patches: Patch[];
 };
 
 type ModuleDocument = {
   moduleNumber: ModuleNumber;
-  segments: Segment[];
+  title: string;
+  text: string;
+  annotations: Annotation[];
   patches: Patch[];
   snapshots: Snapshot[];
+  sources: SourceCard[];
+  globalFeedback?: string[];
   updatedAt: string;
-};
-
-type Project = {
-  id: string;
-  title: string;
-  topic: string;
-  currentModule: ModuleNumber;
-  modules: Record<ModuleNumber, ModuleDocument>;
 };
 ```
 
-The document is segment-first. The AI labels segments; the frontend renders colors. This avoids AI-generated HTML and makes editing/snapshotting easier.
+Project JSON includes `schemaVersion: 1`, six independent module documents, assistant history, timestamps, snapshots, patches, annotations, and source cards. It must never include API keys.

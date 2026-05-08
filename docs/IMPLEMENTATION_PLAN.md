@@ -10,16 +10,18 @@
 
 ## Phase 2 — Editor engine
 
-- segment data model
-- colored spans
-- contentEditable direct editing
-- selected segment state
-- patch note keyboard flow
+- canonical plain text data model
+- annotation ranges over text
+- textarea plus synchronized highlight backdrop
+- selected range state
+- range-anchored patch note keyboard flow
 
 ## Phase 3 — AI routes
 
 - `/api/refresh`
 - `/api/generate-next`
+- `/api/assist`
+- `/api/translate`
 - Zod validation
 - DeepSeek client
 - mock fallback

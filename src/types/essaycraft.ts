@@ -11,72 +11,158 @@ export type SegmentLabel =
   | "issue"
   | "plain";
 
-export type Segment = {
+export type Annotation = {
   id: string;
+  start: number;
+  end: number;
   text: string;
   label: SegmentLabel;
   confidence?: number;
-  aiComment?: string;
+  comment?: string;
+  sourceIds?: string[];
 };
 
 export type Patch = {
   id: string;
-  segmentId: string;
+  anchorStart: number;
+  anchorEnd: number;
+  anchorQuote: string;
   text: string;
   createdAt: string;
   resolved?: boolean;
+};
+
+export type SourceCard = {
+  id: string;
+  title?: string;
+  authors?: string[];
+  year?: string;
+  containerTitle?: string;
+  publisher?: string;
+  doi?: string;
+  url?: string;
+  sourceType?: "scholarly" | "professional" | "popular" | "social" | "unknown";
+  credibilityNotes?: string;
+  userNotes?: string;
+  verified?: boolean;
+  placeholder?: boolean;
+  createdAt: string;
 };
 
 export type Snapshot = {
   id: string;
   createdAt: string;
   reason: string;
-  segments: Segment[];
+  text: string;
+  annotations: Annotation[];
   patches: Patch[];
+  sources: SourceCard[];
 };
 
 export type ModuleDocument = {
   moduleNumber: ModuleNumber;
-  segments: Segment[];
+  title: string;
+  text: string;
+  annotations: Annotation[];
   patches: Patch[];
   snapshots: Snapshot[];
+  sources: SourceCard[];
+  globalFeedback?: string[];
   updatedAt: string;
 };
 
+export type AssistantMessage = {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  createdAt: string;
+};
+
 export type Project = {
+  schemaVersion: 1;
   id: string;
   title: string;
   topic: string;
   currentModule: ModuleNumber;
   modules: Record<ModuleNumber, ModuleDocument>;
+  assistantHistory: AssistantMessage[];
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TextRange = {
+  start: number;
+  end: number;
 };
 
 export type RefreshRequest = {
   topic: string;
   moduleNumber: ModuleNumber;
-  segments: Segment[];
+  text: string;
+  annotations: Annotation[];
   patches: Patch[];
+  sources: SourceCard[];
 };
 
 export type RefreshResponse = {
-  segments: Array<{
-    id: string;
-    label: SegmentLabel;
-    confidence?: number;
-    aiComment?: string;
-  }>;
+  annotations: Annotation[];
   globalFeedback: string[];
+  warnings: string[];
 };
 
 export type GenerateNextRequest = {
   topic: string;
-  sourceModuleNumber: ModuleNumber;
-  sourceSegments: Segment[];
+  sourceModuleNumber: Exclude<ModuleNumber, 6>;
+  sourceTitle: string;
+  sourceText: string;
+  sourceAnnotations: Annotation[];
   sourcePatches: Patch[];
+  sourceSources: SourceCard[];
 };
 
 export type GenerateNextResponse = {
-  targetModuleNumber: ModuleNumber;
-  segments: Segment[];
-  summary: string;
+  moduleNumber: Exclude<ModuleNumber, 1>;
+  title: string;
+  text: string;
+  annotations: Annotation[];
+  sources: SourceCard[];
+  globalFeedback: string[];
+  warnings: string[];
+};
+
+export type AssistRequest = {
+  topic: string;
+  moduleNumber: ModuleNumber;
+  moduleTitle: string;
+  text: string;
+  annotations: Annotation[];
+  patches: Patch[];
+  sources: SourceCard[];
+  selectedRange?: TextRange;
+  selectedText?: string;
+  action: string;
+  history?: AssistantMessage[];
+};
+
+export type AssistResponse = {
+  reply: string;
+  proposedText?: string;
+  replaceRange?: TextRange;
+  annotations: Annotation[];
+  warnings: string[];
+};
+
+export type TranslateRequest = {
+  topic: string;
+  moduleNumber: ModuleNumber;
+  text: string;
+  selectedRange?: TextRange;
+  mode: "en-to-zh" | "zh-to-en";
+};
+
+export type TranslateResponse = {
+  translatedText: string;
+  mode: "en-to-zh" | "zh-to-en";
+  annotations: Annotation[];
+  warnings: string[];
 };

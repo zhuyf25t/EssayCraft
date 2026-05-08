@@ -1,5 +1,5 @@
 import type { Project } from "@/types/essaycraft";
-import { createInitialProject } from "@/lib/project";
+import { createInitialProject, migrateProject, normalizeProject } from "@/lib/project";
 
 const STORAGE_KEY = "essaycraft:mvp:project";
 
@@ -9,7 +9,7 @@ export function loadProject(): Project {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return createInitialProject();
-    return JSON.parse(raw) as Project;
+    return migrateProject(JSON.parse(raw));
   } catch {
     return createInitialProject();
   }
@@ -17,7 +17,7 @@ export function loadProject(): Project {
 
 export function saveProject(project: Project) {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizeProject(project)));
 }
 
 export function resetProjectStorage() {

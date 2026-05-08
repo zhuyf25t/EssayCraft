@@ -1,26 +1,52 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AssistantPanel } from "@/components/AssistantPanel";
 import { Editor } from "@/components/Editor";
 import { FinishModal } from "@/components/FinishModal";
 import { HighlightKey } from "@/components/HighlightKey";
 import { ModuleSidebar } from "@/components/ModuleSidebar";
 import { PatchPopover } from "@/components/PatchPopover";
+import { ProgressTracker } from "@/components/ProgressTracker";
 import { SnapshotPanel } from "@/components/SnapshotPanel";
+import { SourceWorkbench } from "@/components/SourceWorkbench";
 import { Toolbar } from "@/components/Toolbar";
+import { TranslateModal } from "@/components/TranslateModal";
+import { normalizeAnnotations, normalizeText, sentenceRangeAt } from "@/lib/annotations";
 import { copyRichText, downloadCurrentModuleHtml, downloadProjectJson } from "@/lib/export";
-import { addSnapshot } from "@/lib/project";
+import { addSnapshot, clearModule, migrateProject, replaceModuleContent, restoreSnapshot } from "@/lib/project";
 import { loadProject, resetProjectStorage, saveProject } from "@/lib/storage";
 import { clampModule, id, nowIso } from "@/lib/utils";
-import type { GenerateNextResponse, ModuleNumber, Project, RefreshResponse, Segment, Snapshot } from "@/types/essaycraft";
+import type {
+  AssistResponse,
+  GenerateNextResponse,
+  ModuleDocument,
+  ModuleNumber,
+  Patch,
+  Project,
+  RefreshResponse,
+  Snapshot,
+  SourceCard,
+  TextRange,
+  TranslateResponse
+} from "@/types/essaycraft";
+
+const EMPTY_RANGE: TextRange = { start: 0, end: 0 };
 
 export default function Home() {
   const [project, setProject] = useState<Project | null>(null);
-  const [selectedSegmentId, setSelectedSegmentId] = useState<string | undefined>();
-  const [patchSegmentId, setPatchSegmentId] = useState<string | undefined>();
+  const [selectedRange, setSelectedRange] = useState<TextRange>(EMPTY_RANGE);
+  const [patchRange, setPatchRange] = useState<TextRange | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("Ready");
+  const [actionSteps, setActionSteps] = useState<string[]>([]);
+  const [activeStep, setActiveStep] = useState<string | undefined>();
   const [finishOpen, setFinishOpen] = useState(false);
+  const [assistantSuggestion, setAssistantSuggestion] = useState<AssistResponse | undefined>();
+  const [translateOpen, setTranslateOpen] = useState(false);
+  const [translatePreview, setTranslatePreview] = useState<TranslateResponse | undefined>();
+  const [translateMode, setTranslateMode] = useState<"en-to-zh" | "zh-to-en">("en-to-zh");
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setProject(loadProject());
@@ -31,309 +57,556 @@ export default function Home() {
   }, [project]);
 
   const currentDoc = project ? project.modules[project.currentModule] : null;
-  const patchSegment = useMemo(
-    () => currentDoc?.segments.find((segment) => segment.id === patchSegmentId),
-    [currentDoc, patchSegmentId]
-  );
+  const selectedText = useMemo(() => {
+    if (!currentDoc) return "";
+    return currentDoc.text.slice(selectedRange.start, selectedRange.end);
+  }, [currentDoc, selectedRange]);
+
+  const patchQuote = currentDoc && patchRange ? currentDoc.text.slice(patchRange.start, patchRange.end) : "";
+  const translateSourceText = currentDoc ? selectedText || currentDoc.text : "";
 
   if (!project || !currentDoc) {
-    return <main className="flex min-h-screen items-center justify-center text-slate-500">Loading EssayCraft…</main>;
+    return <main className="flex min-h-screen items-center justify-center text-slate-500">Loading EssayCraft...</main>;
   }
 
-  function updateCurrentModule(updater: (segments: Segment[]) => Segment[]) {
+  const activeProject = project;
+  const activeDoc = currentDoc;
+
+  function updateProject(updater: (prev: Project) => Project) {
     setProject((prev) => {
       if (!prev) return prev;
+      const next = updater(prev);
+      return { ...next, updatedAt: nowIso() };
+    });
+  }
+
+  function updateCurrentModule(updater: (doc: ModuleDocument) => ModuleDocument) {
+    updateProject((prev) => {
       const doc = prev.modules[prev.currentModule];
       return {
         ...prev,
         modules: {
           ...prev.modules,
-          [prev.currentModule]: {
-            ...doc,
-            segments: updater(doc.segments),
-            updatedAt: nowIso()
-          }
+          [prev.currentModule]: updater(doc)
         }
       };
     });
   }
 
-  function handleUpdateSegmentText(segmentId: string, text: string) {
-    updateCurrentModule((segments) => segments.map((segment) => (segment.id === segmentId ? { ...segment, text } : segment)));
+  function setProgress(steps: string[], step: string) {
+    setActionSteps(steps);
+    setActiveStep(step);
   }
 
-  function handleAddSegment() {
-    const segment: Segment = { id: id("seg"), text: "New sentence. Press Refresh Highlighting when ready.", label: "plain" };
-    updateCurrentModule((segments) => [...segments, segment]);
-    setSelectedSegmentId(segment.id);
+  function clearProgress() {
+    setActionSteps([]);
+    setActiveStep(undefined);
+  }
+
+  function handleTextChange(value: string) {
+    const text = normalizeText(value);
+    updateCurrentModule((doc) => ({
+      ...doc,
+      text,
+      annotations: normalizeAnnotations(text, doc.annotations),
+      updatedAt: nowIso()
+    }));
+    setStatus("Auto-saved. Refresh if highlights need updating.");
+  }
+
+  function handleOpenPatch(range: TextRange) {
+    const nextRange = range.end > range.start ? range : sentenceRangeAt(activeDoc.text, range.start, range.end);
+    setPatchRange(nextRange);
+    setSelectedRange(nextRange);
   }
 
   function handlePatchSubmit(text: string) {
-    if (!patchSegmentId) return;
-    setProject((prev) => {
-      if (!prev) return prev;
-      const doc = prev.modules[prev.currentModule];
-      return {
-        ...prev,
-        modules: {
-          ...prev.modules,
-          [prev.currentModule]: {
-            ...doc,
-            patches: [
-              {
-                id: id("patch"),
-                segmentId: patchSegmentId,
-                text,
-                createdAt: nowIso()
-              },
-              ...doc.patches
-            ],
-            updatedAt: nowIso()
-          }
-        }
-      };
-    });
-    setPatchSegmentId(undefined);
-    setStatus("Patch saved. Click Refresh Highlighting to ask AI to use it.");
+    if (!patchRange) return;
+    const patch: Patch = {
+      id: id("patch"),
+      anchorStart: patchRange.start,
+      anchorEnd: patchRange.end,
+      anchorQuote: activeDoc.text.slice(patchRange.start, patchRange.end),
+      text,
+      createdAt: nowIso()
+    };
+    updateCurrentModule((doc) => ({
+      ...doc,
+      patches: [patch, ...doc.patches],
+      updatedAt: nowIso()
+    }));
+    setPatchRange(null);
+    setStatus("Patch saved. Refresh or ask the assistant to use it.");
   }
 
   async function handleRefresh() {
-    if (!currentDoc.segments.length) {
+    if (!activeDoc.text.trim()) {
       setStatus("Nothing to refresh yet.");
       return;
     }
 
+    const steps = ["Reading text", "Classifying ranges", "Updating colors"];
     setLoading(true);
-    setStatus("Refreshing rhetorical labels…");
+    setProgress(steps, steps[0]);
     try {
+      setProgress(steps, steps[1]);
       const response = await fetch("/api/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: project.topic,
-          moduleNumber: project.currentModule,
-          segments: currentDoc.segments,
-          patches: currentDoc.patches
+          topic: activeProject.topic,
+          moduleNumber: activeProject.currentModule,
+          text: activeDoc.text,
+          annotations: activeDoc.annotations,
+          patches: activeDoc.patches,
+          sources: activeDoc.sources
         })
       });
 
       const data = (await response.json()) as RefreshResponse & { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Refresh failed.");
 
-      setProject((prev) => {
-        if (!prev) return prev;
-        const doc = prev.modules[prev.currentModule];
-        const snapDoc = addSnapshot(doc, "Before refresh highlighting");
-        const byId = new Map(data.segments.map((segment) => [segment.id, segment]));
-        return {
-          ...prev,
-          modules: {
-            ...prev.modules,
-            [prev.currentModule]: {
-              ...snapDoc,
-              segments: doc.segments.map((segment) => {
-                const next = byId.get(segment.id);
-                return next
-                  ? { ...segment, label: next.label, confidence: next.confidence, aiComment: next.aiComment }
-                  : segment;
-              }),
-              updatedAt: nowIso()
-            }
-          }
-        };
-      });
-      setStatus(data.globalFeedback?.[0] ?? "Highlights refreshed.");
+      setProgress(steps, steps[2]);
+      updateCurrentModule((doc) => ({
+        ...doc,
+        annotations: normalizeAnnotations(doc.text, data.annotations),
+        globalFeedback: data.globalFeedback,
+        updatedAt: nowIso()
+      }));
+      setStatus(data.globalFeedback?.[0] ?? "Highlights refreshed without rewriting text.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Refresh failed.");
     } finally {
       setLoading(false);
+      clearProgress();
     }
   }
 
   async function handleGenerateNext() {
-    if (project.currentModule >= 6) {
+    if (activeProject.currentModule >= 6) {
       setStatus("Module 6 is the final module.");
       return;
     }
 
+    const sourceModuleNumber = activeProject.currentModule as Exclude<ModuleNumber, 6>;
+    const target = (sourceModuleNumber + 1) as Exclude<ModuleNumber, 1>;
+    const steps = ["Saving snapshot", `Generating Module ${target}`, "Validating JSON", "Applying module"];
     setLoading(true);
-    setStatus(`Generating Module ${project.currentModule + 1}…`);
+    setProgress(steps, steps[0]);
     try {
+      setProject((prev) => {
+        if (!prev) return prev;
+        const targetDoc = prev.modules[target];
+        return {
+          ...prev,
+          modules: {
+            ...prev.modules,
+            [target]: addSnapshot(targetDoc, `Before overwrite from Module ${sourceModuleNumber}`)
+          },
+          updatedAt: nowIso()
+        };
+      });
+
+      setProgress(steps, steps[1]);
       const response = await fetch("/api/generate-next", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: project.topic,
-          sourceModuleNumber: project.currentModule,
-          sourceSegments: currentDoc.segments,
-          sourcePatches: currentDoc.patches
+          topic: activeProject.topic,
+          sourceModuleNumber,
+          sourceTitle: activeDoc.title,
+          sourceText: activeDoc.text,
+          sourceAnnotations: activeDoc.annotations,
+          sourcePatches: activeDoc.patches,
+          sourceSources: activeDoc.sources
         })
       });
 
       const data = (await response.json()) as GenerateNextResponse & { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Generate Next failed.");
+      if (data.moduleNumber !== target) throw new Error(`Expected Module ${target}, received Module ${data.moduleNumber}.`);
 
-      const target = data.targetModuleNumber;
+      setProgress(steps, steps[2]);
+      const normalizedAnnotations = normalizeAnnotations(data.text, data.annotations);
+
+      setProgress(steps, steps[3]);
       setProject((prev) => {
         if (!prev) return prev;
         const targetDoc = prev.modules[target];
-        const withSnapshot = addSnapshot(targetDoc, `Before overwrite from Module ${prev.currentModule}`);
+        const sources = data.sources.length ? data.sources : mergeSources(activeDoc.sources, targetDoc.sources);
         return {
           ...prev,
           currentModule: target,
           modules: {
             ...prev.modules,
             [target]: {
-              ...withSnapshot,
-              segments: data.segments,
-              patches: [],
-              updatedAt: nowIso()
+              ...replaceModuleContent(targetDoc, data.text, normalizedAnnotations, sources),
+              title: data.title || targetDoc.title,
+              globalFeedback: data.globalFeedback
             }
-          }
+          },
+          updatedAt: nowIso()
         };
       });
-      setSelectedSegmentId(undefined);
-      setPatchSegmentId(undefined);
-      setStatus(data.summary || `Module ${target} generated and overwritten safely.`);
+      setSelectedRange(EMPTY_RANGE);
+      setPatchRange(null);
+      setAssistantSuggestion(undefined);
+      setStatus(data.globalFeedback?.[0] ?? `Module ${target} generated. Previous version saved.`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Generate Next failed.");
     } finally {
       setLoading(false);
+      clearProgress();
     }
   }
 
   function handleSaveSnapshot() {
-    setProject((prev) => {
-      if (!prev) return prev;
-      const doc = prev.modules[prev.currentModule];
-      return {
-        ...prev,
-        modules: {
-          ...prev.modules,
-          [prev.currentModule]: addSnapshot(doc, "Manual snapshot")
-        }
-      };
-    });
+    updateCurrentModule((doc) => addSnapshot(doc, "Manual snapshot"));
     setStatus("Snapshot saved.");
   }
 
   function handleRestoreSnapshot(snapshot: Snapshot) {
-    setProject((prev) => {
-      if (!prev) return prev;
-      const doc = prev.modules[prev.currentModule];
-      return {
-        ...prev,
-        modules: {
-          ...prev.modules,
-          [prev.currentModule]: {
-            ...doc,
-            segments: snapshot.segments.map((segment) => ({ ...segment })),
-            patches: snapshot.patches.map((patch) => ({ ...patch })),
-            updatedAt: nowIso()
-          }
-        }
-      };
-    });
+    updateCurrentModule((doc) => restoreSnapshot(doc, snapshot));
     setStatus("Snapshot restored.");
   }
 
   function switchModule(moduleNumber: ModuleNumber) {
-    setProject((prev) => (prev ? { ...prev, currentModule: moduleNumber } : prev));
-    setSelectedSegmentId(undefined);
-    setPatchSegmentId(undefined);
+    updateProject((prev) => ({ ...prev, currentModule: moduleNumber }));
+    setSelectedRange(EMPTY_RANGE);
+    setPatchRange(null);
+    setAssistantSuggestion(undefined);
+  }
+
+  function handleClearModule() {
+    if (!window.confirm(`Clear Module ${activeProject.currentModule} content? A snapshot will be saved first.`)) return;
+    updateCurrentModule((doc) => clearModule(doc));
+    setSelectedRange(EMPTY_RANGE);
+    setPatchRange(null);
+    setStatus(`Module ${activeProject.currentModule} cleared. Restore is available from snapshots.`);
   }
 
   function handleResetDemo() {
+    if (!window.confirm("Reset the entire EssayCraft demo? This clears local project data.")) return;
     resetProjectStorage();
-    window.location.reload();
+    setProject(loadProject());
+    setSelectedRange(EMPTY_RANGE);
+    setPatchRange(null);
+    setAssistantSuggestion(undefined);
+    setStatus("Demo reset.");
   }
 
   async function handleCopyRichText() {
-    await copyRichText(currentDoc.segments);
-    setStatus("Rich text copied. Paste into Word/Docs to test highlight preservation.");
+    await copyRichText(activeDoc);
+    setStatus("Rich text copied with paragraph breaks and highlights.");
   }
 
   function handleDownloadHtml() {
-    if (project.currentModule === 6) {
+    if (activeProject.currentModule === 6) {
       setFinishOpen(true);
       return;
     }
-    downloadCurrentModuleHtml(project);
+    downloadCurrentModuleHtml(activeProject);
+    setStatus("HTML downloaded.");
+  }
+
+  function handleImportJsonClick() {
+    importInputRef.current?.click();
+  }
+
+  async function handleImportJson(file: File | undefined) {
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const imported = migrateProject(JSON.parse(text));
+      setProject(imported);
+      setSelectedRange(EMPTY_RANGE);
+      setPatchRange(null);
+      setAssistantSuggestion(undefined);
+      setStatus("Project JSON imported.");
+    } catch (error) {
+      setStatus(error instanceof Error ? `Import failed: ${error.message}` : "Import failed.");
+    } finally {
+      if (importInputRef.current) importInputRef.current.value = "";
+    }
+  }
+
+  function addSource(source: Omit<SourceCard, "id" | "createdAt">) {
+    updateCurrentModule((doc) => ({
+      ...doc,
+      sources: [{ ...source, id: id("source"), createdAt: nowIso() }, ...doc.sources],
+      updatedAt: nowIso()
+    }));
+    setStatus("Source card added. EssayCraft will not verify it automatically.");
+  }
+
+  function toggleSourceVerified(sourceId: string) {
+    updateCurrentModule((doc) => ({
+      ...doc,
+      sources: doc.sources.map((source) => (source.id === sourceId ? { ...source, verified: !source.verified } : source)),
+      updatedAt: nowIso()
+    }));
+  }
+
+  function deleteSource(sourceId: string) {
+    updateCurrentModule((doc) => ({
+      ...doc,
+      sources: doc.sources.filter((source) => source.id !== sourceId),
+      updatedAt: nowIso()
+    }));
+  }
+
+  function addPlaceholderSource() {
+    addSource({
+      title: "Placeholder source needed",
+      authors: [],
+      sourceType: "unknown",
+      userNotes: "Replace this card with real source metadata before final submission.",
+      verified: false,
+      placeholder: true
+    });
+  }
+
+  async function handleAssist(action: string) {
+    const steps = ["Preparing context", "Drafting suggestion", "Preview ready"];
+    setLoading(true);
+    setProgress(steps, steps[0]);
+    setAssistantSuggestion(undefined);
+    try {
+      setProgress(steps, steps[1]);
+      const response = await fetch("/api/assist", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: activeProject.topic,
+          moduleNumber: activeProject.currentModule,
+          moduleTitle: activeDoc.title,
+          text: activeDoc.text,
+          annotations: activeDoc.annotations,
+          patches: activeDoc.patches,
+          sources: activeDoc.sources,
+          selectedRange,
+          selectedText,
+          action,
+          history: activeProject.assistantHistory
+        })
+      });
+      const data = (await response.json()) as AssistResponse & { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Assistant failed.");
+      setProgress(steps, steps[2]);
+      setAssistantSuggestion(data);
+      updateProject((prev) => ({
+        ...prev,
+        assistantHistory: [
+          { id: id("msg"), role: "user" as const, text: action, createdAt: nowIso() },
+          { id: id("msg"), role: "assistant" as const, text: data.reply, createdAt: nowIso() },
+          ...prev.assistantHistory
+        ].slice(0, 30)
+      }));
+      setStatus("Assistant preview ready.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Assistant failed.");
+    } finally {
+      setLoading(false);
+      clearProgress();
+    }
+  }
+
+  function handleApplyAssistant() {
+    if (!assistantSuggestion) return;
+    updateCurrentModule((doc) => {
+      const snapDoc = addSnapshot(doc, "Before applying assistant suggestion");
+      if (assistantSuggestion.proposedText && assistantSuggestion.replaceRange) {
+        const range = assistantSuggestion.replaceRange;
+        const text = `${snapDoc.text.slice(0, range.start)}${assistantSuggestion.proposedText}${snapDoc.text.slice(range.end)}`;
+        return {
+          ...snapDoc,
+          text,
+          annotations: normalizeAnnotations(text, assistantSuggestion.annotations),
+          updatedAt: nowIso()
+        };
+      }
+      return {
+        ...snapDoc,
+        annotations: normalizeAnnotations(snapDoc.text, assistantSuggestion.annotations),
+        updatedAt: nowIso()
+      };
+    });
+    setAssistantSuggestion(undefined);
+    setStatus("Assistant suggestion applied after snapshot.");
+  }
+
+  function openTranslate() {
+    setTranslateOpen(true);
+    setTranslatePreview(undefined);
+  }
+
+  async function requestTranslatePreview() {
+    const steps = ["Preparing selection", "Translating", "Preview ready"];
+    setLoading(true);
+    setProgress(steps, steps[0]);
+    try {
+      setProgress(steps, steps[1]);
+      const useSelection = selectedRange.end > selectedRange.start;
+      const response = await fetch("/api/translate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: activeProject.topic,
+          moduleNumber: activeProject.currentModule,
+          text: activeDoc.text,
+          selectedRange: useSelection ? selectedRange : undefined,
+          mode: translateMode
+        })
+      });
+      const data = (await response.json()) as TranslateResponse & { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Translate failed.");
+      setProgress(steps, steps[2]);
+      setTranslatePreview(data);
+      setStatus("Translation preview ready.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Translate failed.");
+    } finally {
+      setLoading(false);
+      clearProgress();
+    }
+  }
+
+  function applyTranslation() {
+    if (!translatePreview) return;
+    const useSelection = selectedRange.end > selectedRange.start;
+    updateCurrentModule((doc) => {
+      const snapDoc = addSnapshot(doc, "Before applying translation");
+      const text = useSelection
+        ? `${snapDoc.text.slice(0, selectedRange.start)}${translatePreview.translatedText}${snapDoc.text.slice(selectedRange.end)}`
+        : translatePreview.translatedText;
+      return {
+        ...snapDoc,
+        text,
+        annotations: normalizeAnnotations(text, translatePreview.annotations),
+        updatedAt: nowIso()
+      };
+    });
+    setTranslateOpen(false);
+    setTranslatePreview(undefined);
+    setStatus("Translation applied after snapshot. Refresh highlighting when ready.");
   }
 
   return (
-    <main className="min-h-screen bg-slate-50">
+    <main className="min-h-screen bg-paper pb-24">
       <div className="flex min-h-[calc(100vh-52px)]">
-        <ModuleSidebar currentModule={project.currentModule} onSelect={switchModule} />
+        <ModuleSidebar project={activeProject} onSelect={switchModule} />
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="border-b border-slate-200 bg-white p-4">
+          <header className="border-b border-slate-200 bg-white/90 p-4">
             <div className="flex flex-wrap items-center gap-3">
               <div className="font-crayon text-3xl font-bold text-blue-700">EssayCraft</div>
               <label className="flex min-w-72 flex-1 items-center gap-2 text-sm text-slate-600">
-                Topic
+                Project Title
                 <input
-                  value={project.topic}
-                  onChange={(event) => setProject((prev) => (prev ? { ...prev, topic: event.target.value } : prev))}
-                  className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-slate-800 outline-none focus:ring-2 focus:ring-blue-300"
+                  value={activeProject.title}
+                  onChange={(event) => updateProject((prev) => ({ ...prev, title: event.target.value, topic: event.target.value }))}
+                  className="input flex-1"
                 />
               </label>
-              <div className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">Module {project.currentModule} of 6</div>
+              <div className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">Module {activeProject.currentModule} of 6</div>
+            </div>
+            <div className="mt-4">
+              <ProgressTracker project={activeProject} actionSteps={actionSteps} activeStep={activeStep} onSelect={switchModule} />
             </div>
           </header>
 
           <Toolbar
-            currentModule={project.currentModule}
+            currentModule={activeProject.currentModule}
             loading={loading}
             status={status}
-            onPrev={() => switchModule(clampModule(project.currentModule - 1))}
-            onNext={() => switchModule(clampModule(project.currentModule + 1))}
+            onPrev={() => switchModule(clampModule(activeProject.currentModule - 1))}
+            onNext={() => switchModule(clampModule(activeProject.currentModule + 1))}
             onGenerateNext={handleGenerateNext}
             onRefresh={handleRefresh}
             onSaveSnapshot={handleSaveSnapshot}
+            onClearModule={handleClearModule}
             onCopyRichText={handleCopyRichText}
             onDownloadHtml={handleDownloadHtml}
-            onDownloadJson={() => downloadProjectJson(project)}
+            onDownloadJson={() => {
+              downloadProjectJson(activeProject);
+              setStatus("Project JSON downloaded.");
+            }}
+            onImportJson={handleImportJsonClick}
             onResetDemo={handleResetDemo}
+            onTranslate={openTranslate}
           />
+          <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void handleImportJson(event.target.files?.[0])} />
 
-          <div className="grid flex-1 grid-cols-1 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="min-w-0">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="grid flex-1 grid-cols-1 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_380px]">
+            <div className="min-w-0 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h1 className="text-lg font-semibold text-slate-800">Current document: Module {project.currentModule}</h1>
-                  <p className="text-sm text-slate-500">Click a sentence to edit. Press Enter on a sentence to add a patch note.</p>
+                  <h1 className="text-lg font-semibold text-slate-800">Module {activeProject.currentModule}: {activeDoc.title}</h1>
+                  <p className="text-sm text-slate-500">Edit normally. Ctrl/Cmd+Enter anchors a patch note to the current sentence or selection.</p>
                 </div>
-                <button className="btn-secondary" onClick={handleAddSegment}>Add Segment</button>
               </div>
 
-              {patchSegment ? (
-                <PatchPopover segmentText={patchSegment.text} onSubmit={handlePatchSubmit} onClose={() => setPatchSegmentId(undefined)} />
+              {patchRange ? (
+                <PatchPopover
+                  range={patchRange}
+                  anchorQuote={patchQuote}
+                  onSubmit={handlePatchSubmit}
+                  onClose={() => setPatchRange(null)}
+                />
               ) : null}
 
               <Editor
-                segments={currentDoc.segments}
-                selectedSegmentId={selectedSegmentId}
-                onSelect={setSelectedSegmentId}
-                onUpdateText={handleUpdateSegmentText}
-                onOpenPatch={setPatchSegmentId}
+                text={activeDoc.text}
+                annotations={activeDoc.annotations}
+                patches={activeDoc.patches}
+                selectedRange={selectedRange}
+                onTextChange={handleTextChange}
+                onSelectionChange={setSelectedRange}
+                onOpenPatch={handleOpenPatch}
               />
-            </div>
 
-            <div className="space-y-4">
-              <SnapshotPanel snapshots={currentDoc.snapshots} onRestore={handleRestoreSnapshot} />
-              <section className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-600 shadow-sm">
-                <h2 className="mb-2 font-semibold text-slate-800">Current patches</h2>
-                {currentDoc.patches.length === 0 ? (
+              <section className="panel">
+                <h2 className="mb-2 text-sm font-semibold text-slate-800">Patch notes</h2>
+                {activeDoc.patches.length === 0 ? (
                   <p className="text-xs text-slate-500">No patch notes yet.</p>
                 ) : (
-                  <ul className="space-y-2 text-xs">
-                    {currentDoc.patches.slice(0, 8).map((patch) => (
-                      <li key={patch.id} className="rounded-xl bg-slate-50 p-2">{patch.text}</li>
+                  <div className="flex flex-wrap gap-2">
+                    {activeDoc.patches.map((patch) => (
+                      <button
+                        key={patch.id}
+                        className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-left text-xs text-blue-800"
+                        onClick={() => setSelectedRange({ start: patch.anchorStart, end: patch.anchorEnd })}
+                        title={patch.anchorQuote}
+                      >
+                        {patch.text}
+                      </button>
                     ))}
-                  </ul>
+                  </div>
                 )}
               </section>
             </div>
+
+            <aside className="space-y-4">
+              <AssistantPanel
+                selectedText={selectedText}
+                selectedRange={selectedRange}
+                loading={loading}
+                suggestion={assistantSuggestion}
+                onAction={handleAssist}
+                onApply={handleApplyAssistant}
+                onDismiss={() => setAssistantSuggestion(undefined)}
+                onTranslate={openTranslate}
+              />
+              <SnapshotPanel snapshots={activeDoc.snapshots} onRestore={handleRestoreSnapshot} />
+              <SourceWorkbench
+                moduleNumber={activeProject.currentModule}
+                annotations={activeDoc.annotations}
+                sources={activeDoc.sources}
+                onAdd={addSource}
+                onToggleVerified={toggleSourceVerified}
+                onDelete={deleteSource}
+                onAddPlaceholder={addPlaceholderSource}
+              />
+            </aside>
           </div>
         </section>
       </div>
@@ -343,14 +616,40 @@ export default function Home() {
         open={finishOpen}
         onClose={() => setFinishOpen(false)}
         onDownloadHtml={() => {
-          downloadCurrentModuleHtml(project);
+          downloadCurrentModuleHtml(activeProject);
           setFinishOpen(false);
+          setStatus("Module 6 HTML downloaded.");
         }}
         onDownloadJson={() => {
-          downloadProjectJson(project);
+          downloadProjectJson(activeProject);
           setFinishOpen(false);
+          setStatus("Project JSON downloaded.");
         }}
+      />
+      <TranslateModal
+        open={translateOpen}
+        sourceText={translateSourceText}
+        mode={translateMode}
+        loading={loading}
+        preview={translatePreview}
+        onModeChange={setTranslateMode}
+        onRequest={requestTranslatePreview}
+        onApply={applyTranslation}
+        onClose={() => setTranslateOpen(false)}
       />
     </main>
   );
+}
+
+function mergeSources(primary: SourceCard[], secondary: SourceCard[]) {
+  const seen = new Set<string>();
+  const result: SourceCard[] = [];
+
+  for (const source of [...primary, ...secondary]) {
+    if (seen.has(source.id)) continue;
+    seen.add(source.id);
+    result.push(source);
+  }
+
+  return result;
 }

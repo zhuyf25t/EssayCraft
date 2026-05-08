@@ -5,8 +5,8 @@
 1. Start app with no API key.
 2. Click Refresh Highlighting; verify mock colors appear.
 3. Edit a sentence.
-4. Press Enter on sentence; verify patch box opens.
-5. Type patch and press Enter; verify it saves.
+4. Press Ctrl/Cmd+Enter on a sentence or selection; verify patch box opens.
+5. Type patch and press Ctrl/Cmd+Enter; verify it saves. Shift+Enter should create a newline.
 6. Click Generate Next; verify target module is overwritten and opened.
 7. Restore snapshot from snapshot panel.
 8. Copy rich text and paste into a rich editor.
