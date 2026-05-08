@@ -69,7 +69,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
   const range = input.selectedRange;
   const selected = input.selectedText || (range ? input.text.slice(range.start, range.end) : input.text);
   const action = input.action.toLowerCase();
-  const warnings = ["Mock assistant response. Add DEEPSEEK_API_KEY to enable DeepSeek suggestions."];
+  const warnings = ["Mock assistant response. Provider suggestions are unavailable or forced off in this session."];
 
   if (action.includes("citation")) {
     return {

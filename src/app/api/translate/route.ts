@@ -69,8 +69,8 @@ function selectedText(text: string, range: { start: number; end: number } | unde
 function mockTranslate(input: TranslateRequest): TranslateResponse {
   const translatedText =
     input.mode === "zh-to-en"
-      ? `English translation preview:\n${mockEnglishPreview(input.text)}\n\n(Mock translation: configure DEEPSEEK_API_KEY for natural English.)`
-      : `中文翻译预览：\n${mockChinesePreview(input.text)}\n\n（模拟翻译：配置 DEEPSEEK_API_KEY 后可生成更自然的中文。）`;
+      ? `English translation preview:\n${mockEnglishPreview(input.text)}\n\n(Mock translation: provider translation is unavailable in this session.)`
+      : `中文翻译预览：\n${mockChinesePreview(input.text)}\n\n（模拟翻译：当前会话未使用真实翻译提供方。）`;
   const text = cleanGeneratedText(translatedText);
 
   return {

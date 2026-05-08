@@ -105,7 +105,7 @@ export function buildMockAnnotations(text: string): Annotation[] {
       text: range.text,
       label: guessLabel(range.text, index),
       confidence: 0.64,
-      comment: "Mock label. Add DEEPSEEK_API_KEY to enable AI analysis."
+      comment: "Local fallback label. Refresh highlighting to request provider labels when configured."
     }));
 }
 

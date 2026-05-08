@@ -237,7 +237,7 @@ export default function Home() {
       });
 
       const json = (await response.json().catch(() => ({}))) as Partial<GenerateNextResponse> & { error?: string };
-      if (!response.ok) throw new Error(json.error ?? "Generate Next failed.");
+      if (!response.ok) throw new Error(json.error ?? `Generate Next failed with HTTP ${response.status}. Restart the dev server if this persists.`);
       const data = generateNextResponseSchema.parse(json);
       if (data.moduleNumber !== target) throw new Error(`Expected Module ${target}, received Module ${data.moduleNumber}.`);
       if (!data.text.trim()) throw new Error("Generate Next returned empty text.");

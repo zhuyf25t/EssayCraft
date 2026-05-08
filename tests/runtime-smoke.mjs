@@ -32,6 +32,22 @@ try {
   if (!body.includes("EssayCraft")) {
     throw new Error("Homepage returned 200 but did not include EssayCraft markup.");
   }
+  const generateResponse = await fetch(`${url}/api/generate-next`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      topic: "Runtime smoke topic",
+      sourceModuleNumber: 1,
+      sourceTitle: "Topic & Question",
+      sourceText: "Topic: Runtime smoke topic\n\nResearch question: Can the app generate Module 2 during smoke validation?",
+      sourceAnnotations: [],
+      sourcePatches: [],
+      sourceSources: []
+    })
+  });
+  if (generateResponse.status !== 200) {
+    throw new Error(`/api/generate-next returned ${generateResponse.status}: ${await generateResponse.text()}`);
+  }
   console.log(`Runtime smoke passed: ${url} returned ${response.status}.`);
 } catch (error) {
   console.error(output);
