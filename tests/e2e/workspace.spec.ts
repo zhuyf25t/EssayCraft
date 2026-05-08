@@ -134,7 +134,7 @@ Counterargument to investigate: Some people argue that technology is becoming le
   expect(value).toContain("Body paragraph 1");
   expect(value).toContain("Body paragraph 2");
   expect(value).toContain("Evidence to use");
-  expect(value).toContain("[source needed]");
+  expect(value).toMatch(/\[source needed(?::[^\]]*)?\]/);
   expect(value).toContain("technology is becoming more human-centered");
   expect(value).toContain("human-centered design can make tools more accessible and useful");
   expect(value).not.toContain("Present the first reason");
@@ -169,25 +169,65 @@ Thesis map:
 test("generate next moves Module 3 outline to Module 4 draft paragraphs", async ({ page }) => {
   await moduleButton(page, 3, "Outline").click();
   const textEditor = editor(page);
-  await textEditor.fill(`Topic: AI study tools
+  await textEditor.fill(`Topic: Social media balance and youth wellbeing
 
-Introduction
-- Hook: AI tutoring is common.
-- Thesis: AI tools help when students use them to ask questions, not outsource thinking.
+Introduction plan
+- Hook / importance: Social media now shapes how young people communicate, relax, study, and compare themselves with others.
+- Background: Social media offers connection and information, while also creating risks such as passive scrolling, distraction, social comparison, and pressure on wellbeing.
+- Research question: How can we strike a healthier social media balance?
+- Thesis: A healthier social media balance is possible when users build intentional habits, platforms redesign engagement systems, and schools teach stronger digital literacy.
+- Thesis map: The essay will first discuss intentional user habits, then examine platform design responsibilities, and finally consider the role of digital literacy education.
 
 Body paragraph 1
-- Topic sentence: Guided feedback can improve revision.
-- Evidence: Add source [citation needed].
-- Analysis: Explain feedback loops.
+- Topic sentence: Individual habits are important because many harmful patterns of social media use come from passive and unplanned scrolling.
+- Evidence to use: [source needed: study or report on passive social media use, screen time, sleep, attention, or youth wellbeing]
+- Analysis purpose: Explain how intentional habits such as app limits, no-phone study periods, or mindful checking routines reduce passive consumption and make social media use more deliberate.
+- Link back: This supports the thesis by showing that balance begins with user agency, not total rejection of social media.
 
-Conclusion
-- Restate thesis and significance.`);
+Body paragraph 2
+- Topic sentence: Platform design also matters because recommendation systems, notifications, and engagement metrics influence what users see and how long they stay online.
+- Evidence to use: [source needed: study or professional report on engagement design, recommendation algorithms, notifications, or social comparison]
+- Analysis purpose: Explain why individual self-control is limited when platforms are designed to maximize attention, and why design changes could reduce comparison and distraction.
+- Link back: This supports the thesis by showing that healthier balance requires institutional responsibility as well as personal habits.
+
+Body paragraph 3
+- Topic sentence: Schools can support healthier social media use by teaching digital literacy rather than leaving young people to navigate platforms alone.
+- Evidence to use: [source needed: education research or policy report on digital literacy, online safety, or media education]
+- Analysis purpose: Explain how digital literacy helps students evaluate online content, recognize manipulative design, and reflect on how social media affects their emotions and attention.
+- Link back: This supports the thesis by showing that balance can be learned and practiced.
+
+Counterargument paragraph
+- Opposing view: Some readers may argue that stronger restrictions or age-based bans are necessary because young users cannot reliably manage social media risks on their own.
+- Response: Acknowledge that restrictions may reduce some harms, but argue that long-term balance also requires habits, better design, and education.
+
+Conclusion plan
+- Rephrased thesis: Social media balance is most realistic when responsibility is shared among users, platforms, and schools.
+- Summary of main arguments: Bring together personal habits, platform design, and digital literacy as complementary responses.
+- So what / implication: End by explaining that the goal is not to reject social media entirely, but to make its benefits less dependent on constant attention and comparison.`);
 
   await expect(generateButton(page, 3)).toBeEnabled();
   await generateButton(page, 3).click();
 
   await expect(page.getByText("Module 4 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
-  await expect(editor(page)).toHaveValue(/AI study tools[\s\S]*\n\nFirst,[\s\S]*\n\nSecond,/);
+  const value = await editor(page).inputValue();
+  expect(value).toContain("social media");
+  expect(value).toContain("intentional habits");
+  expect(value).toContain("platform");
+  expect(value).toContain("digital literacy");
+  expect(value).toMatch(/\n\nFirst,[\s\S]*\n\nSecond,[\s\S]*\n\nThird,/);
+  for (const forbidden of [
+    "Introduction plan is an important academic issue",
+    "The student should",
+    "the strongest body paragraph should",
+    "the draft should develop",
+    "return to introduction plan",
+    "Topic sentence:",
+    "Evidence to use:",
+    "Analysis purpose:",
+    "Link back:"
+  ]) {
+    expect(value).not.toContain(forbidden);
+  }
   await expect(page.getByTestId("last-action")).toContainText("Module 4 generated and opened. Previous Module 4 saved as a snapshot.");
 });
 
@@ -216,7 +256,7 @@ test("refresh highlighting preserves exact editor text", async ({ page }) => {
   )).toBe(true);
 });
 
-test("Translate preview shows Chinese mock output and applies only after confirmation", async ({ page }) => {
+test.skip("legacy Translate apply behavior is disabled", async ({ page }) => {
   const original = "Topic: Campus notification habits.\n\nQuestion: How can schools reduce distraction while keeping students connected?";
   await editor(page).fill(original);
   await page.getByRole("button", { name: "Translate", exact: true }).click();
@@ -238,6 +278,31 @@ test("Translate preview shows Chinese mock output and applies only after confirm
   await expect(editor(page)).toHaveValue(/[\u4e00-\u9fff][\s\S]*\n\n[\s\S]*[\u4e00-\u9fff]/);
   const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(state.modules["1"].snapshots[0].reason).toBe("Before applying translation");
+});
+
+test("Translate preview shows Chinese mock output without changing the document", async ({ page }) => {
+  const original = "Topic: Campus notification habits.\n\nQuestion: How can schools reduce distraction while keeping students connected?";
+  await editor(page).fill(original);
+  const beforeState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  const beforeSnapshots = beforeState.modules["1"].snapshots.length;
+
+  await page.getByRole("button", { name: "Translate", exact: true }).click();
+  await expect(page.getByText("Translate Preview")).toBeVisible();
+  const dialog = page.getByTestId("translate-dialog");
+  await dialog.locator("select").selectOption("auto-to-zh");
+  await page.getByRole("button", { name: "Create Preview" }).click();
+  await expect(dialog.locator("pre").last()).toContainText(/[\u4e00-\u9fff]/);
+  await expect(page.getByRole("button", { name: "Apply translation" })).toHaveCount(0);
+  await expect(editor(page)).toHaveValue(original);
+
+  await page.getByRole("button", { name: "Copy translation" }).click();
+  await expect(editor(page)).toHaveValue(original);
+
+  await page.getByRole("button", { name: "Close" }).last().click();
+  await expect(editor(page)).toHaveValue(original);
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(state.modules["1"].text).toBe(original);
+  expect(state.modules["1"].snapshots.length).toBe(beforeSnapshots);
 });
 
 test("generate-next API returns valid mock response shape", async ({ request }) => {
@@ -266,7 +331,7 @@ Evidence needed: academic integrity source`,
   expect(body.text).toContain("Introduction plan");
   expect(body.text).toContain("Body paragraph 1");
   expect(body.text).toContain("Evidence to use");
-  expect(body.text).toContain("[source needed]");
+  expect(body.text).toMatch(/\[source needed(?::[^\]]*)?\]/);
   expect(body.text.length).toBeGreaterThan(50);
   expect(Array.isArray(body.annotations)).toBe(true);
   expect(Array.isArray(body.sources)).toBe(true);

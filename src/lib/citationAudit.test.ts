@@ -16,7 +16,17 @@ describe("citationAudit", () => {
   it("detects citation-needed markers and citation previews", () => {
     const audit = buildCitationAudit("Research shows a pattern [citation needed].", [], [source]);
     expect(audit.citationNeededMarkers).toHaveLength(1);
+    expect(audit.sourceNeedMarkers).toHaveLength(0);
     expect(inTextCitationPreview(source)).toBe("(Smith, 2024)");
+  });
+
+  it("separates planning source needs from draft citation gaps", () => {
+    const audit = buildCitationAudit(`Evidence to use: [source needed: study on passive scrolling.]
+Source status: source needed`, [], []);
+
+    expect(audit.sourceNeedMarkers).toHaveLength(2);
+    expect(audit.citationNeededMarkers).toHaveLength(0);
+    expect(audit.evidenceWithoutCitation).toHaveLength(0);
   });
 
   it("builds reference previews only from source-card metadata", () => {
