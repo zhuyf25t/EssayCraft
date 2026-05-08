@@ -2,6 +2,8 @@
 
 import type { TranslateResponse } from "@/types/essaycraft";
 
+type TranslateMode = "en-to-zh" | "zh-to-en" | "auto-to-zh";
+
 export function TranslateModal({
   open,
   sourceText,
@@ -15,10 +17,10 @@ export function TranslateModal({
 }: {
   open: boolean;
   sourceText: string;
-  mode: "en-to-zh" | "zh-to-en";
+  mode: TranslateMode;
   loading: boolean;
   preview?: TranslateResponse;
-  onModeChange: (mode: "en-to-zh" | "zh-to-en") => void;
+  onModeChange: (mode: TranslateMode) => void;
   onRequest: () => void;
   onApply: () => void;
   onClose: () => void;
@@ -26,7 +28,7 @@ export function TranslateModal({
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
+    <div data-testid="translate-dialog" className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
       <div className="w-full max-w-5xl rounded-xl border border-white bg-white p-5 shadow-2xl">
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
@@ -37,11 +39,13 @@ export function TranslateModal({
         </div>
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
-          <select value={mode} onChange={(event) => onModeChange(event.target.value as "en-to-zh" | "zh-to-en")} className="input max-w-48">
-            <option value="en-to-zh">English to Chinese</option>
-            <option value="zh-to-en">Chinese to English</option>
+          <select value={mode} onChange={(event) => onModeChange(event.target.value as TranslateMode)} className="input max-w-64">
+            <option value="en-to-zh">English to Simplified Chinese</option>
+            <option value="zh-to-en">Simplified Chinese to English</option>
+            <option value="auto-to-zh">Auto-detect to Simplified Chinese</option>
           </select>
           <button className="btn-primary" onClick={onRequest} disabled={loading}>{loading ? "Translating..." : "Create Preview"}</button>
+          {preview ? <span className="rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">Provider: {preview.providerMode}</span> : null}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -50,7 +54,7 @@ export function TranslateModal({
             <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{sourceText}</pre>
           </section>
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-slate-700">Translation</h3>
+            <h3 className="mb-2 text-sm font-semibold text-slate-700">Translation / 中文翻译</h3>
             <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-slate-800">{preview?.translatedText ?? "No preview yet."}</pre>
           </section>
         </div>

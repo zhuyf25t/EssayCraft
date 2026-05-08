@@ -3,16 +3,17 @@ import "server-only";
 import OpenAI from "openai";
 
 export function hasAiKey() {
-  return Boolean(process.env.DEEPSEEK_API_KEY) && process.env.ESSAYCRAFT_FORCE_MOCK_AI !== "1";
+  return Boolean(process.env.DEEPSEEK_API_KEY?.trim()) && process.env.ESSAYCRAFT_FORCE_MOCK_AI !== "1";
 }
 
 export function createAiClient() {
-  if (!process.env.DEEPSEEK_API_KEY) {
+  const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
+  if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY is not set. Add it to .env.local or use mock fallback.");
   }
 
   return new OpenAI({
-    apiKey: process.env.DEEPSEEK_API_KEY,
+    apiKey,
     baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
     maxRetries: 1,
     timeout: 12000

@@ -32,15 +32,23 @@ export async function POST(request: Request) {
 
       const parsed = translateResponseSchema.parse(JSON.parse(raw));
       const translatedText = cleanGeneratedText(parsed.translatedText);
+      if (parsed.mode !== input.mode) {
+        throw new Error(`AI returned ${parsed.mode}, expected ${input.mode}.`);
+      }
+      if (!translatedText.trim()) {
+        throw new Error("AI returned empty translated text after cleanup.");
+      }
       const exact = exactAnnotations(translatedText, parsed.annotations);
       return NextResponse.json({
         ...parsed,
         translatedText,
         annotations: exact.annotations,
-        warnings: [...(parsed.warnings ?? []), ...exact.warnings]
+        warnings: [...(parsed.warnings ?? []), ...exact.warnings],
+        providerMode: "deepseek"
       });
     } catch (aiError) {
       const fallback = mockTranslate(scopedInput);
+      fallback.providerMode = "fallback";
       fallback.warnings.push(`DeepSeek translation unavailable; used mock preview. ${aiError instanceof Error ? aiError.message : ""}`.trim());
       return NextResponse.json(fallback);
     }
@@ -60,15 +68,76 @@ function selectedText(text: string, range: { start: number; end: number } | unde
 
 function mockTranslate(input: TranslateRequest): TranslateResponse {
   const translatedText =
-    input.mode === "en-to-zh"
-      ? `[Chinese translation preview]\n${input.text}\n\n(Mock translation: configure DEEPSEEK_API_KEY for natural Chinese.)`
-      : `English translation preview:\n${input.text}\n\n(Mock translation: configure DEEPSEEK_API_KEY for natural English.)`;
+    input.mode === "zh-to-en"
+      ? `English translation preview:\n${mockEnglishPreview(input.text)}\n\n(Mock translation: configure DEEPSEEK_API_KEY for natural English.)`
+      : `中文翻译预览：\n${mockChinesePreview(input.text)}\n\n（模拟翻译：配置 DEEPSEEK_API_KEY 后可生成更自然的中文。）`;
   const text = cleanGeneratedText(translatedText);
 
   return {
     translatedText: text,
     mode: input.mode,
     annotations: normalizeAnnotations(text, buildMockAnnotations(text)),
-    warnings: ["Mock translation preview. No document text was changed automatically."]
+    warnings: ["Mock translation preview. No document text was changed automatically."],
+    providerMode: "mock"
   };
+}
+
+function mockChinesePreview(value: string) {
+  return value
+    .split("\n")
+    .map((line) => translateLineToChinese(line))
+    .join("\n");
+}
+
+function translateLineToChinese(line: string) {
+  if (!line.trim()) return "";
+  const leading = line.match(/^(\s*[-*]\s*)/)?.[1] ?? "";
+  const body = line.slice(leading.length).trim();
+  const rules: Array<[RegExp, string]> = [
+    [/^Topic\s*:\s*/i, "主题："],
+    [/^Question\s*:\s*/i, "问题："],
+    [/^Research question\s*:\s*/i, "研究问题："],
+    [/^Working thesis\s*:\s*/i, "工作论点："],
+    [/^Thesis\s*:\s*/i, "论点："],
+    [/^Thesis map\s*:\s*/i, "论点路线图："],
+    [/^Research plan for\s*:\s*/i, "研究计划主题："],
+    [/^Argument branch\s*(\d*)\s*:\s*/i, "论证分支$1："],
+    [/^Evidence needed\s*:\s*/i, "需要的证据："],
+    [/^Evidence to use\s*:\s*/i, "可使用的证据："],
+    [/^Possible source type\s*:\s*/i, "可能的来源类型："],
+    [/^Suggested source type\s*:\s*/i, "建议来源类型："],
+    [/^Search keywords\s*:\s*/i, "搜索关键词："],
+    [/^Source status\s*:\s*/i, "来源状态："],
+    [/^Counterargument(?: to investigate)?\s*:\s*/i, "需要调查的反方观点："],
+    [/^Introduction plan$/i, "引言计划"],
+    [/^Body paragraph\s*(\d*)$/i, "主体段落$1"],
+    [/^Counterargument paragraph$/i, "反方观点段落"],
+    [/^Conclusion plan$/i, "结论计划"]
+  ];
+
+  for (const [pattern, label] of rules) {
+    if (pattern.test(body)) {
+      return `${leading}${body.replace(pattern, label)}（保留原意）`;
+    }
+  }
+
+  if (/[\u4e00-\u9fff]/.test(body)) return `${leading}${body}`;
+  if (body.includes("[citation needed]") || body.includes("[source needed]")) {
+    return `${leading}此处需要来源支持 ${body.match(/\[(?:citation|source) needed\]/i)?.[0] ?? "[citation needed]"}`;
+  }
+  return `${leading}译文：${body}`;
+}
+
+function mockEnglishPreview(value: string) {
+  return value
+    .split("\n")
+    .map((line) => {
+      if (!line.trim()) return "";
+      if (/^主题[:：]/.test(line)) return line.replace(/^主题[:：]\s*/, "Topic: ");
+      if (/^问题[:：]/.test(line)) return line.replace(/^问题[:：]\s*/, "Question: ");
+      if (/^研究问题[:：]/.test(line)) return line.replace(/^研究问题[:：]\s*/, "Research question: ");
+      if (/^工作论点[:：]/.test(line)) return line.replace(/^工作论点[:：]\s*/, "Working thesis: ");
+      return `Translation: ${line}`;
+    })
+    .join("\n");
 }

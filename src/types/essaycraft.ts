@@ -41,7 +41,13 @@ export type SourceCard = {
   publisher?: string;
   doi?: string;
   url?: string;
-  sourceType?: "scholarly" | "professional" | "popular" | "social" | "unknown";
+  sourceType?: "scholarly" | "professional" | "government" | "popular" | "social" | "unknown";
+  cars?: {
+    credible?: boolean;
+    accurate?: boolean;
+    reasonable?: boolean;
+    support?: boolean;
+  };
   credibilityNotes?: string;
   userNotes?: string;
   verified?: boolean;
@@ -158,12 +164,13 @@ export type TranslateRequest = {
   moduleNumber: ModuleNumber;
   text: string;
   selectedRange?: TextRange;
-  mode: "en-to-zh" | "zh-to-en";
+  mode: "en-to-zh" | "zh-to-en" | "auto-to-zh";
 };
 
 export type TranslateResponse = {
   translatedText: string;
-  mode: "en-to-zh" | "zh-to-en";
+  mode: "en-to-zh" | "zh-to-en" | "auto-to-zh";
   annotations: Annotation[];
   warnings: string[];
+  providerMode: "deepseek" | "mock" | "fallback";
 };

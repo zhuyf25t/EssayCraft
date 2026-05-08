@@ -62,7 +62,13 @@ export const sourceCardSchema = z.object({
   publisher: z.string().optional(),
   doi: z.string().optional(),
   url: z.string().optional(),
-  sourceType: z.enum(["scholarly", "professional", "popular", "social", "unknown"]).optional(),
+  sourceType: z.enum(["scholarly", "professional", "government", "popular", "social", "unknown"]).optional(),
+  cars: z.object({
+    credible: z.boolean().optional(),
+    accurate: z.boolean().optional(),
+    reasonable: z.boolean().optional(),
+    support: z.boolean().optional()
+  }).optional(),
   credibilityNotes: z.string().optional(),
   userNotes: z.string().optional(),
   verified: z.boolean().optional(),
@@ -140,12 +146,13 @@ export const translateRequestSchema = z.object({
   moduleNumber: moduleNumberSchema,
   text: z.string(),
   selectedRange: rangeSchema.optional(),
-  mode: z.enum(["en-to-zh", "zh-to-en"])
+  mode: z.enum(["en-to-zh", "zh-to-en", "auto-to-zh"])
 });
 
 export const translateResponseSchema = z.object({
   translatedText: z.string(),
-  mode: z.enum(["en-to-zh", "zh-to-en"]),
+  mode: z.enum(["en-to-zh", "zh-to-en", "auto-to-zh"]),
   annotations: z.array(annotationSchema).default([]),
-  warnings: z.array(z.string()).default([])
+  warnings: z.array(z.string()).default([]),
+  providerMode: z.enum(["deepseek", "mock", "fallback"]).default("deepseek")
 });

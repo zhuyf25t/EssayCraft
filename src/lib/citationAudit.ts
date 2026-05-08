@@ -5,6 +5,8 @@ export type CitationAudit = {
   citationNeededMarkers: string[];
   evidenceWithoutCitation: string[];
   inTextCitations: string[];
+  citationsWithoutSourceCard: string[];
+  realSources: SourceCard[];
   matchedSources: SourceCard[];
   uncitedSources: SourceCard[];
   incompleteSources: SourceCard[];
@@ -17,15 +19,21 @@ export function buildCitationAudit(text: string, annotations: Annotation[], sour
   const citationNeededMarkers = [...text.matchAll(/\[citation needed\]/gi)].map((match) => match[0]);
   const inTextCitations = [...text.matchAll(CITATION_PATTERN)].map((match) => match[0]);
   const evidenceWithoutCitation = findEvidenceWithoutCitation(text, annotations);
-  const matchedSources = sources.filter((source) => sourceMatchesAnyCitation(source, inTextCitations));
-  const uncitedSources = sources.filter((source) => !sourceMatchesAnyCitation(source, inTextCitations));
-  const incompleteSources = sources.filter((source) => !source.title || !source.authors?.length || !source.year);
   const placeholderSources = sources.filter((source) => source.placeholder);
+  const realSources = sources.filter((source) => !source.placeholder);
+  const matchedSources = realSources.filter((source) => sourceMatchesAnyCitation(source, inTextCitations));
+  const uncitedSources = realSources.filter((source) => !sourceMatchesAnyCitation(source, inTextCitations));
+  const incompleteSources = realSources.filter((source) => !source.title || !source.authors?.length || !source.year);
+  const citationsWithoutSourceCard = inTextCitations.filter((citation) =>
+    !realSources.some((source) => sourceMatchesAnyCitation(source, [citation]))
+  );
 
   return {
     citationNeededMarkers,
     evidenceWithoutCitation,
     inTextCitations,
+    citationsWithoutSourceCard,
+    realSources,
     matchedSources,
     uncitedSources,
     incompleteSources,
