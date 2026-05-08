@@ -6,9 +6,11 @@ export function moduleStatus(doc: ModuleDocument): ModuleStatus {
   const text = doc.text.trim();
   if (!text) return "empty";
 
+  const planningModule = doc.moduleNumber <= 3;
   const hasIssues =
     doc.annotations.some((annotation) => annotation.label === "issue") ||
-    /\[(?:citation|source) needed\]/i.test(text);
+    /\[citation needed\]/i.test(text) ||
+    (!planningModule && /\[source needed(?::[^\]]*)?\]/i.test(text));
 
   if (hasIssues) return "has issues";
 

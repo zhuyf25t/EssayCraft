@@ -63,9 +63,14 @@ export function SourceWorkbench({
   const [draft, setDraft] = useState<DraftSource>(EMPTY_SOURCE);
   const [expanded, setExpanded] = useState(false);
   const audit = useMemo(() => buildCitationAudit(text, annotations, sources), [annotations, sources, text]);
+  const planningModule = moduleNumber <= 3;
+  const sourceNeeds = useMemo(
+    () => [...audit.sourceNeedMarkers, ...audit.placeholderSources.map((source) => source.title || "Source need placeholder")],
+    [audit.placeholderSources, audit.sourceNeedMarkers]
+  );
   const citationIssues = useMemo(
-    () => [...audit.evidenceWithoutCitation, ...annotations.filter((annotation) => annotation.label === "issue").map((annotation) => annotation.text)],
-    [annotations, audit.evidenceWithoutCitation]
+    () => planningModule ? [] : [...audit.evidenceWithoutCitation, ...annotations.filter((annotation) => annotation.label === "issue").map((annotation) => annotation.text)],
+    [annotations, audit.evidenceWithoutCitation, planningModule]
   );
   const moduleFive = moduleNumber === 5;
 
@@ -107,10 +112,10 @@ export function SourceWorkbench({
       </div>
 
       <div className="grid grid-cols-2 gap-2 text-xs">
-        <Metric label="Needs citation" value={audit.citationNeededMarkers.length + audit.evidenceWithoutCitation.length} tone="red" />
+        <Metric label="Citation gaps" value={planningModule ? 0 : audit.citationNeededMarkers.length + audit.evidenceWithoutCitation.length} tone="red" />
         <Metric label="Real sources" value={audit.realSources.length} tone="blue" />
         <Metric label="In-text cites" value={audit.inTextCitations.length} tone="slate" />
-        <Metric label="Source needs" value={audit.placeholderSources.length} tone="amber" />
+        <Metric label="Source needs" value={sourceNeeds.length} tone="amber" />
       </div>
 
       <div className="mt-3 space-y-2">
@@ -192,10 +197,24 @@ export function SourceWorkbench({
         )}
       </div>
 
-      <div className="mt-4 rounded-lg border border-red-100 bg-red-50 p-3 text-xs text-red-800">
+      <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50 p-3 text-xs text-amber-900">
+        <div className="mb-2 font-semibold">Source needs to research</div>
+        {sourceNeeds.length === 0 ? (
+          <p>No planned source needs detected yet. Add a source card or create a source need from selected text.</p>
+        ) : (
+          <ul className="space-y-1">
+            {sourceNeeds.slice(0, 5).map((need, index) => <li key={`${index}-${need.slice(0, 48)}`}>- {need}</li>)}
+          </ul>
+        )}
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-amber-800" onClick={onAddPlaceholder}>Create source need</button>
+        </div>
+      </div>
+
+      <div className="mt-3 rounded-lg border border-red-100 bg-red-50 p-3 text-xs text-red-800">
         <div className="mb-2 font-semibold">Citation gaps</div>
         {citationIssues.length === 0 ? (
-          <p>No current gaps detected. Refresh highlighting to scan again.</p>
+          <p>{planningModule ? "Citation-gap checking becomes central in Module 4 and Module 5." : "No current gaps detected. Refresh highlighting to scan again."}</p>
         ) : (
           <ul className="space-y-1">
             {citationIssues.slice(0, 5).map((issue, index) => <li key={`${index}-${issue.slice(0, 48)}`}>- {issue}</li>)}
@@ -209,8 +228,9 @@ export function SourceWorkbench({
           </div>
         ) : null}
         <div className="mt-2 flex flex-wrap gap-2">
-          <button className="rounded-md border border-red-200 bg-white px-2 py-1 text-red-700" onClick={onMarkSelectionNeedsCitation}>Mark selected text as evidence</button>
-          <button className="rounded-md border border-red-200 bg-white px-2 py-1 text-red-700" onClick={onAddPlaceholder}>Create source need</button>
+          {!planningModule ? (
+            <button className="rounded-md border border-red-200 bg-white px-2 py-1 text-red-700" onClick={onMarkSelectionNeedsCitation}>Mark selected text as evidence</button>
+          ) : null}
         </div>
       </div>
     </section>

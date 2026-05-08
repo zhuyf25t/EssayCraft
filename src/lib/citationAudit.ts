@@ -3,6 +3,7 @@ import { sentenceRanges } from "@/lib/annotations";
 
 export type CitationAudit = {
   citationNeededMarkers: string[];
+  sourceNeedMarkers: string[];
   evidenceWithoutCitation: string[];
   inTextCitations: string[];
   citationsWithoutSourceCard: string[];
@@ -17,6 +18,7 @@ const CITATION_PATTERN = /\(([A-Z][A-Za-z' -]+(?:\s*&\s*[A-Z][A-Za-z' -]+)?),\s*
 
 export function buildCitationAudit(text: string, annotations: Annotation[], sources: SourceCard[]): CitationAudit {
   const citationNeededMarkers = [...text.matchAll(/\[citation needed\]/gi)].map((match) => match[0]);
+  const sourceNeedMarkers = findSourceNeeds(text);
   const inTextCitations = [...text.matchAll(CITATION_PATTERN)].map((match) => match[0]);
   const evidenceWithoutCitation = findEvidenceWithoutCitation(text, annotations);
   const placeholderSources = sources.filter((source) => source.placeholder);
@@ -30,6 +32,7 @@ export function buildCitationAudit(text: string, annotations: Annotation[], sour
 
   return {
     citationNeededMarkers,
+    sourceNeedMarkers,
     evidenceWithoutCitation,
     inTextCitations,
     citationsWithoutSourceCard,
@@ -64,7 +67,7 @@ function findEvidenceWithoutCitation(text: string, annotations: Annotation[]) {
   return sentences
     .filter((sentence) => {
       const lower = sentence.text.toLowerCase();
-      const citationLike = CITATION_PATTERN.test(sentence.text) || lower.includes("[citation needed]");
+      const citationLike = CITATION_PATTERN.test(sentence.text) || lower.includes("[citation needed]") || lower.includes("[source needed");
       CITATION_PATTERN.lastIndex = 0;
       const evidenceLike =
         lower.includes("research") ||
@@ -76,6 +79,19 @@ function findEvidenceWithoutCitation(text: string, annotations: Annotation[]) {
       return evidenceLike && !citationLike;
     })
     .map((sentence) => sentence.text);
+}
+
+function findSourceNeeds(text: string) {
+  const bracketed = [...text.matchAll(/\[source needed(?::[^\]]*)?\]/gi)].map((match) => match[0]);
+  const planningLines = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) =>
+      /^(Evidence to look for|Evidence needed|Evidence to use|Source status)\s*:/i.test(line) &&
+      /(source needed|research|study|report|evidence)/i.test(line) &&
+      !/\[source needed/i.test(line)
+    );
+  return Array.from(new Set([...bracketed, ...planningLines]));
 }
 
 function sourceMatchesAnyCitation(source: SourceCard, citations: string[]) {

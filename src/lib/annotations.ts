@@ -96,7 +96,8 @@ export function repairAnnotation(text: string, annotation: Annotation): Annotati
 }
 
 export function buildMockAnnotations(text: string): Annotation[] {
-  return sentenceRanges(text)
+  const ranges = text.includes("\n") ? lineRanges(text) : sentenceRanges(text);
+  return ranges
     .filter((range) => range.text.trim().length > 0)
     .map((range, index) => ({
       id: deterministicId("ann", `${range.start}:${range.end}:${range.text}:${index}`),
@@ -159,6 +160,25 @@ export function sentenceRanges(text: string): Range[] {
   return ranges;
 }
 
+function lineRanges(text: string): Range[] {
+  const normalized = normalizeText(text);
+  const ranges: Range[] = [];
+  let offset = 0;
+
+  for (const line of normalized.split("\n")) {
+    const leading = line.match(/^\s*/)?.[0].length ?? 0;
+    const trailing = line.match(/\s*$/)?.[0].length ?? 0;
+    const start = offset + leading;
+    const end = offset + line.length - trailing;
+    if (end > start) {
+      ranges.push({ start, end, text: normalized.slice(start, end) });
+    }
+    offset += line.length + 1;
+  }
+
+  return ranges.length ? ranges : sentenceRanges(normalized);
+}
+
 export function findIssueRanges(text: string): Annotation[] {
   const annotations: Annotation[] = [];
   const pattern = /\[citation needed\]/gi;
@@ -184,14 +204,25 @@ export function annotationAtOffset(annotations: Annotation[], offset: number) {
 }
 
 export function guessLabel(text: string, index = 0): SegmentLabel {
-  const lower = text.toLowerCase();
-  if (lower.includes("[citation needed]") || lower.includes("needs source") || lower.includes("missing citation")) return "issue";
+  const trimmed = text.trim();
+  const lower = trimmed.toLowerCase();
+  if (/\[citation needed\]/i.test(trimmed) || lower.includes("missing citation")) return "issue";
+  if (/^(topic|research question|question)\s*:/i.test(trimmed)) return "background";
+  if (/^(hook|background|context|introduction(?: plan)?)\b/i.test(trimmed)) return "background";
+  if (/^[-*]?\s*(working thesis|thesis|thesis map)\s*:/i.test(trimmed)) return "thesis";
+  if (/^[-*]?\s*reason\s*\d+\s*:/i.test(trimmed)) return "thesis";
+  if (/^[-*]?\s*(argument branch|argument|branch|claim)\s*\w*\s*:/i.test(trimmed)) return "thesis";
+  if (/^[-*]?\s*(topic sentence)\s*:/i.test(trimmed)) return "thesis";
+  if (/^[-*]?\s*(possible source type|suggested source type|search keywords|source status|cars check)\s*:/i.test(trimmed)) return "plain";
+  if (/\[source needed(?::[^\]]*)?\]/i.test(trimmed)) return "evidence";
+  if (/^[-*]?\s*(evidence needed|evidence to look for|evidence to use|evidence to find|evidence)\s*:/i.test(trimmed)) return "evidence";
   if (/\([a-z][a-z\s&.,-]+,\s*\d{4}[a-z]?\)/i.test(text) || lower.includes("reference list") || lower.includes("doi:")) return "citation";
-  if (lower.includes("this essay argues") || lower.includes("this paper argues") || lower.includes("working thesis") || lower.includes("thesis:")) return "thesis";
-  if (lower.includes("some argue") || lower.includes("critics argue") || lower.includes("counterargument") || lower.includes("however")) return "counterargument";
-  if (lower.includes("research") || lower.includes("study") || lower.includes("evidence") || lower.includes("data") || lower.includes("for example")) return "evidence";
+  if (/^[-*]?\s*(analysis|analysis purpose|response)\s*:/i.test(trimmed)) return "analysis";
+  if (/^[-*]?\s*(counterargument|opposing view)\b/i.test(trimmed) || lower.includes("some readers may argue") || lower.includes("critics argue") || lower.includes("however")) return "counterargument";
+  if (/^[-*]?\s*(conclusion|conclusion plan|rephrased thesis|so what|implication)\b/i.test(trimmed) || lower.includes("in conclusion") || lower.includes("overall") || lower.includes("to conclude")) return "conclusion";
+  if (lower.includes("this essay argues") || lower.includes("this paper argues")) return "thesis";
   if (lower.includes("because") || lower.includes("therefore") || lower.includes("this means") || lower.includes("suggests") || lower.includes("as a result")) return "analysis";
-  if (lower.includes("in conclusion") || lower.includes("overall") || lower.includes("final") || lower.includes("to conclude")) return "conclusion";
-  if (lower.includes("topic:") || lower.includes("introduction") || lower.includes("background") || index === 0) return "background";
+  if (lower.includes("research") || lower.includes("study") || lower.includes("data") || lower.includes("for example")) return "evidence";
+  if (index === 0) return "background";
   return LABEL_SEQUENCE[index % LABEL_SEQUENCE.length] ?? "plain";
 }
