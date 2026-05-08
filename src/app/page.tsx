@@ -13,12 +13,15 @@ import { SourceWorkbench } from "@/components/SourceWorkbench";
 import { Toolbar } from "@/components/Toolbar";
 import { TranslateModal } from "@/components/TranslateModal";
 import { normalizeAnnotations, normalizeText, sentenceRangeAt } from "@/lib/annotations";
+import { inTextCitationPreview } from "@/lib/citationAudit";
 import { copyRichText, downloadCurrentModuleHtml, downloadProjectJson } from "@/lib/export";
-import { addSnapshot, clearModule, migrateProject, replaceModuleContent, restoreSnapshot } from "@/lib/project";
+import { repairPatchesForText } from "@/lib/patches";
+import { addSnapshot, clearModule, importProject, replaceModuleContent, restoreSnapshot } from "@/lib/project";
 import { loadProject, resetProjectStorage, saveProject } from "@/lib/storage";
 import { clampModule, id, nowIso } from "@/lib/utils";
 import type {
   AssistResponse,
+  Annotation,
   GenerateNextResponse,
   ModuleDocument,
   ModuleNumber,
@@ -109,6 +112,7 @@ export default function Home() {
       ...doc,
       text,
       annotations: normalizeAnnotations(text, doc.annotations),
+      patches: repairPatchesForText(text, doc.patches),
       updatedAt: nowIso()
     }));
     setStatus("Auto-saved. Refresh if highlights need updating.");
@@ -317,7 +321,9 @@ export default function Home() {
     if (!file) return;
     try {
       const text = await file.text();
-      const imported = migrateProject(JSON.parse(text));
+      const imported = importProject(JSON.parse(text));
+      if (!window.confirm(`Import "${imported.title}" and replace the current project? A JSON backup will download first.`)) return;
+      downloadProjectJson(activeProject);
       setProject(imported);
       setSelectedRange(EMPTY_RANGE);
       setPatchRange(null);
@@ -364,6 +370,58 @@ export default function Home() {
       verified: false,
       placeholder: true
     });
+  }
+
+  function insertCitation(source: SourceCard) {
+    const citation = inTextCitationPreview(source);
+    if (!citation) {
+      setStatus("Add author and year before inserting an in-text citation.");
+      return;
+    }
+    updateCurrentModule((doc) => {
+      const snapDoc = addSnapshot(doc, "Before inserting citation");
+      const insertAt = selectedRange.end;
+      const needsSpace = insertAt > 0 && !/\s/.test(snapDoc.text[insertAt - 1] ?? "");
+      const insertion = `${needsSpace ? " " : ""}${citation}`;
+      const text = `${snapDoc.text.slice(0, insertAt)}${insertion}${snapDoc.text.slice(insertAt)}`;
+      return {
+        ...snapDoc,
+        text,
+        annotations: normalizeAnnotations(text, snapDoc.annotations),
+        patches: repairPatchesForText(text, snapDoc.patches),
+        updatedAt: nowIso()
+      };
+    });
+    setStatus(`Inserted ${citation} from your source card.`);
+  }
+
+  function markSelectionNeedsCitation() {
+    const range = selectedRange.end > selectedRange.start ? selectedRange : sentenceRangeAt(activeDoc.text, selectedRange.start, selectedRange.end);
+    updateCurrentModule((doc) => {
+      const snapDoc = addSnapshot(doc, "Before marking citation need");
+      const marker = " [citation needed]";
+      const text = `${snapDoc.text.slice(0, range.end)}${marker}${snapDoc.text.slice(range.end)}`;
+      const markerStart = range.end + 1;
+      return {
+        ...snapDoc,
+        text,
+        annotations: normalizeAnnotations(text, [
+          ...snapDoc.annotations,
+          {
+            id: id("ann"),
+            start: markerStart,
+            end: markerStart + "[citation needed]".length,
+            text: "[citation needed]",
+            label: "issue",
+            confidence: 0.95,
+            comment: "User marked this passage as needing source support."
+          }
+        ]),
+        patches: repairPatchesForText(text, snapDoc.patches),
+        updatedAt: nowIso()
+      };
+    });
+    setStatus("Marked the selected passage as needing a citation.");
   }
 
   async function handleAssist(action: string) {
@@ -418,10 +476,12 @@ export default function Home() {
       if (assistantSuggestion.proposedText && assistantSuggestion.replaceRange) {
         const range = assistantSuggestion.replaceRange;
         const text = `${snapDoc.text.slice(0, range.start)}${assistantSuggestion.proposedText}${snapDoc.text.slice(range.end)}`;
+        const annotations = assistantSuggestion.annotations.length ? assistantSuggestion.annotations : snapDoc.annotations;
         return {
           ...snapDoc,
           text,
-          annotations: normalizeAnnotations(text, assistantSuggestion.annotations),
+          annotations: normalizeAnnotations(text, annotations),
+          patches: repairPatchesForText(text, snapDoc.patches),
           updatedAt: nowIso()
         };
       }
@@ -482,7 +542,10 @@ export default function Home() {
       return {
         ...snapDoc,
         text,
-        annotations: normalizeAnnotations(text, translatePreview.annotations),
+        annotations: useSelection
+          ? mergeSelectedTranslationAnnotations(snapDoc.annotations, selectedRange, text, translatePreview.translatedText, translatePreview.annotations)
+          : normalizeAnnotations(text, translatePreview.annotations),
+        patches: useSelection ? repairPatchesForText(text, snapDoc.patches) : [],
         updatedAt: nowIso()
       };
     });
@@ -518,9 +581,6 @@ export default function Home() {
             currentModule={activeProject.currentModule}
             loading={loading}
             status={status}
-            onPrev={() => switchModule(clampModule(activeProject.currentModule - 1))}
-            onNext={() => switchModule(clampModule(activeProject.currentModule + 1))}
-            onGenerateNext={handleGenerateNext}
             onRefresh={handleRefresh}
             onSaveSnapshot={handleSaveSnapshot}
             onClearModule={handleClearModule}
@@ -535,6 +595,19 @@ export default function Home() {
             onTranslate={openTranslate}
           />
           <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void handleImportJson(event.target.files?.[0])} />
+
+          <div className="border-b border-slate-200 bg-[#fffdf8]/95 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button className="btn-secondary min-w-44" onClick={() => switchModule(clampModule(activeProject.currentModule - 1))} disabled={activeProject.currentModule <= 1 || loading}>
+                Back to Module {Math.max(1, activeProject.currentModule - 1)}
+              </button>
+              <button className="btn-primary min-w-80 text-base" onClick={handleGenerateNext} disabled={activeProject.currentModule >= 6 || loading}>
+                Next: Generate Module {Math.min(6, activeProject.currentModule + 1)} from Module {activeProject.currentModule}
+              </button>
+              <button className="btn-secondary min-w-40" onClick={handleSaveSnapshot} disabled={loading}>Quick Snapshot</button>
+              <button className="btn-secondary min-w-36" onClick={handleDownloadHtml} disabled={loading}>Export Current HTML</button>
+            </div>
+          </div>
 
           <div className="grid flex-1 grid-cols-1 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_380px]">
             <div className="min-w-0 space-y-3">
@@ -599,12 +672,15 @@ export default function Home() {
               <SnapshotPanel snapshots={activeDoc.snapshots} onRestore={handleRestoreSnapshot} />
               <SourceWorkbench
                 moduleNumber={activeProject.currentModule}
+                text={activeDoc.text}
                 annotations={activeDoc.annotations}
                 sources={activeDoc.sources}
                 onAdd={addSource}
                 onToggleVerified={toggleSourceVerified}
                 onDelete={deleteSource}
                 onAddPlaceholder={addPlaceholderSource}
+                onInsertCitation={insertCitation}
+                onMarkSelectionNeedsCitation={markSelectionNeedsCitation}
               />
             </aside>
           </div>
@@ -652,4 +728,28 @@ function mergeSources(primary: SourceCard[], secondary: SourceCard[]) {
   }
 
   return result;
+}
+
+function mergeSelectedTranslationAnnotations(
+  existing: Annotation[],
+  range: TextRange,
+  nextText: string,
+  translatedText: string,
+  translatedAnnotations: Annotation[]
+) {
+  const delta = translatedText.length - (range.end - range.start);
+  const preserved = existing
+    .filter((annotation) => annotation.end <= range.start || annotation.start >= range.end)
+    .map((annotation) => (
+      annotation.start >= range.end
+        ? { ...annotation, start: annotation.start + delta, end: annotation.end + delta }
+        : annotation
+    ));
+  const inserted = translatedAnnotations.map((annotation) => ({
+    ...annotation,
+    start: range.start + annotation.start,
+    end: range.start + annotation.end
+  }));
+
+  return normalizeAnnotations(nextText, [...preserved, ...inserted]);
 }

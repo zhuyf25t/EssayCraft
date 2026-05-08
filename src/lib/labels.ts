@@ -65,5 +65,6 @@ export const LABEL_ORDER: SegmentLabel[] = [
   "counterargument",
   "citation",
   "conclusion",
-  "issue"
+  "issue",
+  "plain"
 ];

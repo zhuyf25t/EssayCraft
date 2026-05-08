@@ -4,9 +4,6 @@ type ToolbarProps = {
   currentModule: ModuleNumber;
   loading: boolean;
   status: string;
-  onPrev: () => void;
-  onNext: () => void;
-  onGenerateNext: () => void;
   onRefresh: () => void;
   onSaveSnapshot: () => void;
   onClearModule: () => void;
@@ -19,16 +16,9 @@ type ToolbarProps = {
 };
 
 export function Toolbar(props: ToolbarProps) {
-  const canPrev = props.currentModule > 1;
-  const canNext = props.currentModule < 6;
-
   return (
     <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 bg-white/90 p-3">
-      <button className="btn-secondary" onClick={props.onPrev} disabled={!canPrev || props.loading}>← Prev</button>
-      <button className="btn-secondary" onClick={props.onNext} disabled={!canNext || props.loading}>Next →</button>
-      <button className="btn-primary min-w-64" onClick={props.onGenerateNext} disabled={!canNext || props.loading}>
-        Generate Module {Math.min(6, props.currentModule + 1)} from Module {props.currentModule}
-      </button>
+      <div className="mr-1 rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">Module {props.currentModule} tools</div>
       <button className="btn-warning" onClick={props.onRefresh} disabled={props.loading}>Refresh Highlighting</button>
       <button className="btn-secondary" onClick={props.onSaveSnapshot} disabled={props.loading}>Save Snapshot</button>
       <button className="btn-secondary" onClick={props.onClearModule} disabled={props.loading}>Clear Module</button>

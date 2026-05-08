@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { AssistRequest, AssistResponse } from "@/types/essaycraft";
 import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
-import { buildMockAnnotations, normalizeAnnotations } from "@/lib/annotations";
+import { buildMockAnnotations, exactAnnotations, normalizeAnnotations } from "@/lib/annotations";
 import { buildAssistMessages } from "@/lib/prompts";
 import { assistRequestSchema, assistResponseSchema } from "@/lib/schemas";
 
@@ -28,11 +28,19 @@ export async function POST(request: Request) {
       if (!raw) throw new Error("AI returned empty content.");
 
       const parsed = assistResponseSchema.parse(JSON.parse(raw));
-      const normalized: AssistResponse = {
-        ...parsed,
-        annotations: normalizeAnnotations(input.text, parsed.annotations ?? []),
-        warnings: parsed.warnings ?? []
-      };
+      const exact = exactAnnotations(input.text, parsed.annotations ?? []);
+      const rangeWarning = validateAssistReplaceRange(input, parsed);
+      const normalized: AssistResponse = rangeWarning
+        ? {
+            reply: `${parsed.reply} ${rangeWarning}`,
+            annotations: exact.annotations,
+            warnings: [...(parsed.warnings ?? []), ...exact.warnings, rangeWarning]
+          }
+        : {
+            ...parsed,
+            annotations: exact.annotations,
+            warnings: [...(parsed.warnings ?? []), ...exact.warnings]
+          };
 
       return NextResponse.json(normalized);
     } catch (aiError) {
@@ -44,6 +52,17 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 400 });
   }
+}
+
+function validateAssistReplaceRange(input: AssistRequest, response: AssistResponse) {
+  if (!response.replaceRange) return "";
+  const range = response.replaceRange;
+  const inBounds = range.start >= 0 && range.end >= range.start && range.end <= input.text.length;
+  if (!inBounds) return "Assistant replacement was blocked because it targeted an invalid range.";
+  if (input.selectedRange && (range.start !== input.selectedRange.start || range.end !== input.selectedRange.end)) {
+    return "Assistant replacement was blocked because it did not target the submitted selection.";
+  }
+  return "";
 }
 
 function mockAssist(input: AssistRequest): AssistResponse {

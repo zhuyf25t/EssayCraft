@@ -40,7 +40,7 @@ export function ProgressTracker({ project, actionSteps, activeStep, onSelect }: 
                 title={`Module ${moduleNumber}: ${MODULE_TITLES[moduleNumber]}`}
               >
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-white font-semibold">
-                  {hasContent && !isCurrent ? "✓" : moduleNumber}
+                  {hasContent && !isCurrent ? "ok" : moduleNumber}
                 </span>
                 <span className="hidden truncate md:block">{MODULE_TITLES[moduleNumber]}</span>
               </button>

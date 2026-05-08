@@ -205,6 +205,26 @@ export function migrateProject(raw: unknown): Project {
   };
 }
 
+export function importProject(raw: unknown): Project {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Project JSON must be an object.");
+  }
+  const maybe = raw as Partial<Project>;
+  if (maybe.schemaVersion !== 1) {
+    throw new Error("Unsupported or missing EssayCraft schemaVersion.");
+  }
+  if (!maybe.modules || typeof maybe.modules !== "object") {
+    throw new Error("Project JSON is missing the six module documents.");
+  }
+  for (const moduleNumber of [1, 2, 3, 4, 5, 6] as ModuleNumber[]) {
+    const doc = maybe.modules[moduleNumber] ?? maybe.modules[String(moduleNumber) as unknown as ModuleNumber];
+    if (!doc || typeof doc.text !== "string") {
+      throw new Error(`Module ${moduleNumber} is missing plain text content.`);
+    }
+  }
+  return normalizeProject(maybe as Project);
+}
+
 export function normalizeProject(project: Project): Project {
   const initial = createInitialProject();
   const modules = { ...initial.modules };

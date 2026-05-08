@@ -38,7 +38,6 @@ export function downloadProjectJson(project: Project) {
 export function downloadCurrentModuleHtml(project: Project) {
   const doc = project.modules[project.currentModule];
   const legend = Object.entries(LABELS)
-    .filter(([key]) => key !== "plain")
     .map(([key, value]) => {
       const label = key as SegmentLabel;
       return `<li><span style="background:${COLORS[label]}; padding:2px 8px; border-radius:4px;">${escapeHtml(value.name)}</span> - ${escapeHtml(value.description)}</li>`;
