@@ -21,7 +21,6 @@ export function AssistantPanel({
   onAction,
   onApply,
   onDismiss,
-  onTranslate,
   onRefresh
 }: {
   selectedText: string;
@@ -31,7 +30,6 @@ export function AssistantPanel({
   onAction: (action: string) => void;
   onApply: () => void;
   onDismiss: () => void;
-  onTranslate: () => void;
   onRefresh: () => void;
 }) {
   const [instruction, setInstruction] = useState("");
@@ -72,7 +70,7 @@ export function AssistantPanel({
           <button
             key={action}
             className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
-            onClick={() => (action.startsWith("Translate") ? onTranslate() : onAction(action))}
+            onClick={() => onAction(action)}
             disabled={loading}
           >
             {action}

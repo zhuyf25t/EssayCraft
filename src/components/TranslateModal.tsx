@@ -12,7 +12,7 @@ export function TranslateModal({
   preview,
   onModeChange,
   onRequest,
-  onApply,
+  onCopy,
   onClose
 }: {
   open: boolean;
@@ -22,7 +22,7 @@ export function TranslateModal({
   preview?: TranslateResponse;
   onModeChange: (mode: TranslateMode) => void;
   onRequest: () => void;
-  onApply: () => void;
+  onCopy: () => void;
   onClose: () => void;
 }) {
   if (!open) return null;
@@ -33,7 +33,7 @@ export function TranslateModal({
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="font-crayon text-2xl font-bold text-blue-700">Translate Preview</h2>
-            <p className="text-sm text-slate-500">Preview first. Applying snapshots the module before replacing text.</p>
+            <p className="text-sm text-slate-500">Preview-only reference. This tool never changes the original document.</p>
           </div>
           <button className="btn-secondary" onClick={onClose}>Close</button>
         </div>
@@ -54,7 +54,7 @@ export function TranslateModal({
             <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">{sourceText}</pre>
           </section>
           <section>
-            <h3 className="mb-2 text-sm font-semibold text-slate-700">Translation / 中文翻译</h3>
+            <h3 className="mb-2 text-sm font-semibold text-slate-700">Translation / Chinese Preview</h3>
             <pre className="max-h-[50vh] overflow-auto whitespace-pre-wrap rounded-lg border border-blue-100 bg-blue-50 p-3 text-sm text-slate-800">{preview?.translatedText ?? "No preview yet."}</pre>
           </section>
         </div>
@@ -66,8 +66,8 @@ export function TranslateModal({
         ) : null}
 
         <div className="mt-4 flex justify-end gap-2">
-          <button className="btn-secondary" onClick={onClose}>Dismiss</button>
-          <button className="btn-primary" onClick={onApply} disabled={!preview}>Apply translation</button>
+          <button className="btn-secondary" onClick={onClose}>Close</button>
+          <button className="btn-primary" onClick={onCopy} disabled={!preview}>Copy translation</button>
         </div>
       </div>
     </div>

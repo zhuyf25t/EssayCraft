@@ -22,7 +22,6 @@ import { loadProject, resetProjectStorage, saveProject } from "@/lib/storage";
 import { clampModule, id, nowIso } from "@/lib/utils";
 import type {
   AssistResponse,
-  Annotation,
   GenerateNextResponse,
   ModuleDocument,
   ModuleNumber,
@@ -584,27 +583,14 @@ export default function Home() {
     }
   }
 
-  function applyTranslation() {
+  async function copyTranslatePreview() {
     if (!translatePreview) return;
-    const useSelection = selectedRange.end > selectedRange.start;
-    updateCurrentModule((doc) => {
-      const snapDoc = addSnapshot(doc, "Before applying translation");
-      const text = useSelection
-        ? `${snapDoc.text.slice(0, selectedRange.start)}${translatePreview.translatedText}${snapDoc.text.slice(selectedRange.end)}`
-        : translatePreview.translatedText;
-      return {
-        ...snapDoc,
-        text,
-        annotations: useSelection
-          ? mergeSelectedTranslationAnnotations(snapDoc.annotations, selectedRange, text, translatePreview.translatedText, translatePreview.annotations)
-          : normalizeAnnotations(text, translatePreview.annotations),
-        patches: useSelection ? repairPatchesForText(text, snapDoc.patches) : [],
-        updatedAt: nowIso()
-      };
-    });
-    setTranslateOpen(false);
-    setTranslatePreview(undefined);
-    setStatus("Translation applied after snapshot. Refresh highlighting when ready.");
+    try {
+      await navigator.clipboard?.writeText(translatePreview.translatedText);
+      setStatus("Translation copied. The original module text was not changed.");
+    } catch {
+      setStatus("Translation preview is ready. Copy is unavailable in this browser context; the original text was not changed.");
+    }
   }
 
   return (
@@ -745,7 +731,6 @@ export default function Home() {
                 onAction={handleAssist}
                 onApply={handleApplyAssistant}
                 onDismiss={() => setAssistantSuggestion(undefined)}
-                onTranslate={openTranslate}
                 onRefresh={handleRefresh}
               />
               <SnapshotPanel snapshots={activeDoc.snapshots} onRestore={handleRestoreSnapshot} />
@@ -789,7 +774,7 @@ export default function Home() {
         preview={translatePreview}
         onModeChange={setTranslateMode}
         onRequest={requestTranslatePreview}
-        onApply={applyTranslation}
+        onCopy={copyTranslatePreview}
         onClose={() => setTranslateOpen(false)}
       />
     </main>
@@ -852,28 +837,4 @@ function findCitationNeededMarker(text: string, caret: number) {
     }
   }
   return null;
-}
-
-function mergeSelectedTranslationAnnotations(
-  existing: Annotation[],
-  range: TextRange,
-  nextText: string,
-  translatedText: string,
-  translatedAnnotations: Annotation[]
-) {
-  const delta = translatedText.length - (range.end - range.start);
-  const preserved = existing
-    .filter((annotation) => annotation.end <= range.start || annotation.start >= range.end)
-    .map((annotation) => (
-      annotation.start >= range.end
-        ? { ...annotation, start: annotation.start + delta, end: annotation.end + delta }
-        : annotation
-    ));
-  const inserted = translatedAnnotations.map((annotation) => ({
-    ...annotation,
-    start: range.start + annotation.start,
-    end: range.start + annotation.end
-  }));
-
-  return normalizeAnnotations(nextText, [...preserved, ...inserted]);
 }

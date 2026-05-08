@@ -109,6 +109,19 @@ function mockAssist(input: AssistRequest): AssistResponse {
     };
   }
 
+  if (action.includes("translate")) {
+    const translated = mockAssistantChinese(selected || input.text);
+    return {
+      reply: range
+        ? "Translation preview ready for the selected text. Apply only if you want to replace that selection."
+        : "Translation preview ready. Select a passage first if you want an applyable replacement.",
+      proposedText: translated,
+      replaceRange: range,
+      annotations: [],
+      warnings
+    };
+  }
+
   if ((action.includes("rewrite") || action.includes("academic") || action.includes("analysis")) && range) {
     const base = selected.trim() || "This point needs clearer explanation.";
     const proposedText = action.includes("analysis")
@@ -129,4 +142,20 @@ function mockAssist(input: AssistRequest): AssistResponse {
     annotations: [],
     warnings
   };
+}
+
+function mockAssistantChinese(value: string) {
+  const text = value.trim();
+  if (!text) return "请选择或输入要翻译的文本。";
+  return text
+    .replace(/social media/gi, "社交媒体")
+    .replace(/intentional habits/gi, "有意识的使用习惯")
+    .replace(/platforms?/gi, "平台")
+    .replace(/digital literacy/gi, "数字素养")
+    .replace(/students?/gi, "学生")
+    .replace(/evidence/gi, "证据")
+    .replace(/thesis/gi, "论点")
+    .replace(/research question/gi, "研究问题")
+    .replace(/Topic:/gi, "主题：")
+    .replace(/Question:/gi, "问题：");
 }
