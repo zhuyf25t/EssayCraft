@@ -33,16 +33,17 @@ Update both the TypeScript registry and the markdown mirror when revising prompt
 
 ## Module 1 To Module 2: Topic & Question To Research & Evidence
 
-Purpose: convert topic, research question, and early thesis into a research plan.
+Purpose: convert topic, research question, thesis, and thesis map into a research/source-card plan.
 
 Output should include:
 
-- refined question,
+- research plan for the student's actual topic/question,
 - working thesis/position,
-- three contributing argument branches,
+- three contributing argument branches or claims to investigate,
 - evidence needed for each branch,
-- suggested source types,
+- possible source types,
 - possible search keywords,
+- source status for each branch,
 - CARS source-evaluation reminder: Credible, Accurate, Reasonable, Supportive,
 - missing-evidence warnings.
 
@@ -50,17 +51,20 @@ Formatting: headings and bullets are acceptable.
 
 ## Module 2 To Module 3: Research & Evidence To Outline
 
-Purpose: convert research/evidence notes into a structured essay outline.
+Purpose: convert research/evidence notes into a structured essay outline grounded in the student's actual argument branches and evidence needs.
 
 Output should include:
 
 - introduction plan: hook/importance, background, focus/scope, thesis, thesis map,
-- body paragraph plans: topic sentence, evidence, analysis, link back,
-- counterargument/rebuttal slot,
+- body paragraph plans grounded in named Module 2 branches,
+- each body paragraph: topic sentence, Evidence to use, analysis, link back,
+- counterargument paragraph,
 - conclusion plan,
 - citation-needed warnings.
 
-Formatting: clean outline with headings and bullets.
+Formatting: clean outline with headings and bullets. Do not write Module 4 full draft prose.
+
+Quality rule: do not output generic filler such as `Present the first reason` or `State the essay's arguable position` when Module 2 provides branch/thesis content.
 
 ## Module 3 To Module 4: Outline To Drafting
 

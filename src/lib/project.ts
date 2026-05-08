@@ -21,22 +21,42 @@ export const MODULE_TITLES: Record<ModuleNumber, string> = {
 
 const SAMPLE_TOPIC = "How can we strike a healthier social media balance?";
 
-const SAMPLE_MODULE_1 = `Topic: How can we strike a healthier social media balance?
+const SAMPLE_MODULE_1 = `Topic: Social media balance and youth wellbeing
 
-Research question: How can individuals, platforms, and schools reduce the harms of social media while preserving its benefits?
+Research question: How can we strike a healthier social media balance?
 
-Working thesis: A healthier social media balance is possible when users build intentional habits, platforms redesign engagement systems, and schools teach stronger digital literacy.`;
+Working thesis: A healthier social media balance is possible when users build intentional habits, platforms redesign engagement systems, and schools teach stronger digital literacy.
+Thesis map:
+- Reason 1: Users can build intentional habits that reduce passive scrolling.
+- Reason 2: Platforms can redesign engagement systems that intensify comparison and distraction.
+- Reason 3: Schools can teach digital literacy so students evaluate social media more critically.`;
 
-const SAMPLE_MODULE_2 = `Argument branch 1: Excessive social media use can harm mental health and attention.
-Evidence needed: Scholarly or professional source about anxiety, depression, attention, or sleep.
+const SAMPLE_MODULE_2 = `Research plan for: How can we strike a healthier social media balance?
 
-Argument branch 2: Social media also provides benefits, including connection, learning, and public participation.
-Evidence needed: Source showing positive social or educational uses.
+Working thesis: A healthier social media balance is possible when users build intentional habits, platforms redesign engagement systems, and schools teach stronger digital literacy.
 
-Argument branch 3: The best response is not simply banning social media, but combining user habits, better platform design, and digital literacy.
-Evidence needed: Policy discussion or education-focused source.
+Argument branch 1: Intentional user habits can reduce passive scrolling, distraction, and comparison.
+Evidence needed: Scholarly or professional source about anxiety, attention, or sleep [citation needed].
+Possible source type: scholarly article / professional report
+Search keywords: social media habits; adolescent attention; sleep; anxiety
+Source status: source needed
 
-Counterargument: Some people argue that bans or strict limits are necessary to protect young users.`;
+Argument branch 2: Platform design choices shape what users see and how long they stay engaged.
+Evidence needed: Source on algorithms, notifications, or engagement design [citation needed].
+Possible source type: professional technology report / scholarly article
+Search keywords: social media algorithms; engagement design; notifications
+Source status: source needed
+
+Argument branch 3: Digital literacy can help students use social media critically rather than passively.
+Evidence needed: Education-focused source about digital literacy programs [citation needed].
+Possible source type: government report / scholarly article
+Search keywords: digital literacy; media education; social media wellbeing
+Source status: source needed
+
+Counterargument to investigate: Some people argue that bans or strict limits are necessary to protect young users.
+
+Source notes:
+- Add source cards in the Source Workbench. Do not invent citations.`;
 
 const SAMPLE_MODULE_3 = `Introduction
 - Hook / context: Social media is now a central part of everyday communication and identity.
@@ -304,7 +324,8 @@ function clonePatches(patches: Patch[]) {
 function cloneSources(sources: SourceCard[]) {
   return sources.map((source) => ({
     ...source,
-    authors: source.authors ? [...source.authors] : undefined
+    authors: source.authors ? [...source.authors] : undefined,
+    cars: source.cars ? { ...source.cars } : undefined
   }));
 }
 

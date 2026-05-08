@@ -48,7 +48,7 @@ export const MODULE_TRANSITION_PROMPTS: Record<ModuleTransitionId, ModuleTransit
     id: "1-2",
     fromModule: 1,
     toModule: 2,
-    name: "Topic & Question → Research & Evidence",
+    name: "Topic & Question -> Research & Evidence",
     purpose: "Convert a topic, research question, early thesis, and stance into a research/evidence plan.",
     courseLogic:
       "Module 1 establishes essay structure, thesis statement, and thesis map. Module 2 plans through brainstorming, mind maps, source search, and CARS source evaluation.",
@@ -60,17 +60,19 @@ export const MODULE_TRANSITION_PROMPTS: Record<ModuleTransitionId, ModuleTransit
       "Optional selected range",
     ],
     outputContract: [
-      "Refined essay question",
-      "Working thesis/position",
-      "3-4 contributing argument branches",
+      "Research plan for the student's actual topic/question",
+      "Working thesis/position if supplied or safely inferred as a claim to test",
+      "3-4 argument branches or claims to investigate",
       "Evidence needed for each branch",
-      "Suggested source types",
+      "Possible source types",
       "Search keywords",
+      "Source status for each branch",
       "CARS checklist",
       "Missing-evidence warnings",
+      "Source notes directing students to source cards",
     ],
     paragraphFormat: "Headings and bullets are allowed. Keep sections separated by blank lines.",
-    citationBehavior: "Do not create real citations. Suggest source types, search keywords, and [scholarly source needed] placeholders.",
+    citationBehavior: "Do not create real citations. Suggest source types, search keywords, and [source needed] or [citation needed] placeholders.",
     failureBehavior: "If source text is too thin, return a short research plan with clear [citation needed] placeholders rather than inventing evidence.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 1 to Module 2 generator. Create a research and evidence plan.`,
     userPromptTemplate: `
@@ -89,15 +91,16 @@ Do not fabricate sources. Use placeholders such as [scholarly source needed] or 
     id: "2-3",
     fromModule: 2,
     toModule: 3,
-    name: "Research & Evidence → Outline",
+    name: "Research & Evidence -> Outline",
     purpose: "Convert research notes and evidence needs into a structured argumentative essay outline.",
     courseLogic:
       "Module 3 focuses on putting pen to paper: strong introduction, demonstrating importance, topic sentences, supporting details, analysis, counterargument, and conclusion planning.",
-    inputContract: ["Topic", "Module 2 research/evidence plan", "Source notes", "Patches"],
+    inputContract: ["Project title/topic", "Module 2 research/evidence plan", "Argument branches", "Evidence needed lines", "Source notes/cards", "Patches"],
     outputContract: [
       "Introduction plan: hook/importance, background, focus/scope, thesis, thesis map",
-      "Body paragraph plans: topic sentence, evidence, analysis, link back",
-      "Counterargument/rebuttal slot",
+      "Body paragraph plans grounded in named Module 2 branches, not generic first/second reason placeholders",
+      "Each body paragraph: topic sentence, evidence to use, analysis purpose, link back",
+      "Counterargument paragraph with opposing view and response",
       "Conclusion plan",
       "Missing evidence warnings",
     ],
@@ -107,21 +110,26 @@ Do not fabricate sources. Use placeholders such as [scholarly source needed] or 
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 2 to Module 3 generator. Create a structured argumentative essay outline.`,
     userPromptTemplate: `
 Convert the research/evidence plan into Module 3: Outline.
+Preserve the student's actual topic, working thesis, and named argument branches.
+Do not use generic filler such as "Present the first reason" when Module 2 includes branch text.
 For the introduction include hook/importance, background/context, focus/scope, thesis, thesis map.
-For each body paragraph include topic sentence, evidence or [citation needed], analysis, and link back to thesis.
-Include counterargument/rebuttal if appropriate and a conclusion plan explaining why the argument matters.
+For each body paragraph include topic sentence, Evidence to use, analysis, and link back to thesis.
+If no source card exists for an evidence slot, write [source needed] or [citation needed].
+Include counterargument paragraph and a conclusion plan explaining why the argument matters.
 `,
     validationRules: [
       "Must include introduction, body, and conclusion plan.",
       "Evidence without supplied source should be marked [citation needed].",
       "At least one analysis component should appear after evidence components.",
+      "Must preserve branch-specific content from Module 2 when available.",
+      "Must not include nonsensical body claims such as 'Refined question: Where is...'.",
     ],
   },
   "3-4": {
     id: "3-4",
     fromModule: 3,
     toModule: 4,
-    name: "Outline → Drafting",
+    name: "Outline -> Drafting",
     purpose: "Convert a structured outline into coherent academic draft paragraphs.",
     courseLogic:
       "Module 4 emphasizes academic language, signal devices, metadiscourse, transition markers, hedging/boosting, academic tone, and effective conclusion language.",
@@ -158,7 +166,7 @@ Do not invent citations; use [citation needed] for unsupported factual claims.
     id: "4-5",
     fromModule: 4,
     toModule: 5,
-    name: "Drafting → Referencing / Citation Check",
+    name: "Drafting -> Referencing / Citation Check",
     purpose: "Turn draft into a citation-aware source-integrity review.",
     courseLogic:
       "Module 5 focuses on plagiarism avoidance, ethical source use, paraphrasing/summarizing, in-text citations, and reference list entries. Every source needs both an in-text citation and a reference list entry.",
@@ -195,7 +203,7 @@ Do not generate fake references.
     id: "5-6",
     fromModule: 5,
     toModule: 6,
-    name: "Referencing / Citation Check → Final Review / Export",
+    name: "Referencing / Citation Check -> Final Review / Export",
     purpose: "Create final review, editing/proofreading checklist, and export readiness.",
     courseLogic:
       "Module 6 separates editing from proofreading: content, structure, clarity, style, spelling, grammar, punctuation, formatting, citations, and references. A strong conclusion rephrases thesis, reviews main points, answers the so-what question, and avoids major new evidence.",
