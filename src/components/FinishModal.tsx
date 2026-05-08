@@ -24,6 +24,7 @@ export function FinishModal({
           width={1200}
           height={675}
           className="mt-4 max-h-80 w-full rounded-lg object-cover"
+          unoptimized
           priority
         />
         <div className="mt-4 flex flex-wrap gap-2">
