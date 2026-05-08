@@ -17,6 +17,7 @@ import { inTextCitationPreview } from "@/lib/citationAudit";
 import { copyRichText, downloadCurrentModuleHtml, downloadProjectJson } from "@/lib/export";
 import { repairPatchesForText } from "@/lib/patches";
 import { addSnapshot, clearModule, importProject, replaceModuleContent, restoreSnapshot } from "@/lib/project";
+import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
 import { loadProject, resetProjectStorage, saveProject } from "@/lib/storage";
 import { clampModule, id, nowIso } from "@/lib/utils";
 import type {
@@ -36,12 +37,20 @@ import type {
 
 const EMPTY_RANGE: TextRange = { start: 0, end: 0 };
 
+type LastAction = {
+  tone: "info" | "success" | "error" | "warning";
+  message: string;
+  details?: string[];
+  retryGenerate?: boolean;
+};
+
 export default function Home() {
   const [project, setProject] = useState<Project | null>(null);
   const [selectedRange, setSelectedRange] = useState<TextRange>(EMPTY_RANGE);
   const [patchRange, setPatchRange] = useState<TextRange | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("Ready");
+  const [lastAction, setLastAction] = useState<LastAction>({ tone: "info", message: "Ready" });
   const [actionSteps, setActionSteps] = useState<string[]>([]);
   const [activeStep, setActiveStep] = useState<string | undefined>();
   const [finishOpen, setFinishOpen] = useState(false);
@@ -189,46 +198,46 @@ export default function Home() {
   async function handleGenerateNext() {
     if (activeProject.currentModule >= 6) {
       setStatus("Module 6 is the final module.");
+      setLastAction({ tone: "info", message: "Module 6 is final. Use export or translate actions instead of Generate Next." });
       return;
     }
 
     const sourceModuleNumber = activeProject.currentModule as Exclude<ModuleNumber, 6>;
     const target = (sourceModuleNumber + 1) as Exclude<ModuleNumber, 1>;
+    if (!activeDoc.text.trim()) {
+      const message = `Add content to Module ${sourceModuleNumber} before generating Module ${target}.`;
+      setStatus(message);
+      setLastAction({ tone: "error", message });
+      return;
+    }
+
     const steps = ["Saving snapshot", `Generating Module ${target}`, "Validating JSON", "Applying module"];
     setLoading(true);
     setProgress(steps, steps[0]);
+    setStatus(`Generating Module ${target} from Module ${sourceModuleNumber}...`);
+    setLastAction({ tone: "info", message: `Generating Module ${target} from Module ${sourceModuleNumber}...`, details: steps });
     try {
-      setProject((prev) => {
-        if (!prev) return prev;
-        const targetDoc = prev.modules[target];
-        return {
-          ...prev,
-          modules: {
-            ...prev.modules,
-            [target]: addSnapshot(targetDoc, `Before overwrite from Module ${sourceModuleNumber}`)
-          },
-          updatedAt: nowIso()
-        };
-      });
-
       setProgress(steps, steps[1]);
+      const payload = generateNextRequestSchema.parse({
+        topic: activeProject.topic,
+        sourceModuleNumber,
+        sourceTitle: activeDoc.title,
+        sourceText: activeDoc.text,
+        sourceAnnotations: activeDoc.annotations,
+        sourcePatches: activeDoc.patches,
+        sourceSources: activeDoc.sources
+      });
       const response = await fetch("/api/generate-next", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: activeProject.topic,
-          sourceModuleNumber,
-          sourceTitle: activeDoc.title,
-          sourceText: activeDoc.text,
-          sourceAnnotations: activeDoc.annotations,
-          sourcePatches: activeDoc.patches,
-          sourceSources: activeDoc.sources
-        })
+        body: JSON.stringify(payload)
       });
 
-      const data = (await response.json()) as GenerateNextResponse & { error?: string };
-      if (!response.ok) throw new Error(data.error ?? "Generate Next failed.");
+      const json = (await response.json().catch(() => ({}))) as Partial<GenerateNextResponse> & { error?: string };
+      if (!response.ok) throw new Error(json.error ?? "Generate Next failed.");
+      const data = generateNextResponseSchema.parse(json);
       if (data.moduleNumber !== target) throw new Error(`Expected Module ${target}, received Module ${data.moduleNumber}.`);
+      if (!data.text.trim()) throw new Error("Generate Next returned empty text.");
 
       setProgress(steps, steps[2]);
       const normalizedAnnotations = normalizeAnnotations(data.text, data.annotations);
@@ -236,28 +245,41 @@ export default function Home() {
       setProgress(steps, steps[3]);
       setProject((prev) => {
         if (!prev) return prev;
+        const sourceDoc = prev.modules[sourceModuleNumber];
         const targetDoc = prev.modules[target];
-        const sources = data.sources.length ? data.sources : mergeSources(activeDoc.sources, targetDoc.sources);
-        return {
+        const snapTargetDoc = addSnapshot(targetDoc, `Before overwrite from Module ${sourceModuleNumber}`);
+        const sources = data.sources.length ? mergeSources(data.sources, snapTargetDoc.sources) : mergeSources(sourceDoc.sources, snapTargetDoc.sources);
+        const next = {
           ...prev,
           currentModule: target,
           modules: {
             ...prev.modules,
             [target]: {
-              ...replaceModuleContent(targetDoc, data.text, normalizedAnnotations, sources),
-              title: data.title || targetDoc.title,
+              ...replaceModuleContent(snapTargetDoc, data.text, normalizedAnnotations, sources),
+              title: data.title || snapTargetDoc.title,
               globalFeedback: data.globalFeedback
             }
           },
           updatedAt: nowIso()
         };
+        saveProject(next);
+        return next;
       });
       setSelectedRange(EMPTY_RANGE);
       setPatchRange(null);
       setAssistantSuggestion(undefined);
-      setStatus(data.globalFeedback?.[0] ?? `Module ${target} generated. Previous version saved.`);
+      const message = `Module ${target} generated and opened. Previous Module ${target} saved as a snapshot.`;
+      const details = [
+        `Provider mode: ${data.providerMode}.`,
+        ...data.warnings,
+        ...(data.globalFeedback ?? [])
+      ].filter(Boolean);
+      setStatus(message);
+      setLastAction({ tone: data.providerMode === "fallback" ? "warning" : "success", message, details });
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Generate Next failed.");
+      const message = error instanceof Error ? error.message : "Generate Next failed.";
+      setStatus(message);
+      setLastAction({ tone: "error", message, details: ["No module was overwritten."], retryGenerate: true });
     } finally {
       setLoading(false);
       clearProgress();
@@ -275,6 +297,12 @@ export default function Home() {
   }
 
   function switchModule(moduleNumber: ModuleNumber) {
+    if (loading) {
+      const message = "Finish the current action before switching modules.";
+      setStatus(message);
+      setLastAction({ tone: "warning", message });
+      return;
+    }
     updateProject((prev) => ({ ...prev, currentModule: moduleNumber }));
     setSelectedRange(EMPTY_RANGE);
     setPatchRange(null);
@@ -602,10 +630,29 @@ export default function Home() {
                 Back to Module {Math.max(1, activeProject.currentModule - 1)}
               </button>
               <button className="btn-primary min-w-80 text-base" onClick={handleGenerateNext} disabled={activeProject.currentModule >= 6 || loading}>
-                Next: Generate Module {Math.min(6, activeProject.currentModule + 1)} from Module {activeProject.currentModule}
+                {loading && activeProject.currentModule < 6
+                  ? `Generating Module ${activeProject.currentModule + 1}...`
+                  : activeProject.currentModule >= 6
+                    ? "Module 6 is final: export or download"
+                    : `Generate Module ${activeProject.currentModule + 1} from Module ${activeProject.currentModule}`}
               </button>
               <button className="btn-secondary min-w-40" onClick={handleSaveSnapshot} disabled={loading}>Quick Snapshot</button>
               <button className="btn-secondary min-w-36" onClick={handleDownloadHtml} disabled={loading}>Export Current HTML</button>
+            </div>
+            <div data-testid="last-action" className={`mx-auto mt-3 max-w-5xl rounded-lg border px-3 py-2 text-sm ${lastActionClasses(lastAction.tone)}`} aria-live="polite">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <span className="font-semibold">Last action:</span> {lastAction.message}
+                  {lastAction.details?.length ? (
+                    <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
+                      {lastAction.details.slice(0, 4).map((detail) => <li key={detail}>{detail}</li>)}
+                    </ul>
+                  ) : null}
+                </div>
+                {lastAction.retryGenerate ? (
+                  <button className="btn-secondary" onClick={handleGenerateNext} disabled={loading}>Retry</button>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -728,6 +775,13 @@ function mergeSources(primary: SourceCard[], secondary: SourceCard[]) {
   }
 
   return result;
+}
+
+function lastActionClasses(tone: LastAction["tone"]) {
+  if (tone === "success") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
+  if (tone === "error") return "border-red-200 bg-red-50 text-red-900";
+  return "border-blue-100 bg-blue-50 text-blue-900";
 }
 
 function mergeSelectedTranslationAnnotations(

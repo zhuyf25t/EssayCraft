@@ -14,8 +14,15 @@ export async function POST(request: Request) {
     const input = generateNextRequestSchema.parse(json);
     const expectedTarget = (input.sourceModuleNumber + 1) as Exclude<ModuleNumber, 1>;
 
+    if (!input.sourceText.trim()) {
+      return NextResponse.json(
+        { error: `Add content to Module ${input.sourceModuleNumber} before generating Module ${expectedTarget}.` },
+        { status: 400 }
+      );
+    }
+
     if (!hasAiKey()) {
-      return NextResponse.json(mockGenerate(input.topic, input.sourceModuleNumber, input.sourceText));
+      return NextResponse.json(mockGenerate(input.topic, input.sourceModuleNumber, input.sourceText, input.sourceSources));
     }
 
     try {
@@ -37,6 +44,9 @@ export async function POST(request: Request) {
       }
 
       const text = cleanGeneratedText(parsed.text, parsed.moduleNumber);
+      if (!text.trim()) {
+        throw new Error("AI returned empty generated text after cleanup.");
+      }
       const exact = exactAnnotations(text, parsed.annotations);
       const normalized: GenerateNextResponse = {
         ...parsed,
@@ -44,12 +54,14 @@ export async function POST(request: Request) {
         annotations: exact.annotations,
         sources: sanitizeGeneratedSources(parsed.sources, input.sourceSources),
         globalFeedback: parsed.globalFeedback ?? [],
-        warnings: [...(parsed.warnings ?? []), ...exact.warnings]
+        warnings: [...(parsed.warnings ?? []), ...exact.warnings],
+        providerMode: "deepseek"
       };
 
       return NextResponse.json(normalized);
     } catch (aiError) {
       const fallback = mockGenerate(input.topic, input.sourceModuleNumber, input.sourceText, input.sourceSources);
+      fallback.providerMode = "fallback";
       fallback.warnings.push(`DeepSeek generation unavailable; used mock output. ${aiError instanceof Error ? aiError.message : ""}`.trim());
       return NextResponse.json(fallback);
     }
@@ -72,22 +84,24 @@ function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6
     annotations,
     sources: sourceSources,
     globalFeedback: [`Mock generated Module ${moduleNumber} from Module ${sourceModuleNumber}.`],
-    warnings: ["Mock mode did not verify any source metadata. Keep [citation needed] markers until real sources are added."]
+    warnings: ["Mock mode did not verify any source metadata. Keep [citation needed] markers until real sources are added."],
+    providerMode: "mock"
   };
 }
 
 function mockText(topic: string, sourceModuleNumber: ModuleNumber, sourceText: string, sourceSources: SourceCard[]) {
-  const preview = sourceText.trim().slice(0, 420) || topic;
+  const subject = deriveSubject(topic, sourceText);
+  const preview = sourceText.trim() || subject;
 
   if (sourceModuleNumber === 1) {
-    return `Refined question: ${topic}
+    return `Refined question: ${subject}
 
 Working thesis: A focused essay should defend a clear position while naming the main reasons that will support it.
 
 Argument branch 1: Clarify the most important cause or problem.
 Evidence needed: Add one scholarly or professional source that explains the problem [citation needed].
 Suggested source type: scholarly article, government report, or professional research brief.
-Search keywords: ${topic}; academic evidence; youth; policy.
+Search keywords: ${subject}; academic evidence; youth; policy.
 
 Argument branch 2: Explain why the issue matters to real people or institutions.
 Evidence needed: Add a credible example or data point [citation needed].
@@ -100,7 +114,7 @@ CARS reminder: sources should be Credible, Accurate, Reasonable, and Supportive 
 
   if (sourceModuleNumber === 2) {
     return `Introduction plan
-- Hook / importance: Introduce why ${topic} matters now.
+- Hook / importance: Introduce why ${subject} matters now.
 - Background: Define the issue and establish scope.
 - Thesis: State the essay's arguable position.
 - Thesis map: Preview the main reasons in order.
@@ -127,15 +141,15 @@ Conclusion plan
   }
 
   if (sourceModuleNumber === 3) {
-    return `Social media has become a defining feature of modern communication, shaping how people learn, maintain relationships, and participate in public life. The challenge is not simply that people use these platforms, but that their design can encourage constant comparison, distraction, and pressure. This essay argues that a healthier balance requires intentional user habits, more responsible platform design, and stronger digital literacy education.
+    return `${subject} is an important academic issue because it affects how students, institutions, and communities make practical decisions. The outline suggests that the essay should move from context to a clear thesis, then support that thesis with evidence and analysis. This draft argues that ${subject.toLowerCase()} should be addressed through focused habits, responsible institutional choices, and careful evaluation of evidence.
 
-First, individuals can reduce the most harmful patterns of social media use by making their habits more deliberate. Passive scrolling may make users feel informed or connected, but it can also replace focused study, rest, and face-to-face interaction [citation needed]. This matters because healthy use depends not only on how much time people spend online, but also on whether that time supports a meaningful purpose.
+First, the strongest body paragraph should explain the main reason named in the outline. The student should introduce a focused topic sentence, connect it to a real source or mark the claim [citation needed], and then analyze why the evidence supports the thesis. This matters because evidence should not stand alone; it needs interpretation that makes the argument clear.
 
-Second, platforms also share responsibility because design choices shape user behaviour. Notifications, recommendation feeds, and engagement metrics can reward content that keeps attention even when it increases stress or comparison [citation needed]. Therefore, individual self-control is important but incomplete; healthier platform design would make balanced use easier rather than forcing users to resist persuasive systems alone.
+Second, the draft should develop a separate reason rather than repeating the first one. If the outline includes a policy, classroom, platform, or personal strategy, this paragraph should explain how that strategy works and what limitation it addresses [citation needed]. The analysis should show cause and effect, not just summarize the idea.
 
-Some critics argue that the benefits of social media outweigh the risks because platforms can support learning, marginalized voices, and community during difficult moments. This counterargument is important because a total rejection of social media would ignore these real benefits. However, those benefits do not require unlimited use or attention-maximizing design.
+Some readers may object that the proposed approach is too difficult, too limited, or less effective than a stricter alternative. That counterargument should be represented fairly before the essay responds. A balanced rebuttal can concede a valid concern while explaining why the thesis remains more practical or better supported.
 
-In conclusion, balance is possible when individuals build mindful habits, platforms reduce harmful engagement pressures, and schools teach digital literacy. Together, these steps can preserve the advantages of social media while reducing the conditions that make it damaging.`;
+In conclusion, the essay should return to ${subject.toLowerCase()} and explain why the argument matters beyond a single assignment. The final paragraph should synthesize the main reasons, avoid introducing major new evidence, and leave the reader with a clear sense of significance.`;
   }
 
   if (sourceModuleNumber === 4) {
@@ -181,7 +195,19 @@ Conclusion check
 
 function sanitizeGeneratedSources(generated: SourceCard[], userSources: SourceCard[]) {
   if (!generated.length) return userSources;
-  const userIds = new Set(userSources.map((source) => source.id));
-  const preserved = generated.filter((source) => userIds.has(source.id));
-  return preserved.length ? preserved : userSources;
+  const generatedIds = new Set(generated.map((source) => source.id));
+  const preservedUserSources = userSources.filter((source) => generatedIds.has(source.id));
+  return preservedUserSources.length ? preservedUserSources : userSources;
+}
+
+function deriveSubject(topic: string, sourceText: string) {
+  const topicLine = sourceText.match(/^\s*(?:topic|question|research question)\s*:\s*(.+)$/im)?.[1]?.trim();
+  if (topicLine) return topicLine.slice(0, 160);
+
+  const firstMeaningfulLine = sourceText
+    .split("\n")
+    .map((line) => line.replace(/^[-*]\s*/, "").trim())
+    .find((line) => line.length > 0);
+
+  return (firstMeaningfulLine || topic || "this essay topic").slice(0, 160);
 }

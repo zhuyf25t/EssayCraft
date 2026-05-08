@@ -128,6 +128,7 @@ export type GenerateNextResponse = {
   sources: SourceCard[];
   globalFeedback: string[];
   warnings: string[];
+  providerMode: "deepseek" | "mock" | "fallback";
 };
 
 export type AssistRequest = {

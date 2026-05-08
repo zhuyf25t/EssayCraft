@@ -98,11 +98,12 @@ export const generateNextRequestSchema = z.object({
 export const generateNextResponseSchema = z.object({
   moduleNumber: targetModuleNumberSchema,
   title: z.string(),
-  text: z.string(),
+  text: z.string().min(1),
   annotations: z.array(annotationSchema).default([]),
   sources: z.array(sourceCardSchema).default([]),
   globalFeedback: z.array(z.string()).default([]),
-  warnings: z.array(z.string()).default([])
+  warnings: z.array(z.string()).default([]),
+  providerMode: z.enum(["deepseek", "mock", "fallback"]).default("deepseek")
 });
 
 export const assistantMessageSchema = z.object({
