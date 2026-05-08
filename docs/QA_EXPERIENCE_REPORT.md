@@ -106,3 +106,12 @@ Loop 3 - Product polish and browser validation:
 - Provider timeout fallback is reliable but can be slow with a configured unreachable DeepSeek endpoint.
 - Patch anchoring repairs simple edits by anchor quote, but complex rewrites can mark stale patches resolved instead of deeply re-anchoring them.
 - The visual style is polished for a demo but not pixel-perfect against the supplied mockups.
+
+## 12. Product Reset Update - 2026-05-08
+
+- Layout: the app is now a fixed one-screen shell. The browser document no longer scrolls at desktop viewport; the editor textarea is the primary long-content scroll surface and the Highlight Key has reserved footer space.
+- Content quality: Module 2 -> Module 3 parses argument branches, evidence-needed lines, source status, thesis, and counterargument before generating an outline. The fallback no longer emits generic `Present the first reason` outline filler when branch content exists.
+- Topic consistency: reset demo data now keeps Project Title and Module 1 research question aligned. Browser tests also cover a custom `technology and humanity` topic through Module 2 and Module 3 to prevent fallback to the old social-media demo.
+- Citation/source UX: Source Workbench now distinguishes manual source cards from source needs, exposes CARS checks, uses student-supplied/student-checked wording, and shows Module 5 citation/reference issue groups.
+- Translate: mock English/auto -> Chinese translation now returns visible Simplified Chinese, previews before apply, and snapshots before replacing module text.
+- Screenshots: `docs/product-reset-dashboard.png`, `docs/product-reset-module2-to3.png`, and `docs/product-reset-translate-cn.png`.
