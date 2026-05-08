@@ -38,7 +38,7 @@ export function Editor({ text, annotations, patches, selectedRange, onTextChange
   }
 
   return (
-    <section className="editor-shell">
+    <section data-testid="editor-shell" className="editor-shell">
       <div className="editor-toolbar">
         <div>
           <span className="font-semibold text-slate-800">Writing canvas</span>
@@ -49,12 +49,13 @@ export function Editor({ text, annotations, patches, selectedRange, onTextChange
         </div>
       </div>
 
-      <div className="editor-stack">
-        <div ref={backdropRef} className="editor-backdrop" aria-hidden="true">
+      <div data-testid="editor-stack" className="editor-stack">
+        <div ref={backdropRef} data-testid="editor-backdrop" className="editor-backdrop" aria-hidden="true">
           <HighlightText text={text} annotations={annotations} />
         </div>
         <textarea
           ref={textareaRef}
+          data-testid="editor-textarea"
           value={text}
           spellCheck
           onChange={(event) => onTextChange(event.currentTarget.value)}

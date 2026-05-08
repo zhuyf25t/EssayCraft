@@ -2,8 +2,8 @@ import { LABEL_ORDER, LABELS } from "@/lib/labels";
 
 export function HighlightKey() {
   return (
-    <footer className="sticky bottom-0 z-20 border-t border-slate-200 bg-[#fffefb]/95 px-4 py-2 backdrop-blur">
-      <div className="flex flex-wrap items-center gap-2 text-xs text-slate-700">
+    <footer data-testid="highlight-key" className="shrink-0 border-t border-slate-200 bg-[#fffefb]/95 px-4 py-1.5">
+      <div className="flex min-h-8 flex-wrap items-center gap-2 text-xs text-slate-700">
         <span className="mr-1 font-semibold">Highlight Key:</span>
         {LABEL_ORDER.map((label) => (
           <span key={label} className="inline-flex items-center gap-1 border-r border-slate-200 pr-2" title={LABELS[label].description}>

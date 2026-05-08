@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { AssistResponse, TextRange } from "@/types/essaycraft";
 
 const ACTIONS = [
@@ -20,7 +21,8 @@ export function AssistantPanel({
   onAction,
   onApply,
   onDismiss,
-  onTranslate
+  onTranslate,
+  onRefresh
 }: {
   selectedText: string;
   selectedRange: TextRange;
@@ -30,7 +32,17 @@ export function AssistantPanel({
   onApply: () => void;
   onDismiss: () => void;
   onTranslate: () => void;
+  onRefresh: () => void;
 }) {
+  const [instruction, setInstruction] = useState("");
+
+  function submitInstruction() {
+    const value = instruction.trim();
+    if (!value) return;
+    onAction(value);
+    setInstruction("");
+  }
+
   return (
     <section className="panel">
       <div className="mb-3 flex items-center justify-between">
@@ -41,6 +53,18 @@ export function AssistantPanel({
       <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">
         <div className="font-semibold">Selected context</div>
         <p className="mt-1 line-clamp-3">{selectedText || `Cursor at ${selectedRange.start}. Select text for a targeted suggestion.`}</p>
+      </div>
+
+      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2">
+        <textarea
+          value={instruction}
+          onChange={(event) => setInstruction(event.currentTarget.value)}
+          placeholder="Ask EssayCraft to revise, explain, or check this module..."
+          className="min-h-16 w-full resize-none border-0 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+        />
+        <div className="flex justify-end">
+          <button className="btn-primary" onClick={submitInstruction} disabled={loading || !instruction.trim()}>Ask</button>
+        </div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2">
@@ -72,6 +96,10 @@ export function AssistantPanel({
             {suggestion.proposedText || suggestion.annotations.length ? (
               <button className="btn-primary" onClick={onApply}>Apply</button>
             ) : null}
+            {suggestion.proposedText ? (
+              <button className="btn-secondary" onClick={() => void navigator.clipboard?.writeText(suggestion.proposedText ?? "")}>Copy</button>
+            ) : null}
+            <button className="btn-secondary" onClick={onRefresh} disabled={loading}>Refresh Highlights</button>
             <button className="btn-secondary" onClick={onDismiss}>Dismiss</button>
           </div>
         </div>

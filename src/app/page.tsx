@@ -16,7 +16,7 @@ import { normalizeAnnotations, normalizeText, sentenceRangeAt } from "@/lib/anno
 import { inTextCitationPreview } from "@/lib/citationAudit";
 import { copyRichText, downloadCurrentModuleHtml, downloadProjectJson } from "@/lib/export";
 import { repairPatchesForText } from "@/lib/patches";
-import { addSnapshot, clearModule, importProject, replaceModuleContent, restoreSnapshot } from "@/lib/project";
+import { MODULE_TITLES, addSnapshot, clearModule, importProject, replaceModuleContent, restoreSnapshot } from "@/lib/project";
 import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
 import { loadProject, resetProjectStorage, saveProject } from "@/lib/storage";
 import { clampModule, id, nowIso } from "@/lib/utils";
@@ -36,6 +36,7 @@ import type {
 } from "@/types/essaycraft";
 
 const EMPTY_RANGE: TextRange = { start: 0, end: 0 };
+type TranslateMode = "en-to-zh" | "zh-to-en" | "auto-to-zh";
 
 type LastAction = {
   tone: "info" | "success" | "error" | "warning";
@@ -57,7 +58,7 @@ export default function Home() {
   const [assistantSuggestion, setAssistantSuggestion] = useState<AssistResponse | undefined>();
   const [translateOpen, setTranslateOpen] = useState(false);
   const [translatePreview, setTranslatePreview] = useState<TranslateResponse | undefined>();
-  const [translateMode, setTranslateMode] = useState<"en-to-zh" | "zh-to-en">("en-to-zh");
+  const [translateMode, setTranslateMode] = useState<TranslateMode>("en-to-zh");
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -83,6 +84,8 @@ export default function Home() {
 
   const activeProject = project;
   const activeDoc = currentDoc;
+  const moduleOneQuestion = extractModuleOneQuestion(activeProject.modules[1].text);
+  const titleQuestionMismatch = differsMeaningfully(activeProject.title, moduleOneQuestion);
 
   function updateProject(updater: (prev: Project) => Project) {
     setProject((prev) => {
@@ -307,6 +310,7 @@ export default function Home() {
     setSelectedRange(EMPTY_RANGE);
     setPatchRange(null);
     setAssistantSuggestion(undefined);
+    setLastAction({ tone: "info", message: `Viewing Module ${moduleNumber}: ${MODULE_TITLES[moduleNumber]}.` });
   }
 
   function handleClearModule() {
@@ -390,11 +394,16 @@ export default function Home() {
   }
 
   function addPlaceholderSource() {
+    const range = selectedRange.end > selectedRange.start ? selectedRange : sentenceRangeAt(activeDoc.text, selectedRange.start, selectedRange.end);
+    const selectedClaim = activeDoc.text.slice(range.start, range.end).trim().replace(/\s+/g, " ");
+    const shortClaim = selectedClaim.length > 110 ? `${selectedClaim.slice(0, 107)}...` : selectedClaim;
     addSource({
-      title: "Placeholder source needed",
+      title: shortClaim ? `Source needed for: "${shortClaim}"` : "Source needed for selected claim",
       authors: [],
       sourceType: "unknown",
-      userNotes: "Replace this card with real source metadata before final submission.",
+      userNotes: shortClaim
+        ? `Evidence need anchored to: "${shortClaim}". Replace this placeholder with real source metadata before final submission.`
+        : "Replace this placeholder with real source metadata before final submission.",
       verified: false,
       placeholder: true
     });
@@ -409,18 +418,34 @@ export default function Home() {
     updateCurrentModule((doc) => {
       const snapDoc = addSnapshot(doc, "Before inserting citation");
       const insertAt = selectedRange.end;
+      const marker = findCitationNeededMarker(snapDoc.text, insertAt);
       const needsSpace = insertAt > 0 && !/\s/.test(snapDoc.text[insertAt - 1] ?? "");
-      const insertion = `${needsSpace ? " " : ""}${citation}`;
-      const text = `${snapDoc.text.slice(0, insertAt)}${insertion}${snapDoc.text.slice(insertAt)}`;
+      const insertion = `${needsSpace && !marker ? " " : ""}${citation}`;
+      const citationStart = marker ? marker.start : insertAt + (needsSpace ? 1 : 0);
+      const text = marker
+        ? `${snapDoc.text.slice(0, marker.start)}${citation}${snapDoc.text.slice(marker.end)}`
+        : `${snapDoc.text.slice(0, insertAt)}${insertion}${snapDoc.text.slice(insertAt)}`;
       return {
         ...snapDoc,
         text,
-        annotations: normalizeAnnotations(text, snapDoc.annotations),
+        annotations: normalizeAnnotations(text, [
+          ...snapDoc.annotations,
+          {
+            id: id("ann"),
+            start: citationStart,
+            end: citationStart + citation.length,
+            text: citation,
+            label: "citation",
+            confidence: 0.95,
+            comment: "In-text citation inserted from a student-supplied source card.",
+            sourceIds: [source.id]
+          }
+        ]),
         patches: repairPatchesForText(text, snapDoc.patches),
         updatedAt: nowIso()
       };
     });
-    setStatus(`Inserted ${citation} from your source card.`);
+    setStatus(`Inserted ${citation} from your source card. Confirm the matching reference entry before final export.`);
   }
 
   function markSelectionNeedsCitation() {
@@ -583,14 +608,13 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-paper pb-24">
-      <div className="flex min-h-[calc(100vh-52px)]">
+    <main data-testid="app-shell" className="flex h-dvh flex-col overflow-hidden bg-paper">
+      <div className="flex min-h-0 flex-1 overflow-hidden">
         <ModuleSidebar project={activeProject} onSelect={switchModule} />
-        <section className="flex min-w-0 flex-1 flex-col">
-          <header className="border-b border-slate-200 bg-white/90 p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="font-crayon text-3xl font-bold text-blue-700">EssayCraft</div>
-              <label className="flex min-w-72 flex-1 items-center gap-2 text-sm text-slate-600">
+        <section data-testid="workspace-shell" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <header className="shrink-0 border-b border-slate-200 bg-white/90 px-4 py-2">
+            <div className="flex items-center gap-3">
+              <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-600">
                 Project Title
                 <input
                   value={activeProject.title}
@@ -598,9 +622,14 @@ export default function Home() {
                   className="input flex-1"
                 />
               </label>
-              <div className="rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">Module {activeProject.currentModule} of 6</div>
+              <div className="shrink-0 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">Module {activeProject.currentModule} of 6</div>
             </div>
-            <div className="mt-4">
+            {titleQuestionMismatch ? (
+              <div className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900">
+                Project title and Module 1 research question differ. Which should Generate Next use? Using current module text first, with the project title as context.
+              </div>
+            ) : null}
+            <div className="mt-2">
               <ProgressTracker project={activeProject} actionSteps={actionSteps} activeStep={activeStep} onSelect={switchModule} />
             </div>
           </header>
@@ -624,22 +653,22 @@ export default function Home() {
           />
           <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void handleImportJson(event.target.files?.[0])} />
 
-          <div className="border-b border-slate-200 bg-[#fffdf8]/95 px-4 py-3">
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              <button className="btn-secondary min-w-44" onClick={() => switchModule(clampModule(activeProject.currentModule - 1))} disabled={activeProject.currentModule <= 1 || loading}>
+          <div className="shrink-0 border-b border-slate-200 bg-[#fffdf8]/95 px-4 py-2">
+            <div className="flex items-center justify-center gap-3 overflow-x-auto">
+              <button className="btn-secondary min-w-40 whitespace-nowrap" onClick={() => switchModule(clampModule(activeProject.currentModule - 1))} disabled={activeProject.currentModule <= 1 || loading}>
                 Back to Module {Math.max(1, activeProject.currentModule - 1)}
               </button>
-              <button className="btn-primary min-w-80 text-base" onClick={handleGenerateNext} disabled={activeProject.currentModule >= 6 || loading}>
+              <button className="btn-primary min-w-80 whitespace-nowrap text-base" onClick={handleGenerateNext} disabled={activeProject.currentModule >= 6 || loading}>
                 {loading && activeProject.currentModule < 6
                   ? `Generating Module ${activeProject.currentModule + 1}...`
                   : activeProject.currentModule >= 6
                     ? "Module 6 is final: export or download"
                     : `Generate Module ${activeProject.currentModule + 1} from Module ${activeProject.currentModule}`}
               </button>
-              <button className="btn-secondary min-w-40" onClick={handleSaveSnapshot} disabled={loading}>Quick Snapshot</button>
-              <button className="btn-secondary min-w-36" onClick={handleDownloadHtml} disabled={loading}>Export Current HTML</button>
+              <button className="btn-secondary min-w-36 whitespace-nowrap" onClick={handleSaveSnapshot} disabled={loading}>Quick Snapshot</button>
+              <button className="btn-secondary min-w-36 whitespace-nowrap" onClick={handleDownloadHtml} disabled={loading}>Export HTML</button>
             </div>
-            <div data-testid="last-action" className={`mx-auto mt-3 max-w-5xl rounded-lg border px-3 py-2 text-sm ${lastActionClasses(lastAction.tone)}`} aria-live="polite">
+            <div data-testid="last-action" className={`mx-auto mt-2 max-w-5xl rounded-lg border px-3 py-1.5 text-sm ${lastActionClasses(lastAction.tone)}`} aria-live="polite">
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <span className="font-semibold">Last action:</span> {lastAction.message}
@@ -656,9 +685,9 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="grid flex-1 grid-cols-1 gap-4 p-4 xl:grid-cols-[minmax(0,1fr)_380px]">
-            <div className="min-w-0 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+          <div data-testid="workspace-body" className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+            <div data-testid="editor-column" className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
+              <div className="shrink-0">
                 <div>
                   <h1 className="text-lg font-semibold text-slate-800">Module {activeProject.currentModule}: {activeDoc.title}</h1>
                   <p className="text-sm text-slate-500">Edit normally. Ctrl/Cmd+Enter anchors a patch note to the current sentence or selection.</p>
@@ -674,17 +703,19 @@ export default function Home() {
                 />
               ) : null}
 
-              <Editor
-                text={activeDoc.text}
-                annotations={activeDoc.annotations}
-                patches={activeDoc.patches}
-                selectedRange={selectedRange}
-                onTextChange={handleTextChange}
-                onSelectionChange={setSelectedRange}
-                onOpenPatch={handleOpenPatch}
-              />
+              <div className="min-h-0 flex-1 overflow-hidden">
+                <Editor
+                  text={activeDoc.text}
+                  annotations={activeDoc.annotations}
+                  patches={activeDoc.patches}
+                  selectedRange={selectedRange}
+                  onTextChange={handleTextChange}
+                  onSelectionChange={setSelectedRange}
+                  onOpenPatch={handleOpenPatch}
+                />
+              </div>
 
-              <section className="panel">
+              <section className="panel max-h-24 shrink-0 overflow-auto py-3">
                 <h2 className="mb-2 text-sm font-semibold text-slate-800">Patch notes</h2>
                 {activeDoc.patches.length === 0 ? (
                   <p className="text-xs text-slate-500">No patch notes yet.</p>
@@ -705,7 +736,7 @@ export default function Home() {
               </section>
             </div>
 
-            <aside className="space-y-4">
+            <aside data-testid="right-rail" className="min-h-0 space-y-3 overflow-y-auto pr-1">
               <AssistantPanel
                 selectedText={selectedText}
                 selectedRange={selectedRange}
@@ -715,6 +746,7 @@ export default function Home() {
                 onApply={handleApplyAssistant}
                 onDismiss={() => setAssistantSuggestion(undefined)}
                 onTranslate={openTranslate}
+                onRefresh={handleRefresh}
               />
               <SnapshotPanel snapshots={activeDoc.snapshots} onRestore={handleRestoreSnapshot} />
               <SourceWorkbench
@@ -782,6 +814,44 @@ function lastActionClasses(tone: LastAction["tone"]) {
   if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
   if (tone === "error") return "border-red-200 bg-red-50 text-red-900";
   return "border-blue-100 bg-blue-50 text-blue-900";
+}
+
+function extractModuleOneQuestion(text: string) {
+  return text.match(/^\s*Research question\s*:\s*(.+)$/im)?.[1]?.trim() ??
+    text.match(/^\s*Question\s*:\s*(.+)$/im)?.[1]?.trim() ??
+    "";
+}
+
+function differsMeaningfully(title: string, question: string) {
+  if (!title.trim() || !question.trim()) return false;
+  const normalizedTitle = normalizeComparable(title);
+  const normalizedQuestion = normalizeComparable(question);
+  if (!normalizedTitle || !normalizedQuestion) return false;
+  return !normalizedQuestion.includes(normalizedTitle) && !normalizedTitle.includes(normalizedQuestion);
+}
+
+function normalizeComparable(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\b(how|can|should|what|why|when|where|does|do|the|a|an|and|or|to|of|in|for|we|our)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function findCitationNeededMarker(text: string, caret: number) {
+  const markerPattern = /\s*\[citation needed\]/gi;
+  for (const match of text.matchAll(markerPattern)) {
+    const start = match.index ?? 0;
+    const end = start + match[0].length;
+    if (caret >= start - 4 && caret <= end + 4) {
+      return { start, end };
+    }
+    if (caret < start && start - caret <= 3) {
+      return { start, end };
+    }
+  }
+  return null;
 }
 
 function mergeSelectedTranslationAnnotations(
