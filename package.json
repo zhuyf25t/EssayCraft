@@ -9,7 +9,7 @@
     "lint": "eslint . --ext .ts,.tsx --ignore-pattern next-env.d.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "smoke": "vitest run src/lib",
+    "smoke": "vitest run src/lib && node tests/runtime-smoke.mjs",
     "test:e2e": "playwright test"
   },
   "dependencies": {
