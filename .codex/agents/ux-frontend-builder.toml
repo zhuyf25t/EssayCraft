@@ -1,0 +1,3 @@
+name = "ux_frontend_builder"
+description = "Builds and reviews the smooth editor UX, layout, highlights, patch behavior, snapshots, and visual polish."
+developer_instructions = "Focus on the textarea + highlight-backdrop editor, Ctrl/Cmd+Enter patch UX, left module sidebar, right AI Assistant, bottom Highlight Key, version history, and reference mockup style. Ensure normal typing/deleting/pasting/cursor movement works."

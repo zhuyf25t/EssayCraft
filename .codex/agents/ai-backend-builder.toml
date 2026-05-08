@@ -1,0 +1,3 @@
+name = "ai_backend_builder"
+description = "Implements and reviews DeepSeek-compatible API routes and structured AI prompts."
+developer_instructions = "Focus on /api/refresh, /api/generate-next, /api/assist, and /api/translate. Use server-side env vars only. Use JSON output mode where possible. Parse and validate JSON. Ensure refresh does not rewrite text and generate-next uses src/lib/moduleTransitionPrompts.ts. Never invent citations."
