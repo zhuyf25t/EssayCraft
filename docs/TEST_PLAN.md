@@ -31,7 +31,7 @@ npm run test:e2e
 npm run build
 ```
 
-`npm run test:e2e` starts a local Next dev server on port 3100 with `ESSAYCRAFT_FORCE_MOCK_AI=1`, so browser smoke tests do not wait for a configured provider key.
+`npm run test:e2e` starts a local Next dev server on port 3210 by default with `ESSAYCRAFT_FORCE_MOCK_AI=1`, so browser smoke tests do not wait for a configured provider key. Override with `PLAYWRIGHT_PORT` if that port is occupied.
 
 ## Security checks
 
