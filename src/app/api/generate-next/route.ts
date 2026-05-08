@@ -43,9 +43,16 @@ export async function POST(request: Request) {
         throw new Error(`AI returned Module ${parsed.moduleNumber}, expected Module ${expectedTarget}.`);
       }
 
-      const text = cleanGeneratedText(parsed.text, parsed.moduleNumber);
+      const text = normalizeGeneratedModuleText(
+        sanitizeUnsupportedCitations(cleanGeneratedText(parsed.text, parsed.moduleNumber), input.sourceSources),
+        parsed.moduleNumber
+      );
       if (!text.trim()) {
         throw new Error("AI returned empty generated text after cleanup.");
+      }
+      const contractIssues = validateTransitionOutput(input.sourceModuleNumber, text);
+      if (contractIssues.length) {
+        throw new Error(`AI output failed transition contract: ${contractIssues.join("; ")}`);
       }
       const exact = exactAnnotations(text, parsed.annotations);
       const normalized: GenerateNextResponse = {
@@ -74,8 +81,9 @@ export async function POST(request: Request) {
 function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6>, sourceText: string, sourceSources: SourceCard[] = [], sourceAnnotations: Annotation[] = []): GenerateNextResponse {
   const transition = getTransitionPrompt(sourceModuleNumber);
   const moduleNumber = transition.toModule;
-  const text = cleanGeneratedText(mockText(topic, sourceModuleNumber, sourceText, sourceSources, sourceAnnotations), moduleNumber);
+  const text = normalizeGeneratedModuleText(cleanGeneratedText(mockText(topic, sourceModuleNumber, sourceText, sourceSources, sourceAnnotations), moduleNumber), moduleNumber);
   const annotations = normalizeAnnotations(text, [...buildMockAnnotations(text), ...findIssueRanges(text)]);
+  const contractIssues = validateTransitionOutput(sourceModuleNumber, text);
 
   return {
     moduleNumber,
@@ -84,7 +92,10 @@ function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6
     annotations,
     sources: sourceSources,
     globalFeedback: [`Mock generated Module ${moduleNumber} from Module ${sourceModuleNumber}.`],
-    warnings: ["Mock mode did not verify any source metadata. Keep [citation needed] markers until real sources are added."],
+    warnings: [
+      "Mock mode did not verify any source metadata. Keep source-needed and citation-needed markers until real sources are added.",
+      ...contractIssues.map((issue) => `Mock contract warning: ${issue}`)
+    ],
     providerMode: "mock"
   };
 }
@@ -102,15 +113,7 @@ function mockText(topic: string, sourceModuleNumber: ModuleNumber, sourceText: s
   }
 
   if (sourceModuleNumber === 3) {
-    return `${subject} is an important academic issue because it affects how students, institutions, and communities make practical decisions. The outline suggests that the essay should move from context to a clear thesis, then support that thesis with evidence and analysis. This draft argues that ${subject.toLowerCase()} should be addressed through focused habits, responsible institutional choices, and careful evaluation of evidence.
-
-First, the strongest body paragraph should explain the main reason named in the outline. The student should introduce a focused topic sentence, connect it to a real source or mark the claim [citation needed], and then analyze why the evidence supports the thesis. This matters because evidence should not stand alone; it needs interpretation that makes the argument clear.
-
-Second, the draft should develop a separate reason rather than repeating the first one. If the outline includes a policy, classroom, platform, or personal strategy, this paragraph should explain how that strategy works and what limitation it addresses [citation needed]. The analysis should show cause and effect, not just summarize the idea.
-
-Some readers may object that the proposed approach is too difficult, too limited, or less effective than a stricter alternative. That counterargument should be represented fairly before the essay responds. A balanced rebuttal can concede a valid concern while explaining why the thesis remains more practical or better supported.
-
-In conclusion, the essay should return to ${subject.toLowerCase()} and explain why the argument matters beyond a single assignment. The final paragraph should synthesize the main reasons, avoid introducing major new evidence, and leave the reader with a clear sense of significance.`;
+    return buildDraftFromOutline(subject, sourceText);
   }
 
   if (sourceModuleNumber === 4) {
@@ -163,84 +166,111 @@ type ResearchBranch = {
   status?: string;
 };
 
+type ModuleOnePlan = {
+  topic: string;
+  researchQuestion?: string;
+  thesis?: string;
+  reasons: string[];
+};
+
+type OutlineBody = {
+  index: number;
+  topicSentence: string;
+  evidence: string;
+  analysis: string;
+  linkBack: string;
+};
+
 function buildResearchPlan(subject: string, sourceText: string) {
-  const thesis = extractField(sourceText, "Working thesis") ??
-    extractField(sourceText, "Thesis") ??
-    `The essay will argue a focused position about ${trimPeriod(subject).toLowerCase()} using three specific, evidence-backed reasons.`;
-  const thesisMap = parseThesisMap(sourceText);
-  const branches = thesisMap.length ? thesisMap : [
+  const plan = parseModuleOnePlan(sourceText, subject);
+  const planSubject = plan.topic || subject;
+  const thesis = plan.thesis ??
+    `The essay will argue a focused position about ${trimPeriod(planSubject).toLowerCase()} using three specific, evidence-backed reasons.`;
+  const branches = plan.reasons.length ? plan.reasons : [
     `Define the most important development or problem within ${trimPeriod(subject).toLowerCase()}`,
     `Explain why ${trimPeriod(subject).toLowerCase()} matters for real people, institutions, or communities`,
     `Evaluate a practical response, design choice, policy, or ethical responsibility`
   ];
 
-  return `Research plan for: ${subject}
+  return `Research plan for: ${trimPeriod(planSubject)}
 
-Working thesis: ${thesis}
+${plan.researchQuestion ? `Research question: ${plan.researchQuestion}\n\n` : ""}Working thesis: ${thesis}
 
-${branches.map((branch, index) => `Argument branch ${index + 1}: ${capitalizeSentence(branch)}
-Evidence needed: Add a credible source that directly supports this branch [citation needed].
-Possible source type: scholarly article / government report / professional report
-Search keywords: ${keywordLine(subject, branch)}
-Source status: source needed`).join("\n\n")}
+Mind map / argument branches
 
-Counterargument to investigate: Identify a reasonable opposing view and what evidence would make it persuasive.
+${branches.slice(0, 4).map((branch, index) => researchBranchBlock(planSubject, branch, index + 1)).join("\n\n")}
+
+Counterargument to investigate: ${counterargumentFor(planSubject)}
+Evidence to look for: ${counterEvidenceFor(planSubject)}
 
 Source notes:
-- Add source cards in the Source Workbench. Do not invent citations.
+- Add real sources in the Source Workbench when found.
+- EssayCraft must not invent authors, years, DOIs, URLs, or reference entries.
 - Use the CARS check: credible, accurate, reasonable, and supportive of the exact claim.`;
 }
 
 function buildOutlineFromResearchPlan(subject: string, sourceText: string, sourceSources: SourceCard[]) {
   const parsed = parseResearchPlan(sourceText);
-  const branches = ensureAtLeastTwoBranches(parsed.branches, subject).slice(0, 4);
+  const planSubject = parsed.subject || subject;
+  const branches = ensureAtLeastTwoBranches(parsed.branches, planSubject).slice(0, 4);
   const thesis = parsed.thesis ??
-    `The essay will argue that ${trimPeriod(subject).toLowerCase()} should be understood through ${branches.slice(0, 3).map((branch) => trimPeriod(branch.claim).toLowerCase()).join(", ")}.`;
+    `The essay will argue that ${trimPeriod(planSubject).toLowerCase()} should be understood through ${branches.slice(0, 3).map((branch) => trimPeriod(branch.claim).toLowerCase()).join(", ")}.`;
   const realSources = sourceSources.filter((source) => !source.placeholder);
 
   return `Introduction plan
-- Hook / importance: ${capitalizeSentence(trimPeriod(subject))} matters because it shapes how people make choices, solve problems, and judge future responsibilities.
-- Background: The essay should define the topic, name the debate, and show why the issue is worth investigating now.
-- Thesis: ${thesis}
+- Hook / importance: ${outlineHook(planSubject, branches)}
+- Background: ${outlineBackground(planSubject, branches)}
+${parsed.researchQuestion ? `- Research question: ${parsed.researchQuestion}\n` : ""}- Thesis: ${thesis}
 - Thesis map: ${branches.slice(0, 3).map((branch) => trimPeriod(branch.claim)).join("; ")}.
 
 ${branches.map((branch, index) => `Body paragraph ${index + 1}
 - Topic sentence: ${branchTopicSentence(branch.claim, index + 1)}
 - Evidence to use: ${evidenceSlot(branch, realSources[index])}
-- Analysis: Explain how this evidence supports the thesis by showing why ${trimPeriod(branch.claim).toLowerCase()} is significant, not just by summarizing the source.
-- Link back: Connect this paragraph back to the claim that ${trimPeriod(subject).toLowerCase()} requires a focused academic argument.`).join("\n\n")}
+- Analysis purpose: ${analysisPurpose(branch.claim, planSubject)}
+- Link back: ${linkBack(branch.claim, planSubject)}`).join("\n\n")}
 
 Counterargument paragraph
-- Opposing view: ${parsed.counterargument ?? `Some readers may argue that another explanation or response matters more than ${trimPeriod(branches[0]?.claim ?? subject).toLowerCase()}.`}
+- Opposing view: ${parsed.counterargument ?? counterargumentFor(planSubject)}
 - Response: Acknowledge the strongest part of that view, then explain why the thesis remains more persuasive when the evidence is weighed carefully.
 
 Conclusion plan
-- Rephrased thesis: Return to the central claim without copying the introduction word-for-word.
+- Rephrased thesis: ${conclusionThesis(planSubject)}
 - Summary of main arguments: Synthesize ${branches.slice(0, 3).map((branch) => trimPeriod(branch.claim).toLowerCase()).join(", ")}.
-- So what / implication: Explain what the reader should understand or do differently after considering the argument.`;
+- So what / implication: ${soWhatImplication(planSubject)}`;
 }
 
 function parseResearchPlan(text: string) {
   const branches: ResearchBranch[] = [];
   let current: ResearchBranch | undefined;
+  let inMindMap = false;
 
   for (const rawLine of text.split("\n")) {
     const line = rawLine.trim();
-    if (!line) continue;
+    if (!line) {
+      inMindMap = false;
+      continue;
+    }
 
-    const branchMatch = line.match(/^Argument branch\s*(\d+)?\s*:\s*(.+)$/i) ??
-      line.match(/^Claim to investigate\s*(\d+)?\s*:\s*(.+)$/i);
+    if (/^(mind map|argument branches|argument map|possible argument map)/i.test(line)) {
+      inMindMap = true;
+      continue;
+    }
+
+    const branchMatch = line.match(/^(?:Argument branch|Argument|Branch|Claim|Claim to investigate|Reason)\s*([A-Za-z0-9]*)\s*[:.)-]\s*(.+)$/i) ??
+      (inMindMap ? line.match(/^[-*]\s*(.+)$/) : null);
     if (branchMatch) {
+      const indexToken = branchMatch.length > 2 ? branchMatch[1] : "";
+      const claimText = branchMatch.length > 2 ? branchMatch[2] : branchMatch[1];
       current = {
-        index: Number(branchMatch[1]) || branches.length + 1,
-        claim: cleanupOutlineText(branchMatch[2])
+        index: Number(indexToken) || branches.length + 1,
+        claim: cleanupOutlineText(claimText)
       };
       branches.push(current);
       continue;
     }
 
     if (current) {
-      const evidence = line.match(/^Evidence needed\s*:\s*(.+)$/i) ?? line.match(/^Evidence to find\s*:\s*(.+)$/i);
+      const evidence = line.match(/^Evidence (?:needed|to look for|to use|to find)\s*:\s*(.+)$/i);
       if (evidence) {
         current.evidence = cleanupOutlineText(evidence[1]);
         continue;
@@ -266,6 +296,8 @@ function parseResearchPlan(text: string) {
   }
 
   return {
+    subject: extractField(text, "Research plan for") ?? extractField(text, "Topic"),
+    researchQuestion: extractField(text, "Research question") ?? extractField(text, "Question"),
     thesis: extractField(text, "Working thesis") ?? extractField(text, "Thesis"),
     counterargument: extractField(text, "Counterargument to investigate") ?? extractField(text, "Counterargument"),
     branches
@@ -279,8 +311,8 @@ function ensureAtLeastTwoBranches(branches: ResearchBranch[], subject: string) {
     ...result,
     {
       index: result.length + 1,
-      claim: `A second argument branch should explain a distinct consequence of ${trimPeriod(subject).toLowerCase()}`,
-      evidence: "Add a source that supports this separate reason [citation needed]",
+      claim: `A distinct consequence of ${trimPeriod(subject).toLowerCase()} deserves separate investigation`,
+      evidence: "Add a source that supports this separate reason",
       status: "source needed"
     }
   ];
@@ -292,8 +324,8 @@ function evidenceSlot(branch: ResearchBranch, source: SourceCard | undefined) {
     return `Use source card ${source.id}: ${source.title || "Untitled source"}${citation ? ` ${citation}` : ""}.`;
   }
 
-  const evidence = branch.evidence ? trimPeriod(branch.evidence) : "Add a credible source for this claim";
-  return `[source needed] ${evidence}.`;
+  const evidence = branch.evidence ? trimPeriod(branch.evidence) : "credible source directly supporting this claim";
+  return `[source needed: ${evidence}.]`;
 }
 
 function sourceCitation(source: SourceCard) {
@@ -304,10 +336,8 @@ function sourceCitation(source: SourceCard) {
 
 function branchTopicSentence(claim: string, index: number) {
   const cleaned = trimPeriod(cleanupOutlineText(claim));
-  if (/^(the|a|an|technology|education|schools|students|people|platforms|government|research|evidence)\b/i.test(cleaned)) {
-    return capitalizeSentence(cleaned);
-  }
-  return `The essay's ${ordinal(index)} body paragraph should argue that ${lowerFirst(cleaned)}.`;
+  void index;
+  return `${capitalizePhrase(cleaned)}.`;
 }
 
 function parseThesisMap(text: string) {
@@ -316,19 +346,450 @@ function parseThesisMap(text: string) {
   let capture = false;
   for (const rawLine of lines) {
     const line = rawLine.trim();
-    if (/^Thesis map\s*:/i.test(line)) {
+    if (/^(?:Thesis map|Possible argument map|Argument map|Reasons)\s*:/i.test(line)) {
       capture = true;
-      const inline = line.replace(/^Thesis map\s*:\s*/i, "").trim();
-      if (inline) reasons.push(cleanupOutlineText(inline));
+      const inline = line.replace(/^(?:Thesis map|Possible argument map|Argument map|Reasons)\s*:\s*/i, "").trim();
+      if (inline) {
+        const splitReasons = inline
+          .split(/\s*(?:;|\n|\|\s*|\bReason\s*\d+\s*:)\s*/i)
+          .map(cleanupOutlineText)
+          .filter(Boolean);
+        reasons.push(...(splitReasons.length ? splitReasons : [cleanupOutlineText(inline)]));
+      }
       continue;
     }
     if (!capture) continue;
     if (!line) continue;
     if (/^[A-Z][A-Za-z ]+\s*:/.test(line) && !/^[-*]/.test(line)) break;
-    const reason = line.match(/^[-*]\s*(?:Reason\s*\d+\s*:\s*)?(.+)$/i)?.[1];
+    const reason = line.match(/^(?:[-*]\s*)?(?:Reason\s*\d+|Argument\s*\d+|Branch\s*\d+)?\s*:?\s*(.+)$/i)?.[1];
     if (reason) reasons.push(cleanupOutlineText(reason));
   }
-  return reasons;
+  return Array.from(new Set(reasons.filter(Boolean)));
+}
+
+function parseModuleOnePlan(text: string, fallbackSubject: string): ModuleOnePlan {
+  return {
+    topic: extractField(text, "Topic") ?? fallbackSubject,
+    researchQuestion: extractField(text, "Research question") ?? extractField(text, "Question"),
+    thesis: extractField(text, "Working thesis") ?? extractField(text, "Thesis"),
+    reasons: parseThesisMap(text)
+  };
+}
+
+function researchBranchBlock(subject: string, branch: string, index: number) {
+  const profile = sourceNeedProfile(subject, branch);
+  return `Argument branch ${index}: ${profile.claim}
+Evidence to look for: ${profile.evidence}
+Possible source type: ${profile.sourceType}
+Search keywords: ${profile.keywords}
+Source status: source needed
+CARS check: ${profile.cars}`;
+}
+
+function sourceNeedProfile(subject: string, branch: string) {
+  const cleaned = trimPeriod(cleanupOutlineText(branch));
+  const lower = `${subject} ${cleaned}`.toLowerCase();
+
+  if (isSocialMediaTopic(lower) && /(habit|passive|scroll|attention|sleep|anxiety|wellbeing)/i.test(cleaned)) {
+    return {
+      claim: "Intentional habits can reduce passive scrolling and help users regain control over attention.",
+      evidence: "Research on screen time, passive scrolling, wellbeing, sleep, attention, or adolescent mental health.",
+      sourceType: "scholarly article, professional mental-health report, or government/public-health report",
+      keywords: "social media passive scrolling youth wellbeing attention sleep anxiety study",
+      cars: "When a source is added, check whether it is credible, accurate, reasonable, and directly supportive of this claim."
+    };
+  }
+
+  if (isSocialMediaTopic(lower) && /(platform|design|algorithm|notification|comparison|engagement)/i.test(cleaned)) {
+    return {
+      claim: "Platform design can intensify comparison and distraction, so healthier balance also requires design responsibility.",
+      evidence: "Research or professional reports on engagement design, recommendation algorithms, notifications, social comparison, or platform regulation.",
+      sourceType: "scholarly article, professional technology report, government report, or NGO report",
+      keywords: "social media algorithms engagement design social comparison youth wellbeing regulation",
+      cars: "When a source is added, check whether the author is reliable and whether the evidence directly supports the design-responsibility claim."
+    };
+  }
+
+  if (isSocialMediaTopic(lower) && /(school|digital literacy|media literacy|education|students)/i.test(cleaned)) {
+    return {
+      claim: "Digital literacy education can help students evaluate social media more critically.",
+      evidence: "Research on digital literacy, media education, school-based interventions, or youth online safety education.",
+      sourceType: "education research article, government education policy report, or professional report",
+      keywords: "digital literacy education students social media critical evaluation wellbeing",
+      cars: "When a source is added, check whether it includes evidence relevant to young people or education."
+    };
+  }
+
+  return {
+    claim: capitalizeSentence(cleaned),
+    evidence: `Research, examples, or professional evidence that directly support ${lowerFirst(cleaned)}.`,
+    sourceType: "scholarly article, government report, professional report, or course-approved credible source",
+    keywords: keywordLine(subject, cleaned),
+    cars: "When a source is added, check whether it is credible, accurate, reasonable, and directly supportive of this branch."
+  };
+}
+
+function outlineHook(subject: string, branches: ResearchBranch[]) {
+  const lower = `${subject} ${branches.map((branch) => branch.claim).join(" ")}`.toLowerCase();
+  if (isSocialMediaTopic(lower)) {
+    return "Social media now shapes how young people communicate, relax, study, and compare themselves with others, so the question is not simply whether social media is good or bad but how it can be used more healthily.";
+  }
+  if (/technology|human|machine|ai|computer|phone/i.test(lower)) {
+    return "Technology increasingly shapes how people communicate, work, and understand themselves, so its future should be judged by how well it serves human needs.";
+  }
+  return `${capitalizePhrase(trimPeriod(subject))} matters because it shapes practical choices, responsibilities, and the evidence readers need before accepting an argument.`;
+}
+
+function outlineBackground(subject: string, branches: ResearchBranch[]) {
+  const lower = `${subject} ${branches.map((branch) => branch.claim).join(" ")}`.toLowerCase();
+  if (isSocialMediaTopic(lower)) {
+    return "The essay should briefly explain that social media offers connection and information, while also creating risks such as passive scrolling, distraction, social comparison, and pressure on wellbeing.";
+  }
+  if (/technology|human|machine|ai|computer|phone/i.test(lower)) {
+    return "Computers, mobile phones, and AI systems can be presented as stages in a changing relationship between humans and machines.";
+  }
+  return `The essay should define ${trimPeriod(subject).toLowerCase()}, name the debate, and explain why the issue is worth investigating now.`;
+}
+
+function analysisPurpose(claim: string, subject: string) {
+  const lower = `${subject} ${claim}`.toLowerCase();
+  if (isSocialMediaTopic(lower) && /(habit|passive|scroll|attention)/i.test(claim)) {
+    return "Explain how intentional habits such as app limits, no-phone study periods, or mindful checking routines reduce passive consumption and make social media use more deliberate.";
+  }
+  if (isSocialMediaTopic(lower) && /(platform|design|algorithm|notification|comparison)/i.test(claim)) {
+    return "Explain why individual self-control is limited when platforms are designed to maximize attention, and why design changes could reduce comparison and distraction.";
+  }
+  if (isSocialMediaTopic(lower) && /(school|digital literacy|education|students)/i.test(claim)) {
+    return "Explain how digital literacy helps students evaluate online content, recognize manipulative design, and reflect on how social media affects their emotions and attention.";
+  }
+  return `Explain how this evidence supports the thesis by showing why ${trimPeriod(claim).toLowerCase()} matters, rather than only summarizing the source.`;
+}
+
+function linkBack(claim: string, subject: string) {
+  const lower = `${subject} ${claim}`.toLowerCase();
+  if (isSocialMediaTopic(lower) && /(habit|passive|scroll|attention)/i.test(claim)) {
+    return "This supports the thesis by showing that balance begins with user agency, not total rejection of social media.";
+  }
+  if (isSocialMediaTopic(lower) && /(platform|design|algorithm|notification|comparison)/i.test(claim)) {
+    return "This supports the thesis by showing that healthier balance requires institutional responsibility as well as personal habits.";
+  }
+  if (isSocialMediaTopic(lower) && /(school|digital literacy|education|students)/i.test(claim)) {
+    return "This supports the thesis by showing that balance can be learned and practiced.";
+  }
+  return `This supports the thesis by connecting ${trimPeriod(claim).toLowerCase()} back to the larger argument about ${trimPeriod(subject).toLowerCase()}.`;
+}
+
+function counterargumentFor(subject: string) {
+  if (isSocialMediaTopic(subject)) {
+    return "Some people may argue that strict bans or screen-time limits are more effective than balance-oriented approaches.";
+  }
+  return `Some readers may argue that a stricter, simpler, or competing response to ${trimPeriod(subject).toLowerCase()} would be more effective.`;
+}
+
+function counterEvidenceFor(subject: string) {
+  if (isSocialMediaTopic(subject)) {
+    return "Policy debate, youth rights analysis, or evidence on social media restrictions.";
+  }
+  return "Evidence that fairly represents the strongest opposing view before the essay responds.";
+}
+
+function conclusionThesis(subject: string) {
+  if (isSocialMediaTopic(subject)) return "Social media balance is most realistic when responsibility is shared among users, platforms, and schools.";
+  return `${capitalizePhrase(trimPeriod(subject))} is best understood through the combined reasons developed in the essay.`;
+}
+
+function soWhatImplication(subject: string) {
+  if (isSocialMediaTopic(subject)) {
+    return "End by explaining that the goal is not to reject social media entirely, but to make its benefits less dependent on constant attention and comparison.";
+  }
+  return "End by explaining why the argument matters beyond a single assignment and what readers should understand differently.";
+}
+
+function buildDraftFromOutline(subject: string, outlineText: string) {
+  const outline = parseOutline(outlineText, subject);
+  const cleanSubject = trimPeriod(outline.subject || subject);
+  const thesis = ensureSentence(outline.thesis || `A balanced argument about ${cleanSubject.toLowerCase()} needs clear reasons, evidence, and analysis`);
+  const bodies = ensureDraftBodies(outline.bodies, cleanSubject);
+  const intro = buildIntroductionParagraph(cleanSubject, outline, thesis, bodies);
+  const bodyParagraphs = bodies.slice(0, 4).map((body, index) => buildBodyParagraph(body, index + 1, cleanSubject));
+  const counter = buildCounterargumentParagraph(outline, cleanSubject);
+  const conclusion = buildConclusionParagraph(outline, cleanSubject, thesis, bodies);
+  return [intro, ...bodyParagraphs, counter, conclusion].filter(Boolean).join("\n\n");
+}
+
+function parseOutline(text: string, fallbackSubject: string) {
+  const outline = {
+    subject: extractField(text, "Topic") ?? fallbackSubject,
+    hook: "",
+    background: "",
+    researchQuestion: "",
+    thesis: "",
+    thesisMap: "",
+    bodies: [] as OutlineBody[],
+    opposingView: "",
+    response: "",
+    rephrasedThesis: "",
+    summary: "",
+    implication: ""
+  };
+  let section: "intro" | "body" | "counter" | "conclusion" | "" = "";
+  let currentBody: OutlineBody | undefined;
+
+  for (const rawLine of text.split("\n")) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    const bodyHeading = line.match(/^Body paragraph\s*(\d*)/i);
+    if (/^Introduction(?: plan)?$/i.test(line)) {
+      section = "intro";
+      continue;
+    }
+    if (bodyHeading) {
+      section = "body";
+      currentBody = {
+        index: Number(bodyHeading[1]) || outline.bodies.length + 1,
+        topicSentence: "",
+        evidence: "",
+        analysis: "",
+        linkBack: ""
+      };
+      outline.bodies.push(currentBody);
+      continue;
+    }
+    if (/^Counterargument(?: paragraph)?$/i.test(line)) {
+      section = "counter";
+      currentBody = undefined;
+      continue;
+    }
+    if (/^Conclusion(?: plan)?$/i.test(line)) {
+      section = "conclusion";
+      currentBody = undefined;
+      continue;
+    }
+
+    const field = line.match(/^[-*]?\s*([^:]+)\s*:\s*(.+)$/);
+    if (!field) continue;
+    const label = field[1].trim().toLowerCase();
+    const value = cleanupDraftSourceText(field[2]);
+
+    if (label.includes("hook") || label.includes("importance")) {
+      if (!outline.hook) outline.hook = value;
+      else if (!outline.background) outline.background = value;
+      continue;
+    }
+    if (label.includes("background") || label.includes("context")) {
+      outline.background = value;
+      continue;
+    }
+    if (label.includes("research question") || label === "question") {
+      outline.researchQuestion = value;
+      continue;
+    }
+    if (label.includes("thesis map")) {
+      outline.thesisMap = value;
+      continue;
+    }
+    if (label === "thesis" || label.includes("working thesis")) {
+      outline.thesis = value;
+      continue;
+    }
+
+    if (currentBody) {
+      if (label.includes("topic sentence")) currentBody.topicSentence = value;
+      else if (label.includes("evidence")) currentBody.evidence = value;
+      else if (label.includes("analysis")) currentBody.analysis = value;
+      else if (label.includes("link back") || label.includes("link")) currentBody.linkBack = value;
+      continue;
+    }
+
+    if (section === "counter") {
+      if (label.includes("opposing") || label.includes("counter")) outline.opposingView = value;
+      else if (label.includes("response") || label.includes("rebuttal")) outline.response = value;
+      continue;
+    }
+
+    if (section === "conclusion") {
+      if (label.includes("rephrased") || label.includes("thesis")) outline.rephrasedThesis = value;
+      else if (label.includes("summary") || label.includes("main arguments")) outline.summary = value;
+      else if (label.includes("so what") || label.includes("implication") || label.includes("significance")) outline.implication = value;
+    }
+  }
+
+  return outline;
+}
+
+function ensureDraftBodies(bodies: OutlineBody[], subject: string) {
+  const result = bodies.filter((body) => body.topicSentence || body.evidence || body.analysis);
+  while (result.length < 2) {
+    const index = result.length + 1;
+    result.push({
+      index,
+      topicSentence: index === 1
+        ? `${capitalizePhrase(subject)} needs a focused first reason that connects the topic to the thesis.`
+        : `${capitalizePhrase(subject)} also needs a separate reason that addresses a different part of the issue.`,
+      evidence: "A relevant academic or professional source is needed for this claim.",
+      analysis: "This evidence would help explain why the reason supports the thesis.",
+      linkBack: "This point connects back to the essay's central argument."
+    });
+  }
+  return result;
+}
+
+function buildIntroductionParagraph(subject: string, outline: ReturnType<typeof parseOutline>, thesis: string, bodies: OutlineBody[]) {
+  if (isSocialMediaTopic(`${subject} ${thesis}`)) {
+    return `${outline.hook || "Social media has become a normal part of how young people communicate, relax, and understand the world around them."} It can help users maintain friendships, access information, and participate in communities, but it can also encourage distraction, passive scrolling, and constant social comparison. For this reason, the central question is not whether social media should be completely accepted or rejected, but how it can be used in a healthier way. This essay argues that ${lowerFirst(trimPeriod(thesis))}.`;
+  }
+
+  const hook = outline.hook || `${capitalizePhrase(subject)} is a significant academic issue because it affects how people make choices and evaluate responsibility.`;
+  const background = outline.background || `The topic requires careful attention to context, competing views, and evidence.`;
+  const map = outline.thesisMap || bodies.slice(0, 3).map((body) => trimPeriod(body.topicSentence)).join(", ");
+  return `${ensureSentence(hook)} ${ensureSentence(background)} This essay argues that ${lowerFirst(trimPeriod(thesis))}. It will develop this argument through ${lowerFirst(trimPeriod(map))}.`;
+}
+
+function buildBodyParagraph(body: OutlineBody, index: number, subject: string) {
+  const topic = ensureSentence(body.topicSentence || `${capitalizePhrase(subject)} requires a focused reason.`);
+  const evidence = evidenceToDraftSentence(body.evidence);
+  const analysis = analysisToDraftSentence(body.analysis);
+  const link = linkToDraftSentence(body.linkBack, subject);
+  return `${transitionFor(index)}, ${lowerFirst(trimPeriod(topic))}. ${evidence} ${analysis} ${link}`;
+}
+
+function buildCounterargumentParagraph(outline: ReturnType<typeof parseOutline>, subject: string) {
+  const opposing = cleanupDraftSourceText(outline.opposingView || counterargumentFor(subject));
+  const response = cleanupDraftSourceText(outline.response || `A balanced response can concede a valid concern while explaining why the thesis remains more practical or better supported.`);
+  const opposingSentence = /^some (readers|people|critics)/i.test(opposing)
+    ? ensureSentence(opposing)
+    : `Some readers may argue that ${lowerFirst(trimPeriod(opposing))}.`;
+  const responseSentence = /^however|although|a balanced|this concern/i.test(response)
+    ? ensureSentence(response)
+    : `However, ${lowerFirst(trimPeriod(response))}.`;
+  return `${opposingSentence} ${responseSentence}`;
+}
+
+function buildConclusionParagraph(outline: ReturnType<typeof parseOutline>, subject: string, thesis: string, bodies: OutlineBody[]) {
+  const rephrased = cleanupDraftSourceText(outline.rephrasedThesis || (isSocialMediaTopic(subject) ? conclusionThesis(subject) : thesis));
+  const summary = cleanupDraftSourceText(outline.summary || bodies.slice(0, 3).map((body) => trimPeriod(body.topicSentence).toLowerCase()).join(", "));
+  const implication = cleanupDraftSourceText(outline.implication || soWhatImplication(subject));
+  return `In conclusion, ${lowerFirst(trimPeriod(rephrased))}. The essay has shown that ${summary}. ${ensureSentence(implication)}`;
+}
+
+function evidenceToDraftSentence(value: string) {
+  const cleaned = cleanupDraftSourceText(value)
+    .replace(/\[source needed:?\s*([^\]]*)\]/gi, "$1")
+    .replace(/\[citation needed\]/gi, "")
+    .trim();
+  const detail = trimPeriod(cleaned || "a relevant academic or professional source is needed for this claim");
+  if (/\([A-Z][A-Za-z' -]+,\s*\d{4}[a-z]?\)/.test(value)) {
+    return ensureSentence(detail);
+  }
+  return `A relevant source is needed here to support ${lowerFirst(detail)} [citation needed].`;
+}
+
+function analysisToDraftSentence(value: string) {
+  const cleaned = cleanupDraftSourceText(value);
+  if (!cleaned) return "This matters because the evidence needs to be interpreted and connected back to the thesis.";
+  return ensureSentence(
+    cleaned
+      .replace(/^Explain how\s+/i, "This shows how ")
+      .replace(/^Explain why\s+/i, "This explains why ")
+      .replace(/^Explain\s+/i, "This explains ")
+  );
+}
+
+function linkToDraftSentence(value: string, subject: string) {
+  const cleaned = cleanupDraftSourceText(value);
+  if (!cleaned) return `Therefore, this point supports the broader argument about ${trimPeriod(subject).toLowerCase()}.`;
+  return ensureSentence(cleaned.replace(/^This supports the thesis by\s+/i, "Therefore, this supports the thesis by "));
+}
+
+function cleanupDraftSourceText(value: string) {
+  return cleanupOutlineText(value)
+    .replace(/^The student should\s+/i, "")
+    .replace(/^the outline suggests that\s+/i, "")
+    .replace(/^the draft should\s+/i, "")
+    .replace(/\bshould\s+return to\b/gi, "returns to")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function ensureSentence(value: string) {
+  const text = trimPeriod(value);
+  if (!text) return "";
+  return `${text}.`;
+}
+
+function transitionFor(index: number) {
+  return index === 1 ? "First" : index === 2 ? "Second" : index === 3 ? "Third" : "Finally";
+}
+
+function normalizeGeneratedModuleText(text: string, moduleNumber: Exclude<ModuleNumber, 1>) {
+  if (moduleNumber === 2) {
+    return text.replace(/\s*\[citation needed\]\s*/gi, " source needed ").replace(/[ \t]{2,}/g, " ").trim();
+  }
+  if (moduleNumber === 3) {
+    return text.replace(/\[citation needed(?::\s*([^\]]+))?\]/gi, (_match, detail: string | undefined) =>
+      detail ? `[source needed: ${detail}]` : "[source needed]"
+    );
+  }
+  return text;
+}
+
+function validateTransitionOutput(sourceModuleNumber: Exclude<ModuleNumber, 6>, text: string) {
+  const issues: string[] = [];
+  const lower = text.toLowerCase();
+  if (sourceModuleNumber === 1) {
+    if (!/argument branch\s*1/i.test(text)) issues.push("missing argument branches");
+    if (!/source status\s*:\s*source needed/i.test(text)) issues.push("missing source-needed status");
+    if (!/cars check/i.test(text)) issues.push("missing CARS checks");
+    if (/\[citation needed\]/i.test(text)) issues.push("Module 2 should use source-needed planning language instead of citation-needed markers");
+  }
+  if (sourceModuleNumber === 2) {
+    if (!/Introduction plan/i.test(text)) issues.push("missing introduction plan");
+    if ((text.match(/Body paragraph\s*\d+/gi) ?? []).length < 2) issues.push("fewer than two body paragraphs");
+    if (!/Evidence to use/i.test(text)) issues.push("missing evidence slots");
+    if (!/\[source needed/i.test(text)) issues.push("missing source-needed marker");
+    if (/present the first reason|state the essay'?s arguable position|refined question: where is/i.test(text)) issues.push("contains generic outline filler");
+  }
+  if (sourceModuleNumber === 3) {
+    const forbidden = [
+      "introduction plan is an important academic issue",
+      "the student should",
+      "the strongest body paragraph should",
+      "the draft should develop",
+      "return to introduction plan",
+      "topic sentence:",
+      "evidence to use:",
+      "analysis purpose:",
+      "link back:"
+    ];
+    for (const phrase of forbidden) {
+      if (lower.includes(phrase)) issues.push(`contains template phrase: ${phrase}`);
+    }
+    if (text.split(/\n\s*\n/).filter((paragraph) => paragraph.trim().length > 60).length < 3) {
+      issues.push("Module 4 draft has too few prose paragraphs");
+    }
+  }
+  return issues;
+}
+
+function sanitizeUnsupportedCitations(text: string, userSources: SourceCard[]) {
+  const allowed = userSources.map(sourceCitation).filter(Boolean);
+  if (!allowed.length) {
+    return text.replace(/\(([A-Z][A-Za-z' -]+(?:\s*&\s*[A-Z][A-Za-z' -]+)?),\s*\d{4}[a-z]?\)/g, "[citation needed]");
+  }
+  return text.replace(/\(([A-Z][A-Za-z' -]+(?:\s*&\s*[A-Z][A-Za-z' -]+)?),\s*\d{4}[a-z]?\)/g, (citation) =>
+    allowed.some((allowedCitation) => allowedCitation.toLowerCase() === citation.toLowerCase()) ? citation : "[citation needed]"
+  );
+}
+
+function isSocialMediaTopic(value: string) {
+  return /social media|platforms?|scrolling|digital literacy|youth wellbeing|wellbeing/.test(value.toLowerCase());
+}
+
+function capitalizePhrase(value: string) {
+  const text = trimPeriod(value);
+  if (!text) return "";
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
 }
 
 function extractField(text: string, field: string) {
@@ -347,7 +808,7 @@ function keywordLine(subject: string, branch: string) {
 }
 
 function cleanupOutlineText(value: string) {
-  return value.replace(/\s*\[(?:citation|source) needed\]\s*/gi, "").replace(/\s+/g, " ").trim();
+  return value.replace(/\s*\[(?:citation|source) needed(?::[^\]]*)?\]\s*/gi, " ").replace(/\s+/g, " ").trim();
 }
 
 function capitalizeSentence(value: string) {
@@ -363,10 +824,6 @@ function trimPeriod(value: string) {
 function lowerFirst(value: string) {
   if (!value) return value;
   return `${value.charAt(0).toLowerCase()}${value.slice(1)}`;
-}
-
-function ordinal(value: number) {
-  return value === 1 ? "first" : value === 2 ? "second" : value === 3 ? "third" : `${value}th`;
 }
 
 function sanitizeGeneratedSources(_generated: SourceCard[], userSources: SourceCard[]) {

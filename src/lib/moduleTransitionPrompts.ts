@@ -35,7 +35,7 @@ You are EssayCraft, an academic writing workflow assistant.
 Return valid JSON only. Do not wrap JSON in markdown.
 Preserve the user's topic, stance, and voice where possible.
 Do not invent real citations, authors, publication years, titles, DOIs, URLs, journals, or reference entries.
-If evidence is needed but no source is supplied, use [citation needed] and/or label the relevant range as issue.
+If draft evidence is unsupported, use [citation needed] and/or label the relevant range as issue. In planning modules, prefer source-needed language.
 Use labels only from: background, thesis, evidence, analysis, counterargument, citation, conclusion, issue, plain.
 Expected JSON shape: { "moduleNumber": number, "title": string, "text": string, "annotations": [], "sources": [], "globalFeedback": [], "warnings": [] }.
 Annotations must use start/end offsets that match substrings in the returned text.
@@ -72,14 +72,14 @@ export const MODULE_TRANSITION_PROMPTS: Record<ModuleTransitionId, ModuleTransit
       "Source notes directing students to source cards",
     ],
     paragraphFormat: "Headings and bullets are allowed. Keep sections separated by blank lines.",
-    citationBehavior: "Do not create real citations. Suggest source types, search keywords, and [source needed] or [citation needed] placeholders.",
-    failureBehavior: "If source text is too thin, return a short research plan with clear [citation needed] placeholders rather than inventing evidence.",
+    citationBehavior: "Do not create real citations. Suggest source types, search keywords, source status, and source-needed planning notes. Do not mark Module 2 planning as citation failure.",
+    failureBehavior: "If source text is too thin, return a short research plan with clear source-needed planning notes rather than inventing evidence.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 1 to Module 2 generator. Create a research and evidence plan.`,
     userPromptTemplate: `
 Input contains topic/question/thesis/early notes.
 Create Module 2: Research & Evidence.
 Include argument branches, evidence needs, suitable source types, possible search keywords, and CARS reminders: Credible, Accurate, Reasonable, Support.
-Do not fabricate sources. Use placeholders such as [scholarly source needed] or [citation needed].
+Do not fabricate sources. Use source-needed planning language, not fake author-year citations.
 `,
     validationRules: [
       "Must not contain fabricated author-year citations unless supplied by user.",
@@ -105,7 +105,7 @@ Do not fabricate sources. Use placeholders such as [scholarly source needed] or 
       "Missing evidence warnings",
     ],
     paragraphFormat: "Use a clean outline with headings and bullets. Keep introduction/body/counterargument/conclusion sections separated by blank lines.",
-    citationBehavior: "Use [citation needed] for evidence with no supplied source. Never fabricate sources.",
+    citationBehavior: "Use [source needed: ...] for outline evidence slots with no supplied source. Never fabricate sources.",
     failureBehavior: "If evidence notes are incomplete, keep the outline scaffold and mark missing evidence explicitly.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 2 to Module 3 generator. Create a structured argumentative essay outline.`,
     userPromptTemplate: `
@@ -114,7 +114,7 @@ Preserve the student's actual topic, working thesis, and named argument branches
 Do not use generic filler such as "Present the first reason" when Module 2 includes branch text.
 For the introduction include hook/importance, background/context, focus/scope, thesis, thesis map.
 For each body paragraph include topic sentence, Evidence to use, analysis, and link back to thesis.
-If no source card exists for an evidence slot, write [source needed] or [citation needed].
+If no source card exists for an evidence slot, write [source needed: ...].
 Include counterargument paragraph and a conclusion plan explaining why the argument matters.
 `,
     validationRules: [
@@ -155,11 +155,13 @@ Use academic tone: formal, precise, unemotional, balanced.
 Use metadiscourse and signal devices where helpful: firstly, in addition, however, for example, therefore, this essay argues.
 Use hedging for uncertain claims: may, could, appears to, suggests.
 Do not invent citations; use [citation needed] for unsupported factual claims.
+Do not write about outline labels such as Introduction plan, Topic sentence, Evidence to use, Analysis purpose, or Link back. Use them only to compose real paragraphs.
 `,
     validationRules: [
       "Must be paragraph-like draft, not only bullets.",
       "Must not invent citations.",
       "Should include thesis and analysis labels.",
+      "Must not contain template phrases such as 'The student should' or 'the strongest body paragraph should'.",
     ],
   },
   "4-5": {
