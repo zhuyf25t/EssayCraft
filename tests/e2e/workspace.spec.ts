@@ -12,6 +12,11 @@ test.beforeEach(async ({ page }) => {
   await page.goto("/");
 });
 
+test("homepage renders EssayCraft title without runtime 500", async ({ page }) => {
+  await expect(page.getByText("EssayCraft").first()).toBeVisible();
+  await expect(page.getByTestId("app-shell")).toBeVisible();
+});
+
 test("fixed shell keeps browser page from scrolling while editor owns long text scroll", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const longText = Array.from({ length: 55 }, (_, index) => `Paragraph ${index + 1}. This paragraph makes the writing canvas long enough to scroll internally.`).join("\n\n");
