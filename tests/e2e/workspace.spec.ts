@@ -13,8 +13,14 @@ test.beforeEach(async ({ page }) => {
 });
 
 test("homepage renders EssayCraft title without runtime 500", async ({ page }) => {
+  const consoleErrors: string[] = [];
+  page.on("console", (message) => {
+    if (message.type() === "error") consoleErrors.push(message.text());
+  });
+  await page.reload({ waitUntil: "networkidle" });
   await expect(page.getByText("EssayCraft").first()).toBeVisible();
   await expect(page.getByTestId("app-shell")).toBeVisible();
+  expect(consoleErrors.filter((message) => message.includes("Encountered two children with the same key"))).toHaveLength(0);
 });
 
 test("fixed shell keeps browser page from scrolling while editor owns long text scroll", async ({ page }) => {

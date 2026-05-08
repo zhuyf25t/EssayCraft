@@ -674,7 +674,7 @@ export default function Home() {
                   <span className="font-semibold">Last action:</span> {lastAction.message}
                   {lastAction.details?.length ? (
                     <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
-                      {lastAction.details.slice(0, 4).map((detail) => <li key={detail}>{detail}</li>)}
+                      {lastAction.details.slice(0, 4).map((detail, index) => <li key={`${index}-${detail.slice(0, 48)}`}>{detail}</li>)}
                     </ul>
                   ) : null}
                 </div>

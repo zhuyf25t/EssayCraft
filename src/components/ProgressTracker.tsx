@@ -55,8 +55,8 @@ export function ProgressTracker({ project, actionSteps, activeStep, onSelect }: 
 
       {actionSteps.length ? (
         <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900">
-          {actionSteps.map((step) => (
-            <span key={step} className={`rounded-full px-2 py-1 ${step === activeStep ? "bg-blue-600 text-white" : "bg-white text-blue-700"}`}>
+          {actionSteps.map((step, index) => (
+            <span key={`${index}-${step}`} className={`rounded-full px-2 py-1 ${step === activeStep ? "bg-blue-600 text-white" : "bg-white text-blue-700"}`}>
               {step}
             </span>
           ))}

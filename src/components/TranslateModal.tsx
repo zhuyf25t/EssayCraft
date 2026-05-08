@@ -61,7 +61,7 @@ export function TranslateModal({
 
         {preview?.warnings.length ? (
           <ul className="mt-3 space-y-1 text-xs text-amber-800">
-            {preview.warnings.map((warning) => <li key={warning}>- {warning}</li>)}
+            {preview.warnings.map((warning, index) => <li key={`${index}-${warning.slice(0, 48)}`}>- {warning}</li>)}
           </ul>
         ) : null}
 

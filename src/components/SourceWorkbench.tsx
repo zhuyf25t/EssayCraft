@@ -198,7 +198,7 @@ export function SourceWorkbench({
           <p>No current gaps detected. Refresh highlighting to scan again.</p>
         ) : (
           <ul className="space-y-1">
-            {citationIssues.slice(0, 5).map((issue) => <li key={issue}>- {issue}</li>)}
+            {citationIssues.slice(0, 5).map((issue, index) => <li key={`${index}-${issue.slice(0, 48)}`}>- {issue}</li>)}
           </ul>
         )}
         {moduleFive ? (

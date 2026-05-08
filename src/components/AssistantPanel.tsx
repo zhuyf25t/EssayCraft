@@ -89,7 +89,7 @@ export function AssistantPanel({
           ) : null}
           {suggestion.warnings.length ? (
             <ul className="mt-2 space-y-1 text-xs text-amber-800">
-              {suggestion.warnings.map((warning) => <li key={warning}>- {warning}</li>)}
+              {suggestion.warnings.map((warning, index) => <li key={`${index}-${warning.slice(0, 48)}`}>- {warning}</li>)}
             </ul>
           ) : null}
           <div className="mt-3 flex gap-2">
