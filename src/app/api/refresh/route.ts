@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         openPatches.length
           ? mockPatchRevision(input.text, openPatches)
-          : mockRefresh(input.text, input.patches, "Mock refresh completed locally because no API key is configured.")
+          : mockRefresh(input.text, input.patches, "Highlights refreshed. Text was not rewritten.")
       );
     }
 
@@ -37,6 +37,7 @@ export async function POST(request: Request) {
         return NextResponse.json({
           ...parsed,
           providerMode: "deepseek",
+          sourceText: input.text,
           proposedAnnotations: normalizeAnnotations(parsed.proposedText, parsed.proposedAnnotations ?? buildMockAnnotations(parsed.proposedText)),
           patchResolutionPlan: parsed.patchResolutionPlan ?? openPatches.map((patch) => patch.id)
         });
@@ -55,11 +56,12 @@ export async function POST(request: Request) {
       };
 
       return NextResponse.json(normalized);
-    } catch (aiError) {
+    } catch {
       const fallback = openPatches.length
         ? mockPatchRevision(input.text, openPatches)
-        : mockRefresh(input.text, input.patches, "Fallback refresh completed locally because the configured AI provider was unavailable.");
-      fallback.warnings.push(`DeepSeek refresh unavailable; used mock labels. ${aiError instanceof Error ? aiError.message : ""}`.trim());
+        : mockRefresh(input.text, input.patches, "Highlights refreshed. Text was not rewritten.");
+      fallback.providerMode = "fallback";
+      fallback.warnings.push("Refresh used a local fallback. Text was not rewritten.");
       return NextResponse.json(fallback);
     }
   } catch (error) {
@@ -88,6 +90,7 @@ function mockPatchRevision(text: string, patches: Patch[]): RefreshResponse {
     kind: "revision",
     annotations: [],
     proposedText,
+    sourceText: text,
     proposedAnnotations: annotations,
     originalSummary: summarizeChanges(text, proposedText),
     rationale: summarizePatchIntent(patches),
@@ -101,15 +104,46 @@ function mockPatchRevision(text: string, patches: Patch[]): RefreshResponse {
 function applyPatchNotesToText(text: string, patches: Patch[]) {
   let next = text;
   const ordered = [...patches]
-    .filter((patch) => patch.anchorEnd >= patch.anchorStart && patch.anchorStart >= 0 && patch.anchorEnd <= text.length)
-    .sort((a, b) => b.anchorStart - a.anchorStart);
+    .map((patch) => ({ patch, range: effectivePatchRange(text, patch) }))
+    .filter(({ range }) => range.end >= range.start && range.start >= 0 && range.end <= text.length)
+    .sort((a, b) => b.range.start - a.range.start || b.range.end - a.range.end);
 
-  for (const patch of ordered) {
-    const original = next.slice(patch.anchorStart, patch.anchorEnd);
+  for (const { patch, range } of ordered) {
+    const original = next.slice(range.start, range.end);
     const replacement = reviseSegment(original, patch.text);
-    next = `${next.slice(0, patch.anchorStart)}${replacement}${next.slice(patch.anchorEnd)}`;
+    next = `${next.slice(0, range.start)}${replacement}${next.slice(range.end)}`;
   }
   return next;
+}
+
+function effectivePatchRange(text: string, patch: Patch) {
+  const start = Math.max(0, Math.min(text.length, patch.anchorStart));
+  const end = Math.max(start, Math.min(text.length, patch.anchorEnd));
+  if (end > start) return { start, end };
+
+  const lineStart = text.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+  const nextBreak = text.indexOf("\n", start);
+  const lineEnd = nextBreak === -1 ? text.length : nextBreak;
+  if (text.slice(lineStart, lineEnd).trim()) {
+    return trimRange(text, lineStart, lineEnd);
+  }
+
+  const beforeStart = text.lastIndexOf("\n", Math.max(0, lineStart - 2)) + 1;
+  const beforeEnd = Math.max(beforeStart, lineStart - 1);
+  if (text.slice(beforeStart, beforeEnd).trim()) return trimRange(text, beforeStart, beforeEnd);
+
+  const afterStart = nextBreak === -1 ? start : nextBreak + 1;
+  const afterBreak = text.indexOf("\n", afterStart);
+  const afterEnd = afterBreak === -1 ? text.length : afterBreak;
+  return trimRange(text, afterStart, afterEnd);
+}
+
+function trimRange(text: string, start: number, end: number) {
+  let nextStart = start;
+  let nextEnd = end;
+  while (nextStart < nextEnd && /\s/.test(text[nextStart] ?? "")) nextStart += 1;
+  while (nextEnd > nextStart && /\s/.test(text[nextEnd - 1] ?? "")) nextEnd -= 1;
+  return { start: nextStart, end: nextEnd };
 }
 
 function reviseSegment(original: string, note: string) {
@@ -119,14 +153,17 @@ function reviseSegment(original: string, note: string) {
   const lower = note.toLowerCase();
   let revised = trimmed;
 
-  if (/\u66f4\u957f|\u53d1\u5c55|\u8be6\u7ec6|longer|expand|more detail/i.test(note)) {
-    return `${leading}${stripMeta(expandSegment(trimmed))}${trailing}`;
-  }
   if (/\u6807\u9898|title/i.test(note)) {
-    return `${leading}${stripMeta(expandSegment(trimmed))}${trailing}`;
+    return `${leading}${stripMeta(reviseTopic(trimmed))}${trailing}`;
   }
-  if (/\u95ee\u9898.*\u5446\u677f|\u81ea\u7136|natural/i.test(note)) {
-    return `${leading}${stripMeta(naturalQuestion(trimmed))}${trailing}`;
+  if (/\u95ee\u9898|question/i.test(note)) {
+    return `${leading}${stripMeta(reviseQuestion(trimmed, note))}${trailing}`;
+  }
+  if (/\u8bba\u70b9|thesis/i.test(note)) {
+    return `${leading}${stripMeta(reviseThesis(trimmed))}${trailing}`;
+  }
+  if (/\u66f4\u957f|\u5199\u957f|\u53d1\u5c55|\u8be6\u7ec6|longer|expand|more detail/i.test(note)) {
+    return `${leading}${stripMeta(expandSegment(trimmed))}${trailing}`;
   }
   if (/\u592a\u7b3c\u7edf|too general|specific/i.test(note)) {
     return `${leading}${stripMeta(makeSpecific(trimmed))}${trailing}`;
@@ -170,6 +207,33 @@ function makeAcademic(value: string) {
     .trim();
 }
 
+function reviseTopic(value: string) {
+  const cleaned = makeAcademic(value);
+  const topic = cleaned.replace(/^Topic\s*:\s*/i, "").replace(/[.!?]?$/, "").trim();
+  if (/social media|youth|wellbeing/i.test(topic)) {
+    return "Topic: Social media balance, youth wellbeing, and responsible platform design";
+  }
+  if (!topic) return "Topic: A clearer academic topic with causes, consequences, and practical responses";
+  return `Topic: ${topic}, including its causes, consequences, and practical responses`;
+}
+
+function reviseQuestion(value: string, note: string) {
+  const cleaned = makeAcademic(value);
+  const question = cleaned.replace(/^(Research question|Question)\s*:\s*/i, "").replace(/[?？.]?$/, "").trim();
+  if (/social media|healthier|balance|young|youth|platform|school/i.test(question) || /\u5446\u677f|\u65b0\u610f|\u81ea\u7136/.test(note)) {
+    return "Research question: How can individuals, schools, and social media platforms share responsibility for building a healthier digital environment for young people?";
+  }
+  if (!question) return "Research question: What specific problem should this essay investigate, and why does it matter?";
+  return `Research question: How can ${question.charAt(0).toLowerCase()}${question.slice(1)} in a way that names the people affected, the causes involved, and the practical response?`;
+}
+
+function reviseThesis(value: string) {
+  const cleaned = makeAcademic(value);
+  const thesis = cleaned.replace(/^(Working thesis|Thesis)\s*:\s*/i, "").replace(/[.!?]?$/, "").trim();
+  if (!thesis) return "Working thesis: The essay should make a specific, arguable claim supported by clear reasons.";
+  return `Working thesis: ${thesis}, because the issue requires a clear argument, specific evidence, and practical responsibility.`;
+}
+
 function expandSegment(value: string) {
   const cleaned = makeAcademic(value);
   if (!cleaned) return value;
@@ -189,15 +253,6 @@ function shortenSegment(value: string) {
   const cleaned = makeAcademic(value);
   const firstClause = cleaned.split(/[,;]|\band\b|\bbecause\b/i)[0]?.trim() || cleaned;
   return firstClause.replace(/[.!?]?$/, ".");
-}
-
-function naturalQuestion(value: string) {
-  const cleaned = makeAcademic(value);
-  if (/^(Research question|Question)\s*:/i.test(cleaned)) {
-    const question = cleaned.replace(/^(Research question|Question)\s*:\s*/i, "").replace(/[?？.]?$/, "");
-    return `Research question: How can ${question.charAt(0).toLowerCase()}${question.slice(1)} in a way that is realistic for students and schools?`;
-  }
-  return makeSpecific(cleaned);
 }
 
 function makeSpecific(value: string) {

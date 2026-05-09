@@ -44,13 +44,6 @@ export function downloadCurrentModuleHtml(project: Project) {
     })
     .join("\n");
 
-  const patches = doc.patches
-    .map(
-      (patch) =>
-        `<li><strong>${escapeHtml(patch.anchorQuote || "Selected range")}:</strong> ${escapeHtml(patch.text)}</li>`
-    )
-    .join("\n");
-
   const sources = doc.sources
     .map((source) => `<li>${escapeHtml(formatSource(source))}</li>`)
     .join("\n");
@@ -64,7 +57,6 @@ export function downloadCurrentModuleHtml(project: Project) {
 ${documentHtmlFragment(doc.text, doc.annotations)}
 <h2>Highlight Key</h2>
 <ul>${legend}</ul>
-${patches ? `<h2>Patch Notes</h2><ul>${patches}</ul>` : ""}
 ${sources ? `<h2>Source Cards</h2><ul>${sources}</ul>` : ""}
 <hr />
 <p style="color:#64748b;">Generated with EssayCraft. Inspired by John-Paul Grima's argumentative essay journey.</p>

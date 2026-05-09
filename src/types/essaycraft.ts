@@ -123,6 +123,7 @@ export type RefreshResponse = {
   globalFeedback: string[];
   warnings: string[];
   proposedText?: string;
+  sourceText?: string;
   proposedAnnotations?: Annotation[];
   originalSummary?: string;
   rationale?: string;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { Annotation, Patch, TextRange } from "@/types/essaycraft";
 import { LABELS } from "@/lib/labels";
 import { annotationAtOffset, sentenceRangeAt } from "@/lib/annotations";
@@ -35,7 +35,6 @@ export function Editor({
 }: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
-  const [scrollTop, setScrollTop] = useState(0);
 
   const activeAnnotation = useMemo(
     () => annotationAtOffset(annotations, selectedRange.start),
@@ -122,10 +121,15 @@ export function Editor({
       </div>
 
       <div data-testid="editor-stack" className="editor-stack">
-        <div ref={backdropRef} data-testid="editor-backdrop" className="editor-backdrop" aria-hidden="true">
-          <HighlightText text={text} annotations={annotations} patches={patches} activeSentenceRange={activeSentenceRange} />
+        <div ref={backdropRef} data-testid="editor-backdrop" className="editor-backdrop">
+          <HighlightText
+            text={text}
+            annotations={annotations}
+            patches={patches}
+            activeSentenceRange={activeSentenceRange}
+            onPatchMarkerClick={onPatchMarkerClick}
+          />
         </div>
-        <PatchInlineMarkers text={text} scrollTop={scrollTop} patches={patches} onPatchMarkerClick={onPatchMarkerClick} />
         <textarea
           ref={textareaRef}
           data-testid="editor-textarea"
@@ -136,7 +140,6 @@ export function Editor({
           onKeyUp={syncSelection}
           onSelect={syncSelection}
           onScroll={(event) => {
-            setScrollTop(event.currentTarget.scrollTop);
             if (backdropRef.current) {
               backdropRef.current.scrollTop = event.currentTarget.scrollTop;
               backdropRef.current.scrollLeft = event.currentTarget.scrollLeft;
@@ -147,7 +150,9 @@ export function Editor({
             if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
               event.preventDefault();
               const target = event.currentTarget;
-              const range = sentenceRangeAt(text, target.selectionStart, target.selectionEnd);
+              const range = target.selectionEnd > target.selectionStart
+                ? { start: target.selectionStart, end: target.selectionEnd }
+                : { start: target.selectionStart, end: target.selectionStart };
               onSelectionChange({ start: range.start, end: range.end });
               onOpenPatch({ start: range.start, end: range.end });
             }
@@ -168,12 +173,14 @@ function HighlightText({
   text,
   annotations,
   patches,
-  activeSentenceRange
+  activeSentenceRange,
+  onPatchMarkerClick
 }: {
   text: string;
   annotations: Annotation[];
   patches: Patch[];
   activeSentenceRange?: TextRange;
+  onPatchMarkerClick: (patch: Patch) => void;
 }) {
   const nodes: ReactNode[] = [];
   const sorted = annotations
@@ -186,6 +193,13 @@ function HighlightText({
   const openPatches = patches
     .filter((patch) => !patch.resolved && !patch.stale && patch.anchorStart >= 0 && patch.anchorStart <= text.length && patch.anchorEnd >= patch.anchorStart && patch.anchorEnd <= text.length)
     .sort((a, b) => a.anchorStart - b.anchorStart || a.anchorEnd - b.anchorEnd);
+  const notesByOffset = new Map<number, Patch[]>();
+  for (const patch of openPatches) {
+    const offset = Math.min(text.length, Math.max(0, patch.anchorEnd > patch.anchorStart ? patch.anchorEnd : patch.anchorStart));
+    const list = notesByOffset.get(offset) ?? [];
+    list.push(patch);
+    notesByOffset.set(offset, list);
+  }
   const points = new Set<number>([0, text.length]);
   for (const annotation of sorted) {
     points.add(annotation.start);
@@ -194,6 +208,7 @@ function HighlightText({
   for (const patch of openPatches) {
     points.add(patch.anchorStart);
     points.add(patch.anchorEnd);
+    points.add(Math.min(text.length, Math.max(0, patch.anchorEnd > patch.anchorStart ? patch.anchorEnd : patch.anchorStart)));
   }
   if (activeSentenceRange) {
     points.add(activeSentenceRange.start);
@@ -201,6 +216,7 @@ function HighlightText({
   }
   const ordered = [...points].sort((a, b) => a - b);
 
+  pushNotesAt(0);
   for (let index = 0; index < ordered.length - 1; index += 1) {
     const start = ordered[index];
     const end = ordered[index + 1];
@@ -214,56 +230,37 @@ function HighlightText({
     const key = `${start}-${end}-${annotation?.id ?? "plain"}-${patch?.id ?? "nopatch"}`;
     const content = className ? <mark key={key} className={className}>{segment}</mark> : <span key={key}>{segment}</span>;
     nodes.push(content);
-
+    pushNotesAt(end);
   }
 
   if (nodes.length === 0) return <span>{text || " "}</span>;
   return <>{nodes}</>;
-}
 
-function PatchInlineMarkers({
-  text,
-  scrollTop,
-  patches,
-  onPatchMarkerClick
-}: {
-  text: string;
-  scrollTop: number;
-  patches: Patch[];
-  onPatchMarkerClick: (patch: Patch) => void;
-}) {
-  const openPatches = patches.filter((patch) => !patch.resolved && !patch.stale).slice(0, 8);
-  if (!openPatches.length) return null;
-  return (
-    <div data-testid="patch-margin-markers" className="patch-inline-markers" aria-label="Inline notes">
-      {openPatches.map((patch, index) => (
-        <button
-          key={patch.id}
-          type="button"
-          data-testid="patch-margin-marker"
-          data-note={compactNote(patch.text)}
-          className="patch-inline-marker"
-          style={{ top: `${estimatePatchTop(text, patch.anchorStart, scrollTop)}px` }}
-          title={`Patch ${index + 1}: ${patch.text}`}
-          onClick={() => onPatchMarkerClick(patch)}
-        >
-          <span data-testid="patch-marker" className="patch-inline-marker-label">Note · {compactNote(patch.text)}</span>
-        </button>
-      ))}
-    </div>
-  );
+  function pushNotesAt(offset: number) {
+    const notes = notesByOffset.get(offset);
+    if (!notes?.length) return;
+    for (const patch of notes) {
+      nodes.push(
+        <span key={`inline-note-${patch.id}-${offset}`} className="inline-note-anchor">
+          <button
+            type="button"
+            data-testid="patch-margin-marker"
+            data-note={compactNote(patch.text)}
+            className="inline-note-token"
+            title={`Note: ${patch.text}`}
+            onClick={() => onPatchMarkerClick(patch)}
+          >
+            <span data-testid="patch-marker" className="inline-note-label">Note: {compactNote(patch.text)}</span>
+          </button>
+        </span>
+      );
+    }
+  }
 }
 
 function compactNote(value: string) {
   const text = value.replace(/\s+/g, " ").trim();
-  return text.length > 46 ? `${text.slice(0, 44)}...` : text;
-}
-
-function estimatePatchTop(text: string, start: number, scrollTop: number) {
-  const before = text.slice(0, Math.max(0, start));
-  const hardLines = before.split("\n");
-  const softLines = hardLines.reduce((total, line) => total + Math.max(1, Math.ceil(line.length / 76)), 0);
-  return Math.max(12, 20 + softLines * 34 - scrollTop);
+  return text.length > 90 ? `${text.slice(0, 87)}...` : text;
 }
 
 function friendlyAnnotationComment(comment: string | undefined, fallback: string) {

@@ -63,8 +63,6 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("Ready");
   const [lastAction, setLastAction] = useState<LastAction>({ tone: "info", message: "Ready" });
-  const [actionSteps, setActionSteps] = useState<string[]>([]);
-  const [activeStep, setActiveStep] = useState<string | undefined>();
   const [finishOpen, setFinishOpen] = useState(false);
   const [assistantSuggestion, setAssistantSuggestion] = useState<AssistResponse | undefined>();
   const [translateOpen, setTranslateOpen] = useState(false);
@@ -202,16 +200,6 @@ export default function Home() {
     }));
   }
 
-  function setProgress(steps: string[], step: string) {
-    setActionSteps(steps);
-    setActiveStep(step);
-  }
-
-  function clearProgress() {
-    setActionSteps([]);
-    setActiveStep(undefined);
-  }
-
   function resetEditorViewport() {
     setEditorResetKey((value) => value + 1);
   }
@@ -274,11 +262,13 @@ export default function Home() {
   }
 
   function handleOpenPatch(range: TextRange) {
-    const nextRange = range.end > range.start ? range : sentenceRangeAt(activeDoc.text, range.start, range.end);
+    const start = Math.max(0, Math.min(activeDoc.text.length, range.start));
+    const end = Math.max(start, Math.min(activeDoc.text.length, range.end));
+    const nextRange = { start, end };
     setEditingPatchId(null);
     setPatchRange(nextRange);
     setSelectedRange(nextRange);
-    setActiveSentenceRange(nextRange);
+    setActiveSentenceRange(end > start ? nextRange : sentenceRangeAt(activeDoc.text, start, end));
   }
 
   function handlePatchSubmit(text: string) {
@@ -328,14 +318,8 @@ export default function Home() {
       return;
     }
 
-    const hasOpenPatches = openPatches.length > 0;
-    const steps = hasOpenPatches
-      ? ["Reading notes", "Drafting revision preview", "Ready"]
-      : ["Reading text", "Classifying ranges", "Updating colors"];
     setLoading(true);
-    setProgress(steps, steps[0]);
     try {
-      setProgress(steps, steps[1]);
       const response = await fetch("/api/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -352,7 +336,6 @@ export default function Home() {
       const data = (await response.json()) as RefreshResponse & { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Refresh failed.");
 
-      setProgress(steps, steps[2]);
       if (data.kind === "revision" && data.proposedText) {
         setRevisionPreview(data);
         setAssistantSuggestion(undefined);
@@ -373,7 +356,6 @@ export default function Home() {
       setStatus(error instanceof Error ? error.message : "Refresh failed.");
     } finally {
       setLoading(false);
-      clearProgress();
     }
   }
 
@@ -393,13 +375,10 @@ export default function Home() {
       return;
     }
 
-    const steps = ["Saving snapshot", `Generating Module ${target}`, "Validating JSON", "Applying module"];
     setLoading(true);
-    setProgress(steps, steps[0]);
     setStatus(`Generating Module ${target} from Module ${sourceModuleNumber}...`);
-    setLastAction({ tone: "info", message: `Generating Module ${target} from Module ${sourceModuleNumber}...`, details: steps });
+    setLastAction({ tone: "info", message: `Generating Module ${target} from Module ${sourceModuleNumber}...` });
     try {
-      setProgress(steps, steps[1]);
       const payload = generateNextRequestSchema.parse({
         topic: activeProject.topic,
         sourceModuleNumber,
@@ -421,10 +400,8 @@ export default function Home() {
       if (data.moduleNumber !== target) throw new Error(`Expected Module ${target}, received Module ${data.moduleNumber}.`);
       if (!data.text.trim()) throw new Error("Generate Next returned empty text.");
 
-      setProgress(steps, steps[2]);
       const normalizedAnnotations = normalizeAnnotations(data.text, data.annotations);
 
-      setProgress(steps, steps[3]);
       setProject((prev) => {
         if (!prev) return prev;
         const sourceDoc = prev.modules[sourceModuleNumber];
@@ -467,7 +444,6 @@ export default function Home() {
       setLastAction({ tone: "error", message, details: ["No module was overwritten."], retryGenerate: true });
     } finally {
       setLoading(false);
-      clearProgress();
     }
   }
 
@@ -690,7 +666,6 @@ export default function Home() {
           ? selectedRange
           : activeSentenceRange;
     const submittedText = submittedRange ? activeDoc.text.slice(submittedRange.start, submittedRange.end) : undefined;
-    const steps = ["Preparing context", intent === "chat" ? "Writing reply" : "Drafting preview", "Ready"];
     const userMessage: Omit<AssistantMessage, "id" | "createdAt"> = { role: "user", text: action };
 
     if (intent === "edit" && (!submittedRange || submittedRange.end <= submittedRange.start)) {
@@ -707,9 +682,7 @@ export default function Home() {
     }
 
     setLoading(true);
-    setProgress(steps, steps[0]);
     try {
-      setProgress(steps, steps[1]);
       const response = await fetch("/api/assist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -734,7 +707,6 @@ export default function Home() {
       const anchoredData = data.replaceRange
         ? { ...data, originalText: activeDoc.text.slice(data.replaceRange.start, data.replaceRange.end) }
         : data;
-      setProgress(steps, steps[2]);
       setRightTab("assistant");
 
       if (intent === "chat" || anchoredData.kind === "chat") {
@@ -763,12 +735,15 @@ export default function Home() {
       setStatus(message);
     } finally {
       setLoading(false);
-      clearProgress();
     }
   }
 
   function acceptRevisionPreview() {
     if (!revisionPreview?.proposedText) return;
+    if (revisionPreview.sourceText !== undefined && activeDoc.text !== revisionPreview.sourceText) {
+      setStatus("Notes preview was blocked because the module changed after the preview was created.");
+      return;
+    }
     pushAiUndo(activeProject.currentModule, activeDoc, "Before applying notes");
     updateCurrentModule((doc) => {
       const snapDoc = addSnapshot(doc, "Before applying patch notes");
@@ -867,11 +842,8 @@ export default function Home() {
   }
 
   async function requestTranslatePreview() {
-    const steps = ["Preparing selection", "Translating", "Preview ready"];
     setLoading(true);
-    setProgress(steps, steps[0]);
     try {
-      setProgress(steps, steps[1]);
       const useSelection = selectedRange.end > selectedRange.start;
       const response = await fetch("/api/translate", {
         method: "POST",
@@ -886,14 +858,12 @@ export default function Home() {
       });
       const data = (await response.json()) as TranslateResponse & { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Translate failed.");
-      setProgress(steps, steps[2]);
       setTranslatePreview(data);
       setStatus("Translation preview ready.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Translate failed.");
     } finally {
       setLoading(false);
-      clearProgress();
     }
   }
 
@@ -953,7 +923,7 @@ export default function Home() {
                   className="input flex-1"
                 />
               </label>
-              <ProgressTracker project={activeProject} actionSteps={actionSteps} activeStep={activeStep} onSelect={switchModule} />
+              <ProgressTracker project={activeProject} onSelect={switchModule} />
             </div>
           </header>
 

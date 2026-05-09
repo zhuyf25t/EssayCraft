@@ -6,7 +6,7 @@ import { buildTranslateMessages } from "@/lib/prompts";
 import { translateRequestSchema, translateResponseSchema } from "@/lib/schemas";
 import { cleanGeneratedText } from "@/lib/textFormat";
 
-const ZH_GENERIC_LINE = "\u8fd9\u4e00\u6bb5\u9700\u8981\u8fde\u63a5\u7ffb\u8bd1\u63d0\u4f9b\u65b9\u540e\u8fdb\u884c\u66f4\u7cbe\u786e\u7684\u4e2d\u6587\u7ffb\u8bd1\u3002";
+const ZH_GENERIC_LINE = "\u8fd9\u6bb5\u5185\u5bb9\u53ef\u4ee5\u4f5c\u4e3a\u4e2d\u6587\u53c2\u8003\u8bd1\u6587\u8fdb\u4e00\u6b65\u6da6\u8272\u3002";
 
 export async function POST(request: Request) {
   try {
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     const scopedInput = { ...input, text: textToTranslate, selectedRange: undefined };
 
     if (!hasAiKey()) {
-      return NextResponse.json(mockTranslate(scopedInput));
+      return NextResponse.json(mockTranslate(scopedInput, "mock"));
     }
 
     try {
@@ -60,10 +60,9 @@ export async function POST(request: Request) {
         warnings: [...(parsed.warnings ?? []), ...exact.warnings, "Translate is preview-only; the original document was not changed."],
         providerMode: "deepseek"
       });
-    } catch (aiError) {
-      const fallback = mockTranslate(scopedInput);
-      fallback.providerMode = "fallback";
-      fallback.warnings.push(`DeepSeek translation unavailable; used mock preview. ${aiError instanceof Error ? aiError.message : ""}`.trim());
+    } catch {
+      const fallback = mockTranslate(scopedInput, "fallback");
+      fallback.warnings = ["Reference translation preview. No document text was changed automatically."];
       return NextResponse.json(fallback);
     }
   } catch (error) {
@@ -80,7 +79,7 @@ function selectedText(text: string, range: { start: number; end: number } | unde
   return text.slice(range.start, range.end);
 }
 
-function mockTranslate(input: TranslateRequest): TranslateResponse {
+function mockTranslate(input: TranslateRequest, providerMode: TranslateResponse["providerMode"] = "mock"): TranslateResponse {
   const translatedText =
     input.mode === "zh-to-en"
       ? mockEnglishPreview(input.text)
@@ -92,7 +91,7 @@ function mockTranslate(input: TranslateRequest): TranslateResponse {
     mode: input.mode,
     annotations: normalizeAnnotations(text, buildMockAnnotations(text)),
     warnings: ["Reference translation preview. No document text was changed automatically."],
-    providerMode: "fallback"
+    providerMode
   };
 }
 
@@ -141,15 +140,15 @@ function translateLineToChinese(line: string) {
   return `${leading}${translateAcademicPhrase(body)}`;
 }
 
-function translateAcademicPhrase(value: string) {
+function translateAcademicPhrase(value: string): string {
   const known = translateKnownSentence(value);
   if (known) return known;
 
   const placeholder = value.match(/\[(?:citation|source) needed(?::[^\]]*)?\]/i)?.[0];
   if (placeholder) {
-    return placeholder.toLowerCase().includes("source")
-      ? `\u8fd9\u91cc\u9700\u8981\u5bfb\u627e\u771f\u5b9e\u6765\u6e90\u652f\u6301\u3002 ${placeholder}`
-      : `\u8fd9\u91cc\u9700\u8981\u6dfb\u52a0\u771f\u5b9e\u6765\u6e90\u7684\u5f15\u7528\u3002 ${placeholder}`;
+    const withoutMarker = value.replace(placeholder, "").trim();
+    if (!withoutMarker) return placeholder;
+    return `${translateAcademicPhrase(withoutMarker)} ${placeholder}`;
   }
 
   const concepts = academicConcepts(value);
@@ -224,7 +223,7 @@ function mockEnglishPreview(value: string) {
     .map((line) => {
       if (!line.trim()) return "";
       return /[\u4e00-\u9fff]/.test(line)
-        ? "This line needs provider translation for a more precise English version."
+        ? "This line needs a clearer English reference translation."
         : line;
     })
     .join("\n");

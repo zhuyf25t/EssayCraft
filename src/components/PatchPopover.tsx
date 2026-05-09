@@ -39,7 +39,7 @@ export function PatchPopover({
     >
       <div className="mb-1 flex items-center justify-between gap-2">
         <div className="min-w-0 text-xs font-semibold text-amber-950">
-          📝 Note for EssayCraft
+          Note for EssayCraft
           <span className="ml-2 font-normal text-amber-800/75">{compactAnchor(anchorQuote) || `cursor ${range.start}`}</span>
         </div>
         <button className="rounded-md px-1.5 py-0.5 text-[11px] text-amber-700 hover:bg-amber-100" onClick={onClose}>

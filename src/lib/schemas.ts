@@ -94,6 +94,7 @@ export const refreshResponseSchema = z.object({
   kind: z.enum(["annotations", "revision"]).optional(),
   annotations: z.array(annotationSchema),
   proposedText: z.string().optional(),
+  sourceText: z.string().optional(),
   proposedAnnotations: z.array(annotationSchema).optional(),
   originalSummary: z.string().optional(),
   rationale: z.string().optional(),

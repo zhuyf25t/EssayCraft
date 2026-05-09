@@ -30,19 +30,32 @@ export async function POST(request: Request) {
       const parsed = coerceAssistResponse(input, JSON.parse(raw), "deepseek");
       const exact = exactAnnotations(input.text, parsed.annotations ?? []);
       const rangeWarning = validateAssistReplaceRange(input, parsed);
+      if (rangeWarning && parsed.kind === "edit") {
+        return NextResponse.json({
+          kind: "inspect",
+          title: "Selection changed",
+          actionType: parsed.actionType,
+          originalExcerpt: input.selectedText,
+          reply: rangeWarning,
+          explanation: "Ask for a new preview before applying an edit.",
+          annotations: exact.annotations,
+          warnings: exact.warnings,
+          providerMode: "deepseek"
+        } satisfies AssistResponse);
+      }
       const normalized: AssistResponse = {
         ...parsed,
         providerMode: "deepseek",
-        reply: rangeWarning ? parsed.reply : parsed.reply,
         annotations: exact.annotations,
-        warnings: rangeWarning ? [...(parsed.warnings ?? []), ...exact.warnings, "Selection changed; preview apply was disabled."] : [...(parsed.warnings ?? []), ...exact.warnings]
+        warnings: [...(parsed.warnings ?? []), ...exact.warnings]
       };
 
       return NextResponse.json(normalized);
     } catch (aiError) {
       const fallback = mockAssist(input);
       console.warn("DeepSeek assistant fallback:", aiError);
-      fallback.warnings.push("Provider unavailable; using local fallback.");
+      fallback.providerMode = "fallback";
+      fallback.warnings.push("Local fallback suggestion used.");
       return NextResponse.json(fallback);
     }
   } catch (error) {
@@ -136,7 +149,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
   const range = input.selectedRange;
   const selected = input.selectedText || (range ? input.text.slice(range.start, range.end) : input.text);
   const action = input.action.toLowerCase();
-  const warnings = ["Provider unavailable; using local mock suggestion."];
+  const warnings: string[] = [];
 
   if (action.includes("citation")) {
     return {
@@ -217,11 +230,11 @@ function mockAssist(input: AssistRequest): AssistResponse {
         kind: "edit",
         actionType: "translate-selection",
         originalExcerpt: selected ? excerpt(selected) : undefined,
-        reply: "Translation preview ready for the selected text. Apply only if you want to replace that selection.",
+        reply: "Translation preview ready for the selected text.",
         proposedText: translated,
         replaceRange: range,
         annotations: [],
-        explanation: "This path is the only translation workflow that can replace text, and it still requires Apply.",
+        explanation: "Read-only preview. Copy it if useful; EssayCraft will not replace the document from Translate.",
         warnings,
         providerMode: "mock"
       };
@@ -273,7 +286,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
 
 function rewriteWithInstruction(value: string, instruction: string) {
   const lower = instruction.toLowerCase();
-  if (/更长|longer|develop|expand|more detail|更详细/.test(lower)) return makeLongerReplacement(value);
+  if (/更长|写长|longer|develop|expand|more detail|更详细/.test(lower)) return makeLongerReplacement(value);
   if (/更短|shorter|concise|简短|精简/.test(lower)) return makeShorterReplacement(value);
   if (/academic|formal|正式|学术/.test(lower)) return makeAcademicReplacement(value);
   return makeAcademicReplacement(value);
@@ -436,9 +449,7 @@ function mockAssistantChinese(value: string) {
       if (/^Research question\s*:/i.test(line) || /^Question\s*:/i.test(line)) return `\u7814\u7a76\u95ee\u9898\uff1a${assistantChineseConcepts(line)}`;
       if (/^Working thesis\s*:/i.test(line) || /^Thesis\s*:/i.test(line)) return `\u8bba\u70b9\uff1a${assistantChineseConcepts(line)}`;
       const concepts = assistantChineseConcepts(line);
-      return concepts
-        ? concepts
-        : "\u8fd9\u4e00\u6bb5\u9700\u8981\u8fde\u63a5\u7ffb\u8bd1\u63d0\u4f9b\u65b9\u540e\u8fdb\u884c\u66f4\u7cbe\u786e\u7684\u4e2d\u6587\u7ffb\u8bd1\u3002";
+      return concepts || "\u6240\u9009\u5185\u5bb9\u9700\u8981\u7ed3\u5408\u4e0a\u4e0b\u6587\u8868\u8fbe\u4e3a\u6e05\u6670\u7684\u4e2d\u6587\u3002";
     })
     .join("\n");
 }
@@ -458,5 +469,7 @@ function assistantChineseConcepts(value: string) {
   add(/evidence|source|citation|reference/.test(lower), "\u8bc1\u636e\u4e0e\u6765\u6e90");
   add(/technology|ai|human/.test(lower), "\u6280\u672f\u4e0e\u4eba\u7684\u9700\u8981");
   if (!concepts.length) return "";
-  return `${concepts.join("\u3001")}\u4e4b\u95f4\u7684\u5173\u7cfb\u9700\u8981\u5728\u8bd1\u6587\u4e2d\u4fdd\u6301\u6e05\u6670\u3002`;
+  if (/requires|need|needs/.test(lower)) return `${concepts.join("\u3001")}\u9700\u8981\u88ab\u6e05\u6670\u5730\u8bf4\u660e\u3002`;
+  if (/question|how can/.test(lower)) return `\u5982\u4f55\u5728${concepts.join("\u3001")}\u4e4b\u95f4\u5efa\u7acb\u66f4\u5065\u5eb7\u7684\u5173\u7cfb\uff1f`;
+  return concepts.join("\u3001");
 }

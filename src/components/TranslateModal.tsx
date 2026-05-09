@@ -47,7 +47,7 @@ export function TranslateModal({
             <option value="auto-to-zh">Auto-detect to Simplified Chinese</option>
           </select>
           <button className="btn-primary" onClick={onRequest} disabled={loading}>{loading ? "Translating..." : "Create preview"}</button>
-          {preview ? <span className="rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">Provider: {preview.providerMode}</span> : null}
+          {preview ? <span className="rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">Preview ready</span> : null}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2">

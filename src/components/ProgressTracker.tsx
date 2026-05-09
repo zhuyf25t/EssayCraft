@@ -4,8 +4,6 @@ import { moduleDisplayStatus } from "@/lib/moduleStatus";
 
 type ProgressTrackerProps = {
   project: Project;
-  actionSteps?: string[];
-  activeStep?: string;
   onSelect: (moduleNumber: ModuleNumber) => void;
 };
 

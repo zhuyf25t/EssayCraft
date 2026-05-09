@@ -213,9 +213,9 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
           disabled={!canEdit}
         />
         <div className="grid grid-cols-4 gap-1 text-[11px]">
-          <button aria-label="Rewrite" className="btn-primary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Rewrite selected passage")}>✎ Rewrite</button>
-          <button aria-label="Make academic" className="btn-secondary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>▣ Academic</button>
-          <button aria-label="Translate" className="btn-secondary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Translate selected text")}>文 Translate</button>
+          <button aria-label="Rewrite" className="btn-primary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Rewrite selected passage")}>Rewrite</button>
+          <button aria-label="Make academic" className="btn-secondary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>Academic</button>
+          <button aria-label="Translate" className="btn-secondary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Translate selected text")}>Translate</button>
           <button aria-label="Explain highlight" className="btn-secondary px-1.5 py-1.5" disabled={!props.activeAnnotation || props.loading} onClick={() => props.onInspectAction("Explain this highlight")}>? Explain</button>
         </div>
       </div>
@@ -255,7 +255,7 @@ function EditPreview({
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {!readOnly ? <button className="btn-primary px-2 py-1 text-xs" onClick={onApply}>Accept</button> : null}
-        <button className="btn-secondary px-2 py-1 text-xs" onClick={onDismiss}>Reject</button>
+        <button className="btn-secondary px-2 py-1 text-xs" onClick={onDismiss}>{readOnly ? "Dismiss" : "Reject"}</button>
         <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(suggestion.proposedText ?? suggestion.reply)}>Copy</button>
       </div>
     </article>
@@ -293,7 +293,7 @@ function InspectCard({ suggestion, onDismiss }: { suggestion: AssistResponse; on
       <p className="whitespace-pre-wrap">{suggestion.reply}</p>
       <div className="mt-2 flex gap-2">
         <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(suggestion.reply)}>Copy</button>
-        <button className="btn-secondary px-2 py-1 text-xs" onClick={onDismiss}>Reject</button>
+        <button className="btn-secondary px-2 py-1 text-xs" onClick={onDismiss}>Dismiss</button>
       </div>
     </article>
   );
