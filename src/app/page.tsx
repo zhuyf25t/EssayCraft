@@ -988,6 +988,7 @@ export default function Home() {
                   <PatchPopover
                     range={patchRange}
                     anchorQuote={patchQuote}
+                    text={activeDoc.text}
                     initialValue={editingPatchId ? activeDoc.patches.find((patch) => patch.id === editingPatchId)?.text ?? "" : ""}
                     onSubmit={handlePatchSubmit}
                     onClose={() => {

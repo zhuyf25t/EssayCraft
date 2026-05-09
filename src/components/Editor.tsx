@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Annotation, Patch, TextRange } from "@/types/essaycraft";
 import { LABELS } from "@/lib/labels";
 import { annotationAtOffset, sentenceRangeAt } from "@/lib/annotations";
@@ -35,6 +35,7 @@ export function Editor({
 }: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
+  const [scrollTop, setScrollTop] = useState(0);
 
   const activeAnnotation = useMemo(
     () => annotationAtOffset(annotations, selectedRange.start),
@@ -116,7 +117,7 @@ export function Editor({
           <span className="ml-2 text-xs text-slate-500">{countWords(text)} words / {countCharacters(text)} chars</span>
         </div>
         <div className="text-xs text-slate-500">
-          {activeAnnotation ? `${LABELS[activeAnnotation.label].name}: ${activeAnnotation.comment ?? LABELS[activeAnnotation.label].description}` : "Ctrl/Cmd+Enter adds a patch note"}
+          {activeAnnotation ? `${LABELS[activeAnnotation.label].name}: ${friendlyAnnotationComment(activeAnnotation.comment, LABELS[activeAnnotation.label].description)}` : "Ctrl/Cmd+Enter adds a note"}
         </div>
       </div>
 
@@ -124,7 +125,7 @@ export function Editor({
         <div ref={backdropRef} data-testid="editor-backdrop" className="editor-backdrop" aria-hidden="true">
           <HighlightText text={text} annotations={annotations} patches={patches} activeSentenceRange={activeSentenceRange} />
         </div>
-        <PatchMarginMarkers patches={patches} onPatchMarkerClick={onPatchMarkerClick} />
+        <PatchInlineMarkers text={text} scrollTop={scrollTop} patches={patches} onPatchMarkerClick={onPatchMarkerClick} />
         <textarea
           ref={textareaRef}
           data-testid="editor-textarea"
@@ -135,6 +136,7 @@ export function Editor({
           onKeyUp={syncSelection}
           onSelect={syncSelection}
           onScroll={(event) => {
+            setScrollTop(event.currentTarget.scrollTop);
             if (backdropRef.current) {
               backdropRef.current.scrollTop = event.currentTarget.scrollTop;
               backdropRef.current.scrollLeft = event.currentTarget.scrollLeft;
@@ -232,18 +234,29 @@ function HighlightText({
   return <>{nodes}</>;
 }
 
-function PatchMarginMarkers({ patches, onPatchMarkerClick }: { patches: Patch[]; onPatchMarkerClick: (patch: Patch) => void }) {
+function PatchInlineMarkers({
+  text,
+  scrollTop,
+  patches,
+  onPatchMarkerClick
+}: {
+  text: string;
+  scrollTop: number;
+  patches: Patch[];
+  onPatchMarkerClick: (patch: Patch) => void;
+}) {
   const openPatches = patches.filter((patch) => !patch.resolved && !patch.stale).slice(0, 8);
   if (!openPatches.length) return null;
   return (
-    <div data-testid="patch-margin-markers" className="patch-margin-markers" aria-label="Patch markers">
+    <div data-testid="patch-margin-markers" className="patch-inline-markers" aria-label="Inline notes">
       {openPatches.map((patch, index) => (
         <button
           key={patch.id}
           type="button"
           data-testid="patch-margin-marker"
-          className="patch-margin-marker"
-          style={{ top: `${0.75 + index * 1.75}rem` }}
+          data-note={compactNote(patch.text)}
+          className="patch-inline-marker"
+          style={{ top: `${estimatePatchTop(text, patch.anchorStart, scrollTop)}px` }}
           title={`Patch ${index + 1}: ${patch.text}`}
           onClick={() => onPatchMarkerClick(patch)}
         >
@@ -256,5 +269,18 @@ function PatchMarginMarkers({ patches, onPatchMarkerClick }: { patches: Patch[];
 
 function compactNote(value: string) {
   const text = value.replace(/\s+/g, " ").trim();
-  return text.length > 36 ? `${text.slice(0, 34)}...` : text;
+  return text.length > 46 ? `${text.slice(0, 44)}...` : text;
+}
+
+function estimatePatchTop(text: string, start: number, scrollTop: number) {
+  const before = text.slice(0, Math.max(0, start));
+  const hardLines = before.split("\n");
+  const softLines = hardLines.reduce((total, line) => total + Math.max(1, Math.ceil(line.length / 76)), 0);
+  return Math.max(12, 20 + softLines * 34 - scrollTop);
+}
+
+function friendlyAnnotationComment(comment: string | undefined, fallback: string) {
+  if (!comment) return fallback;
+  if (/local fallback|provider|confidence/i.test(comment)) return fallback;
+  return comment;
 }
