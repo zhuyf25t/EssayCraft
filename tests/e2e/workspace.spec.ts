@@ -543,6 +543,38 @@ test("assistant uses selection context and dismisses preview without changing te
   await expect(editor(page)).toHaveValue(original);
 });
 
+test("rewrite follows English and Chinese length instructions without meta text", async ({ page }) => {
+  const original = "Research question: How can students use AI responsibly?";
+  await editor(page).fill(original);
+  await selectEditorRange(page, 0, original.length);
+
+  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("可以把问题写得更长一点");
+  await page.getByRole("button", { name: "Rewrite", exact: true }).click();
+  await expect(page.getByTestId("assistant-edit-preview")).toContainText("Revision preview", { timeout: 20_000 });
+
+  const proposed = await page.getByTestId("assistant-edit-preview").locator("p").nth(1).innerText();
+  expect(proposed.length).toBeGreaterThan(original.length);
+  expect(proposed).toContain("Research question:");
+  for (const banned of [
+    "A more academic version could state",
+    "could state:",
+    "Here is a revised version",
+    "I would rewrite it as",
+    "This rewrite improves",
+    "The student should",
+    "if this includes factual evidence",
+    "citation needed if this includes factual evidence",
+    "This selected text means",
+    "The following sentence",
+    "In this context, the sentence could be"
+  ]) {
+    expect(proposed).not.toContain(banned);
+  }
+  await page.getByRole("button", { name: "Accept" }).click();
+  await expect(editor(page)).not.toHaveValue(original);
+  await expect.poll(async () => (await editor(page).inputValue()).length).toBeGreaterThan(original.length);
+});
+
 test("selected text translation is read-only in Edit mode", async ({ page }) => {
   const original = "Social media balance requires intentional habits.";
   await editor(page).fill(original);
