@@ -170,8 +170,8 @@ function mockAssistantChinese(value: string) {
       if (/^Working thesis\s*:/i.test(line) || /^Thesis\s*:/i.test(line)) return `\u8bba\u70b9\uff1a${assistantChineseConcepts(line)}`;
       const concepts = assistantChineseConcepts(line);
       return concepts
-        ? `\u53c2\u8003\u8bd1\u6587\uff1a${concepts}`
-        : "\u53c2\u8003\u8bd1\u6587\uff1a\u8fd9\u53e5\u8bdd\u8868\u8fbe\u4e86\u539f\u6587\u7684\u4e00\u4e2a\u5199\u4f5c\u8981\u70b9\uff0c\u9002\u5408\u7ed3\u5408\u4e0a\u4e0b\u6587\u7406\u89e3\u3002";
+        ? concepts
+        : "\u8fd9\u4e00\u6bb5\u9700\u8981\u8fde\u63a5\u7ffb\u8bd1\u63d0\u4f9b\u65b9\u540e\u8fdb\u884c\u66f4\u7cbe\u786e\u7684\u4e2d\u6587\u7ffb\u8bd1\u3002";
     })
     .join("\n");
 }
@@ -191,5 +191,5 @@ function assistantChineseConcepts(value: string) {
   add(/evidence|source|citation|reference/.test(lower), "\u8bc1\u636e\u4e0e\u6765\u6e90");
   add(/technology|ai|human/.test(lower), "\u6280\u672f\u4e0e\u4eba\u7684\u9700\u8981");
   if (!concepts.length) return "";
-  return `\u8fd9\u90e8\u5206\u8ba8\u8bba${concepts.join("\u3001")}\u7684\u5173\u7cfb\uff0c\u5e76\u53ef\u4f5c\u4e3a\u5199\u4f5c\u53c2\u8003\u3002`;
+  return `${concepts.join("\u3001")}\u4e4b\u95f4\u7684\u5173\u7cfb\u9700\u8981\u5728\u8bd1\u6587\u4e2d\u4fdd\u6301\u6e05\u6670\u3002`;
 }

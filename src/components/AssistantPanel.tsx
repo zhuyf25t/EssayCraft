@@ -10,7 +10,7 @@ const ACTIONS = [
   { label: "Explain this highlight", requiresSelection: true },
   { label: "Relabel selected range", requiresSelection: true },
   { label: "Make more academic", requiresSelection: true },
-  { label: "Translate selected/current module", requiresSelection: false }
+  { label: "Translate selected text", requiresSelection: true }
 ];
 
 export function AssistantPanel({
@@ -35,7 +35,8 @@ export function AssistantPanel({
   const [instruction, setInstruction] = useState("");
   const hasSelection = selectedRange.end > selectedRange.start && selectedText.trim().length > 0;
   const canApply = Boolean(suggestion && ((suggestion.proposedText && suggestion.replaceRange) || suggestion.annotations.length));
-  const applyLabel = suggestion?.proposedText ? "Apply replacement" : "Apply labels";
+  const isTranslationPreview = Boolean(suggestion?.proposedText && /translat/i.test(suggestion.reply));
+  const applyLabel = suggestion?.proposedText ? (isTranslationPreview ? "Apply to selection" : "Apply replacement") : "Apply labels";
 
   function submitInstruction() {
     const value = instruction.trim();
@@ -58,7 +59,7 @@ export function AssistantPanel({
             Range {selectedRange.start}-{selectedRange.end}: {selectedText}
           </p>
         ) : (
-          <p className="mt-1">No text selected. Ask about the current module or select text for targeted help.</p>
+          <p className="mt-1">No text selected. Ask about the current module or select text for targeted rewrite, relabel, or translation help.</p>
         )}
       </div>
 
