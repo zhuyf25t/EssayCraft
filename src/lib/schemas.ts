@@ -45,11 +45,15 @@ export const annotationSchema = z.object({
 
 export const patchSchema = z.object({
   id: z.string(),
+  moduleNumber: moduleNumberSchema.optional(),
   anchorStart: z.number().int().min(0),
   anchorEnd: z.number().int().min(0),
   anchorQuote: z.string(),
   text: z.string(),
   createdAt: z.string(),
+  updatedAt: z.string().optional(),
+  appliedAt: z.string().optional(),
+  status: z.enum(["open", "resolved"]).optional(),
   resolved: z.boolean().optional(),
   stale: z.boolean().optional()
 });
@@ -87,7 +91,14 @@ export const refreshRequestSchema = z.object({
 });
 
 export const refreshResponseSchema = z.object({
+  kind: z.enum(["annotations", "revision"]).optional(),
   annotations: z.array(annotationSchema),
+  proposedText: z.string().optional(),
+  proposedAnnotations: z.array(annotationSchema).optional(),
+  originalSummary: z.string().optional(),
+  rationale: z.string().optional(),
+  patchResolutionPlan: z.array(z.string()).optional(),
+  providerMode: z.enum(["deepseek", "mock", "fallback"]).optional(),
   globalFeedback: z.array(z.string()).default([]),
   warnings: z.array(z.string()).default([])
 });

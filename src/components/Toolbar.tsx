@@ -7,6 +7,7 @@ type ToolbarProps = {
   currentModule: ModuleNumber;
   loading: boolean;
   status: string;
+  hasOpenPatches: boolean;
   lastAction: {
     tone: "info" | "success" | "error" | "warning";
     message: string;
@@ -46,7 +47,9 @@ export function Toolbar(props: ToolbarProps) {
               : `Generate Module ${props.currentModule + 1} from Module ${props.currentModule}`}
         </button>
 
-        <button className="btn-secondary whitespace-nowrap px-3 py-1.5 text-xs" onClick={props.onRefresh} disabled={props.loading}>Refresh Highlighting</button>
+        <button className="btn-secondary whitespace-nowrap px-3 py-1.5 text-xs" onClick={props.onRefresh} disabled={props.loading}>
+          {props.hasOpenPatches ? "Apply Notes & Refresh" : "Refresh Highlighting"}
+        </button>
 
         <div className="ml-auto flex min-w-0 items-center gap-2">
           <div
@@ -55,7 +58,7 @@ export function Toolbar(props: ToolbarProps) {
             title={statusText}
             aria-live="polite"
           >
-            Module {props.currentModule} - {statusText}
+            {statusText}
           </div>
           {hasDetails ? (
             <button

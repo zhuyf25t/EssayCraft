@@ -24,11 +24,15 @@ export type Annotation = {
 
 export type Patch = {
   id: string;
+  moduleNumber?: ModuleNumber;
   anchorStart: number;
   anchorEnd: number;
   anchorQuote: string;
   text: string;
   createdAt: string;
+  updatedAt?: string;
+  appliedAt?: string;
+  status?: "open" | "resolved";
   resolved?: boolean;
   stale?: boolean;
 };
@@ -114,9 +118,16 @@ export type RefreshRequest = {
 };
 
 export type RefreshResponse = {
+  kind?: "annotations" | "revision";
   annotations: Annotation[];
   globalFeedback: string[];
   warnings: string[];
+  proposedText?: string;
+  proposedAnnotations?: Annotation[];
+  originalSummary?: string;
+  rationale?: string;
+  patchResolutionPlan?: string[];
+  providerMode?: "deepseek" | "mock" | "fallback";
 };
 
 export type GenerateNextRequest = {

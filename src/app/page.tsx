@@ -30,7 +30,6 @@ import type {
   Patch,
   Project,
   RefreshResponse,
-  SegmentLabel,
   Snapshot,
   SourceCard,
   TextRange,
@@ -68,7 +67,8 @@ export default function Home() {
   const [editorResetKey, setEditorResetKey] = useState(0);
   const [rightTab, setRightTab] = useState<RightTab>("assistant");
   const [editingPatchId, setEditingPatchId] = useState<string | null>(null);
-  const [assistantModeRequest, setAssistantModeRequest] = useState<{ mode: "chat" | "selection" | "inspect"; id: number }>({ mode: "chat", id: 0 });
+  const [assistantModeRequest, setAssistantModeRequest] = useState<{ mode: "chat" | "edit"; id: number }>({ mode: "chat", id: 0 });
+  const [revisionPreview, setRevisionPreview] = useState<RefreshResponse | undefined>();
   const importInputRef = useRef<HTMLInputElement>(null);
   const currentModuleNumber = project?.currentModule;
 
@@ -104,6 +104,7 @@ export default function Home() {
   const activePatchCount = currentDoc && editRange
     ? currentDoc.patches.filter((patch) => !patch.resolved && rangesOverlap(patch.anchorStart, patch.anchorEnd, editRange.start, editRange.end)).length
     : 0;
+  const openPatches = currentDoc?.patches.filter((patch) => patch.status !== "resolved" && !patch.resolved && !patch.stale && patch.text.trim()) ?? [];
 
   if (!project || !currentDoc) {
     return <main className="flex min-h-screen items-center justify-center text-slate-500">Loading EssayCraft...</main>;
@@ -163,7 +164,7 @@ export default function Home() {
     setEditorResetKey((value) => value + 1);
   }
 
-  function requestAssistantMode(mode: "chat" | "selection" | "inspect") {
+  function requestAssistantMode(mode: "chat" | "edit") {
     setAssistantModeRequest((request) => ({ mode, id: request.id + 1 }));
   }
 
@@ -176,6 +177,7 @@ export default function Home() {
       patches: repairPatchesForText(text, doc.patches),
       updatedAt: nowIso()
     }));
+    setRevisionPreview(undefined);
     setStatus("Auto-saved. Refresh if highlights need updating.");
   }
 
@@ -192,18 +194,21 @@ export default function Home() {
     if (editingPatchId) {
       updateCurrentModule((doc) => ({
         ...doc,
-        patches: doc.patches.map((patch) => patch.id === editingPatchId ? { ...patch, text, resolved: false, stale: false } : patch),
+        patches: doc.patches.map((patch) => patch.id === editingPatchId ? { ...patch, text, resolved: false, status: "open", stale: false, updatedAt: nowIso() } : patch),
         updatedAt: nowIso()
       }));
-      setStatus("Patch updated.");
+      setStatus("Note updated.");
     } else {
       const patch: Patch = {
         id: id("patch"),
+        moduleNumber: activeProject.currentModule,
         anchorStart: patchRange.start,
         anchorEnd: patchRange.end,
         anchorQuote: activeDoc.text.slice(patchRange.start, patchRange.end),
         text,
         createdAt: nowIso(),
+        updatedAt: nowIso(),
+        status: "open",
         resolved: false,
         stale: false
       };
@@ -212,7 +217,7 @@ export default function Home() {
         patches: [patch, ...doc.patches],
         updatedAt: nowIso()
       }));
-      setStatus("Patch saved. Refresh or ask the assistant to use it.");
+      setStatus("Note saved. Apply notes or ask the assistant to use it.");
     }
     setEditingPatchId(null);
     setPatchRange(null);
@@ -234,10 +239,16 @@ export default function Home() {
   function toggleResolvePatch(patch: Patch) {
     updateCurrentModule((doc) => ({
       ...doc,
-      patches: doc.patches.map((item) => item.id === patch.id ? { ...item, resolved: !item.resolved, stale: false } : item),
+      patches: doc.patches.map((item) => item.id === patch.id ? {
+        ...item,
+        resolved: !item.resolved,
+        status: item.resolved ? "open" : "resolved",
+        stale: false,
+        updatedAt: nowIso()
+      } : item),
       updatedAt: nowIso()
     }));
-    setStatus(patch.resolved ? "Patch reopened." : "Patch resolved.");
+    setStatus(patch.resolved ? "Note reopened." : "Note resolved.");
   }
 
   function deletePatch(patch: Patch) {
@@ -255,7 +266,10 @@ export default function Home() {
       return;
     }
 
-    const steps = ["Reading text", "Classifying ranges", "Updating colors"];
+    const hasOpenPatches = openPatches.length > 0;
+    const steps = hasOpenPatches
+      ? ["Reading notes", "Drafting revision preview", "Ready"]
+      : ["Reading text", "Classifying ranges", "Updating colors"];
     setLoading(true);
     setProgress(steps, steps[0]);
     try {
@@ -277,6 +291,15 @@ export default function Home() {
       if (!response.ok) throw new Error(data.error ?? "Refresh failed.");
 
       setProgress(steps, steps[2]);
+      if (data.kind === "revision" && data.proposedText) {
+        setRevisionPreview(data);
+        setAssistantSuggestion(undefined);
+        setRightTab("assistant");
+        requestAssistantMode("edit");
+        setStatus("Notes preview ready.");
+        return;
+      }
+
       updateCurrentModule((doc) => ({
         ...doc,
         annotations: normalizeAnnotations(doc.text, data.annotations),
@@ -366,6 +389,7 @@ export default function Home() {
       setActiveSentenceRange(undefined);
       setPatchRange(null);
       setAssistantSuggestion(undefined);
+      setRevisionPreview(undefined);
       resetEditorViewport();
       const message = `Module ${target} generated and opened. Previous Module ${target} saved as a snapshot.`;
       const details = [
@@ -411,6 +435,7 @@ export default function Home() {
     setPatchRange(null);
     setEditingPatchId(null);
     setAssistantSuggestion(undefined);
+    setRevisionPreview(undefined);
     resetEditorViewport();
     setLastAction({ tone: "info", message: `Viewing Module ${moduleNumber}: ${MODULE_TITLES[moduleNumber]}.` });
   }
@@ -422,6 +447,7 @@ export default function Home() {
     setActiveSentenceRange(undefined);
     setPatchRange(null);
     setEditingPatchId(null);
+    setRevisionPreview(undefined);
     resetEditorViewport();
     setStatus(`Module ${activeProject.currentModule} cleared. Restore is available from snapshots.`);
   }
@@ -435,6 +461,7 @@ export default function Home() {
     setPatchRange(null);
     setEditingPatchId(null);
     setAssistantSuggestion(undefined);
+    setRevisionPreview(undefined);
     resetEditorViewport();
     setStatus("Demo reset.");
   }
@@ -614,7 +641,7 @@ export default function Home() {
       requestAssistantMode("chat");
     } else {
       setAssistantSuggestion(undefined);
-      requestAssistantMode(intent === "inspect" ? "inspect" : "selection");
+      requestAssistantMode("edit");
     }
 
     setLoading(true);
@@ -678,6 +705,35 @@ export default function Home() {
     }
   }
 
+  function acceptRevisionPreview() {
+    if (!revisionPreview?.proposedText) return;
+    updateCurrentModule((doc) => {
+      const snapDoc = addSnapshot(doc, "Before applying patch notes");
+      const text = normalizeText(revisionPreview.proposedText ?? snapDoc.text);
+      const openPatchIds = new Set(snapDoc.patches.filter((patch) => patch.status !== "resolved" && !patch.resolved && !patch.stale).map((patch) => patch.id));
+      const plannedPatchIds = new Set(revisionPreview.patchResolutionPlan ?? []);
+      const patchIds = [...plannedPatchIds].some((patchId) => openPatchIds.has(patchId)) ? plannedPatchIds : openPatchIds;
+      const resolvedPatches = snapDoc.patches.map((patch) => patchIds.has(patch.id)
+        ? { ...patch, resolved: true, status: "resolved" as const, appliedAt: nowIso(), updatedAt: nowIso() }
+        : patch);
+      return {
+        ...snapDoc,
+        text,
+        annotations: normalizeAnnotations(text, revisionPreview.proposedAnnotations ?? revisionPreview.annotations),
+        patches: repairPatchesForText(text, resolvedPatches),
+        globalFeedback: revisionPreview.globalFeedback,
+        updatedAt: nowIso()
+      };
+    });
+    setRevisionPreview(undefined);
+    setStatus("Notes applied. Snapshot saved.");
+  }
+
+  function rejectRevisionPreview() {
+    setRevisionPreview(undefined);
+    setStatus("Notes preview rejected. Text unchanged.");
+  }
+
   function handleApplyAssistant() {
     if (!assistantSuggestion) return;
     if (assistantSuggestion.kind !== "edit") {
@@ -705,8 +761,9 @@ export default function Home() {
         updatedAt: nowIso()
       };
     });
-    setAssistantSuggestion(undefined);
-    setStatus("Assistant suggestion applied after snapshot.");
+      setAssistantSuggestion(undefined);
+      setStatus("Assistant suggestion applied after snapshot.");
+      setRevisionPreview(undefined);
   }
 
   function handleSaveSuggestionAsPatch() {
@@ -721,11 +778,14 @@ export default function Home() {
       : `Assistant note: ${assistantSuggestion.reply}`;
     const patch: Patch = {
       id: id("patch"),
+      moduleNumber: activeProject.currentModule,
       anchorStart: targetRange.start,
       anchorEnd: targetRange.end,
       anchorQuote: activeDoc.text.slice(targetRange.start, targetRange.end),
       text,
       createdAt: nowIso(),
+      updatedAt: nowIso(),
+      status: "open",
       resolved: false,
       stale: false
     };
@@ -735,35 +795,6 @@ export default function Home() {
       updatedAt: nowIso()
     }));
     setStatus("Assistant suggestion saved as a patch note.");
-  }
-
-  function handleRelabel(label: SegmentLabel) {
-    const targetRange = activeAnnotation
-      ? { start: activeAnnotation.start, end: activeAnnotation.end }
-      : editRange;
-    if (!targetRange || targetRange.end <= targetRange.start) {
-      setStatus("Click a highlighted sentence or select text before relabeling.");
-      return;
-    }
-    updateCurrentModule((doc) => {
-      const snapDoc = addSnapshot(doc, "Before relabeling highlight");
-      const text = snapDoc.text.slice(targetRange.start, targetRange.end);
-      const annotation = {
-        id: activeAnnotation?.id ?? id("ann"),
-        start: targetRange.start,
-        end: targetRange.end,
-        text,
-        label,
-        confidence: 0.9,
-        comment: `User relabeled this range as ${label}.`
-      };
-      return {
-        ...snapDoc,
-        annotations: mergeAnnotationSuggestions(snapDoc.text, snapDoc.annotations, [annotation]),
-        updatedAt: nowIso()
-      };
-    });
-    setStatus(`Relabeled active range as ${label}. Snapshot saved first.`);
   }
 
   function openTranslate() {
@@ -830,7 +861,7 @@ export default function Home() {
       setSelectedRange(EMPTY_RANGE);
       setActiveSentenceRange(undefined);
       requestAssistantMode("chat");
-    }, 0);
+    }, 80);
     setStatus("Reference translation sent to Copilot chat.");
   }
 
@@ -863,6 +894,7 @@ export default function Home() {
             loading={loading}
             status={status}
             lastAction={lastAction}
+            hasOpenPatches={openPatches.length > 0}
             onBack={() => switchModule(clampModule(activeProject.currentModule - 1))}
             onGenerateNext={handleGenerateNext}
             onFinalizeExport={handleDownloadHtml}
@@ -880,20 +912,19 @@ export default function Home() {
                 </div>
               </div>
 
-              {patchRange ? (
-                <PatchPopover
-                  range={patchRange}
-                  anchorQuote={patchQuote}
-                  initialValue={editingPatchId ? activeDoc.patches.find((patch) => patch.id === editingPatchId)?.text ?? "" : ""}
-                  onSubmit={handlePatchSubmit}
-                  onClose={() => {
-                    setPatchRange(null);
-                    setEditingPatchId(null);
-                  }}
-                />
-              ) : null}
-
-              <div className="min-h-0 flex-1 overflow-hidden">
+              <div className="relative min-h-0 flex-1 overflow-hidden">
+                {patchRange ? (
+                  <PatchPopover
+                    range={patchRange}
+                    anchorQuote={patchQuote}
+                    initialValue={editingPatchId ? activeDoc.patches.find((patch) => patch.id === editingPatchId)?.text ?? "" : ""}
+                    onSubmit={handlePatchSubmit}
+                    onClose={() => {
+                      setPatchRange(null);
+                      setEditingPatchId(null);
+                    }}
+                  />
+                ) : null}
                 <Editor
                   text={activeDoc.text}
                   annotations={activeDoc.annotations}
@@ -909,13 +940,18 @@ export default function Home() {
                 />
               </div>
 
-              <PatchList
-                patches={activeDoc.patches}
-                onJump={jumpToPatch}
-                onEdit={editPatch}
-                onResolve={toggleResolvePatch}
-                onDelete={deletePatch}
-              />
+              {activeDoc.patches.length ? (
+                <details className="panel shrink-0 py-2 text-xs">
+                  <summary className="cursor-pointer font-semibold text-amber-800">Notes ({activeDoc.patches.length})</summary>
+                  <PatchList
+                    patches={activeDoc.patches}
+                    onJump={jumpToPatch}
+                    onEdit={editPatch}
+                    onResolve={toggleResolvePatch}
+                    onDelete={deletePatch}
+                  />
+                </details>
+              ) : null}
             </div>
 
             <aside data-testid="right-rail" className="min-h-0 overflow-hidden pr-1">
@@ -947,6 +983,7 @@ export default function Home() {
                       activePatchCount={activePatch ? Math.max(1, activePatchCount) : activePatchCount}
                       loading={loading}
                       suggestion={assistantSuggestion}
+                      revisionPreview={revisionPreview}
                       onChat={(message) => void handleAssist(message, "chat")}
                       onSelectionAction={(action) => void handleAssist(action, "edit")}
                       onInspectAction={(action) => void handleAssist(action, "inspect")}
@@ -954,7 +991,8 @@ export default function Home() {
                       onDismiss={() => setAssistantSuggestion(undefined)}
                       onAddPatchForRange={handleOpenPatch}
                       onSaveSuggestionAsPatch={handleSaveSuggestionAsPatch}
-                      onRelabel={handleRelabel}
+                      onAcceptRevision={acceptRevisionPreview}
+                      onRejectRevision={rejectRevisionPreview}
                     />
                   </div>
                   <div id="right-panel-sources" role="tabpanel" aria-label="Sources" className={rightTab === "sources" ? "h-full min-h-0 overflow-auto" : "hidden"}>
@@ -1104,14 +1142,6 @@ function mergeSources(primary: SourceCard[], secondary: SourceCard[]) {
   }
 
   return result;
-}
-
-function mergeAnnotationSuggestions(text: string, existing: ModuleDocument["annotations"], suggestions: ModuleDocument["annotations"]) {
-  if (!suggestions.length) return normalizeAnnotations(text, existing);
-  const filtered = existing.filter((annotation) =>
-    !suggestions.some((suggestion) => rangesOverlap(annotation.start, annotation.end, suggestion.start, suggestion.end))
-  );
-  return normalizeAnnotations(text, [...filtered, ...suggestions]);
 }
 
 function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {
