@@ -121,6 +121,19 @@ test("toolbar hierarchy stays visible without global page scroll", async ({ page
   await expect(page.getByText("Module progress")).toHaveCount(0);
 });
 
+test("bottom highlight key uses visible marker chips", async ({ page }) => {
+  const key = page.getByTestId("highlight-key");
+  await expect(key).toBeVisible();
+  for (const label of ["Background", "Thesis", "Evidence", "Analysis", "Counterargument", "Citation", "Conclusion", "Issue"]) {
+    await expect(key).toContainText(label);
+  }
+  const swatches = await key.locator("span.h-3").evaluateAll((nodes) =>
+    nodes.map((node) => getComputedStyle(node as HTMLElement).backgroundColor)
+  );
+  expect(swatches.length).toBeGreaterThanOrEqual(8);
+  expect(swatches.every((color) => color && color !== "rgba(0, 0, 0, 0)" && color !== "transparent")).toBe(true);
+});
+
 test("right panel tabs keep secondary work organized and toolbar clutter is reduced", async ({ page }) => {
   const rail = page.getByTestId("right-rail");
   await expect(rail.getByRole("tablist", { name: "Right workspace" })).toBeVisible();
@@ -137,7 +150,7 @@ test("right panel tabs keep secondary work organized and toolbar clutter is redu
   await expect(rail.getByRole("tabpanel", { name: "Export" })).toContainText("Export & Project Files");
 
   await rail.getByRole("tab", { name: /Assistant/i }).click();
-  await expect(rail.getByRole("tabpanel", { name: "Assistant" })).toContainText("Essay Copilot");
+  await expect(rail.getByRole("tabpanel", { name: "Assistant" })).toContainText("Chat");
 
   await expect(page.getByTestId("toolbar-more")).toHaveCount(0);
   await expect(page.getByTestId("last-action")).toHaveCount(0);
@@ -161,14 +174,15 @@ test("student can edit paragraphs, add a patch, and insert a manual citation", a
 
   await textEditor.focus();
   await page.keyboard.press("Control+Enter");
-  const patchBox = page.getByPlaceholder(/Tell EssayCraft what to fix here/);
+  const patchBox = page.getByPlaceholder("Add a note for EssayCraft");
   await expect(patchBox).toBeVisible();
   await patchBox.fill("Make the question more specific for a school policy essay.");
   await page.keyboard.press("Control+Enter");
   await expect(page.getByTestId("patch-list")).toContainText("Make the question more specific");
   await expect(page.getByTestId("patch-marker")).toBeVisible();
-  await expect(page.getByTestId("patch-list")).toContainText("Patch 1");
+  await expect(page.getByTestId("patch-list")).toContainText("Note 1");
   await expect(page.getByTestId("patch-list")).toContainText("Question: How can students reduce distraction");
+  await expect(textEditor).not.toHaveValue(/Make the question more specific/);
 
   await page.getByRole("tab", { name: /Sources/i }).click();
   await page.getByPlaceholder("Source title").fill("Student focus survey");
@@ -449,7 +463,7 @@ test("assistant chat mode answers module-level Ask without a preview card", asyn
   const overflow = await page.getByTestId("assistant-chat-messages").evaluate((node) => getComputedStyle(node as HTMLElement).overflowY);
   expect(overflow).toBe("auto");
 
-  await page.getByPlaceholder("Ask about this module...").fill("What do you think of this paragraph?");
+  await page.getByPlaceholder("Ask EssayCraft about this module...").fill("What do you think of this paragraph?");
   await page.getByRole("button", { name: "Send" }).click();
 
   const messages = page.getByTestId("assistant-chat-messages");
@@ -457,7 +471,7 @@ test("assistant chat mode answers module-level Ask without a preview card", asyn
   await expect(messages).toContainText("Your Module 1 has", { timeout: 20_000 });
   await expect(messages).toContainText("thesis map");
   await expect(messages).not.toContainText("I can explain highlights");
-  await expect(page.getByTestId("assistant-selection-preview")).toHaveCount(0);
+  await expect(page.getByTestId("assistant-edit-preview")).toHaveCount(0);
   for (const raw of ["proposedText", "replaceRange", "invalid_type", "Expected string"]) {
     await expect(messages).not.toContainText(raw);
   }
@@ -474,50 +488,45 @@ test("clicking a sentence activates Edit selection mode", async ({ page }) => {
   expect(box).toBeTruthy();
   await page.mouse.click(box!.x + 80, box!.y + 55);
 
-  await expect(page.getByTestId("assistant-selection-mode")).toBeVisible();
+  await expect(page.getByTestId("assistant-edit-mode")).toBeVisible();
   await expect(page.getByTestId("assistant-edit-context")).toContainText("Active sentence");
   await expect(page.getByTestId("assistant-edit-context")).toContainText("First sentence has a clear claim.");
   await expect(page.locator(".active-sentence-backdrop")).toHaveCount(1);
 });
 
-test("highlight inspector explains active annotation and gives friendly empty state", async ({ page }) => {
+test("Edit mode explains active highlight without confidence or relabel controls", async ({ page }) => {
+  await expect(page.getByRole("button", { name: "Inspect" })).toHaveCount(0);
   await selectEditorRange(page, 0, "Topic: Social media balance and youth wellbeing".length);
-  await page.getByRole("button", { name: "Inspect" }).click();
-  const inspector = page.getByTestId("annotation-inspector");
-  await expect(inspector).toContainText("Background");
-  await expect(inspector).toContainText("Topic: Social media balance");
+  const editContext = page.getByTestId("assistant-edit-context");
+  await expect(editContext).toContainText("Background");
+  await expect(editContext).toContainText("Topic: Social media balance");
+  await expect(editContext).not.toContainText(/confidence|%/i);
+  await expect(page.getByRole("combobox")).toHaveCount(0);
 
   await page.getByRole("button", { name: "Explain highlight" }).click();
-  await expect(page.getByTestId("assistant-inspect-response")).toContainText("Highlight explanation", { timeout: 20_000 });
-  await expect(page.getByTestId("assistant-inspect-response")).toContainText(/background|thesis|highlight/i);
-  await page.getByRole("combobox").last().selectOption("analysis");
-  await page.getByRole("button", { name: "Apply" }).click();
-  const relabeledState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
-  expect(relabeledState.modules["1"].annotations.some((annotation: { label: string; text: string }) =>
-    annotation.label === "analysis" && annotation.text.includes("Topic: Social media balance")
-  )).toBe(true);
+  await expect(page.getByTestId("assistant-highlight-explanation")).toContainText("Highlight explanation", { timeout: 20_000 });
+  await expect(page.getByTestId("assistant-highlight-explanation")).toContainText(/background|thesis|highlight/i);
 
   await editor(page).fill("Plain draft without refreshed annotations.");
   await editor(page).click();
-  await page.getByRole("button", { name: "Inspect" }).click();
-  await expect(inspector).toContainText("Click a highlighted sentence first.");
   await expect(page.getByRole("button", { name: "Explain highlight" })).toBeDisabled();
 });
 
 test("assistant uses selection context and dismisses preview without changing text", async ({ page }) => {
-  const original = "Working thesis: Social media balance requires intentional habits and platform responsibility.";
+  const original = "Working thesis: Social media balance requires intentional habits and platform responsibility. This long explanation adds enough words to prove the side panel only shows the head and tail of a long active selection instead of taking over the entire assistant panel.";
   await editor(page).fill(original);
   await expect(page.getByTestId("assistant-edit-context")).toContainText("Active sentence");
   await editor(page).selectText();
 
-  await expect(page.getByTestId("assistant-edit-context")).toContainText("Selected text");
-  await expect(page.getByTestId("assistant-edit-context")).toContainText(`Range 0-${original.length}`);
+  await expect(page.getByTestId("assistant-edit-context")).toContainText("Selected range");
+  await expect(page.getByTestId("assistant-edit-context")).toContainText(`${original.length} chars`);
+  await expect(page.getByTestId("assistant-edit-context")).toContainText("(compact)");
   await expect(page.getByRole("button", { name: "Rewrite", exact: true })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Translate selected text" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Translate" })).toBeEnabled();
   await page.getByRole("button", { name: "Rewrite", exact: true }).click();
-  await expect(page.getByTestId("assistant-selection-preview")).toContainText("Rewrite preview", { timeout: 20_000 });
-  await expect(page.getByTestId("assistant-selection-preview").getByRole("button", { name: "Save as patch" })).toBeVisible();
-  await page.getByRole("button", { name: "Dismiss" }).click();
+  await expect(page.getByTestId("assistant-edit-preview")).toContainText("Revision preview", { timeout: 20_000 });
+  await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Save as note" })).toBeVisible();
+  await page.getByRole("button", { name: "Reject" }).click();
   await expect(editor(page)).toHaveValue(original);
 });
 
@@ -526,13 +535,13 @@ test("selected text translation stays in Assistant until preview apply", async (
   await editor(page).fill(original);
   await selectEditorRange(page, 0, "Social media balance".length);
 
-  await page.getByRole("button", { name: "Translate selected text" }).click();
-  await expect(page.getByTestId("assistant-selection-preview")).toContainText("Translation preview", { timeout: 20_000 });
-  await expect(page.locator("pre").filter({ hasText: /[\u4e00-\u9fff]/ })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Apply to selection" })).toBeVisible();
+  await page.getByRole("button", { name: "Translate" }).click();
+  await expect(page.getByTestId("assistant-edit-preview")).toContainText("Revision preview", { timeout: 20_000 });
+  await expect(page.getByTestId("assistant-edit-preview")).toContainText(/[\u4e00-\u9fff]/);
+  await expect(page.getByRole("button", { name: "Apply" })).toBeVisible();
   await expect(editor(page)).toHaveValue(original);
 
-  await page.getByRole("button", { name: "Apply to selection" }).click();
+  await page.getByRole("button", { name: "Apply" }).click();
   await expect(editor(page)).toHaveValue(/[\u4e00-\u9fff]/);
   const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(state.modules["1"].snapshots[0].text).toBe(original);
@@ -543,12 +552,14 @@ test("patch list supports edit resolve delete and refresh respects patch labels"
   await editor(page).fill(original);
   await selectEditorRange(page, 0, "Research shows".length);
   await page.keyboard.press("Control+Enter");
-  const patchBox = page.getByPlaceholder(/Tell EssayCraft what to fix here/);
+  const patchBox = page.getByPlaceholder("Add a note for EssayCraft");
   await patchBox.fill("This is analysis, not evidence.");
   await page.keyboard.press("Enter");
 
   await expect(page.getByTestId("patch-marker")).toBeVisible();
   await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
+  await expect(editor(page)).toHaveValue(original);
+  await page.getByText(/Notes \(1\)/).click();
   await expect(page.getByTestId("patch-list")).toContainText("This is analysis, not evidence.");
   await page.getByTestId("patch-margin-marker").click();
   await expect(patchBox).toHaveValue("This is analysis, not evidence.");
@@ -560,27 +571,49 @@ test("patch list supports edit resolve delete and refresh respects patch labels"
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("patch-list")).toContainText("Find a stronger source.");
 
-  await page.getByRole("button", { name: "Refresh Highlighting" }).click();
-  await expect(page.getByTestId("toolbar-status")).toContainText(/Mock refresh|Highlights refreshed/i);
-  const stateAfterRefresh = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
-  expect(stateAfterRefresh.modules["1"].annotations.some((annotation: { label: string; comment?: string }) =>
-    annotation.label === "analysis" && annotation.comment?.includes("Patch request")
-  )).toBe(true);
+  await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
+  await expect(page.getByTestId("apply-notes-preview")).toContainText("Apply notes preview", { timeout: 20_000 });
+  await expect(editor(page)).toHaveValue(original);
+  await page.getByRole("button", { name: "Reject" }).click();
+  await expect(editor(page)).toHaveValue(original);
+  let stateAfterPreview = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(stateAfterPreview.modules["1"].patches[0].resolved).toBe(false);
 
-  await page.getByRole("button", { name: "Resolve" }).click();
-  await expect(page.getByTestId("patch-list")).toContainText("resolved");
+  await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
+  await expect(page.getByTestId("apply-notes-preview")).toContainText("Apply notes preview", { timeout: 20_000 });
+  await page.getByRole("button", { name: "Accept" }).click();
+  await expect(editor(page)).not.toHaveValue(original);
+  stateAfterPreview = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(stateAfterPreview.modules["1"].snapshots[0].text).toBe(original);
+  await expect.poll(async () => {
+    const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+    return state.modules["1"].patches[0]?.status ?? (state.modules["1"].patches[0]?.resolved ? "resolved" : "open");
+  }).toBe("resolved");
+
   await page.getByRole("button", { name: "Delete" }).click();
   await expect(page.getByTestId("patch-list")).toHaveCount(0);
 });
 
 test("assistant apply snapshots selected replacement and blocks stale ranges", async ({ page }) => {
-  const original = "Alpha sentence. Beta sentence.";
+  const original = "Alpha sentence. kids get good things.";
   await editor(page).fill(original);
   await selectEditorRange(page, 16, original.length);
   await page.getByRole("button", { name: "Rewrite", exact: true }).click();
-  await expect(page.getByTestId("assistant-selection-preview")).toContainText("Rewrite preview", { timeout: 20_000 });
-  await page.getByRole("button", { name: "Apply to selection" }).click();
-  await expect(editor(page)).toHaveValue(/^Alpha sentence\. A more academic version could state:/);
+  await expect(page.getByTestId("assistant-edit-preview")).toContainText("Revision preview", { timeout: 20_000 });
+  const preview = page.getByTestId("assistant-edit-preview");
+  for (const banned of [
+    "A more academic version could state",
+    "could state:",
+    "The student should",
+    "Here is a revised version",
+    "citation needed if this includes factual evidence",
+    "if this includes factual evidence",
+    "I would rewrite it as"
+  ]) {
+    await expect(preview).not.toContainText(banned);
+  }
+  await page.getByRole("button", { name: "Apply" }).click();
+  await expect(editor(page)).toHaveValue(/^Alpha sentence\. young people get beneficial factors\./);
   const appliedState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(appliedState.modules["1"].snapshots[0].text).toBe(original);
 
@@ -588,9 +621,9 @@ test("assistant apply snapshots selected replacement and blocks stale ranges", a
   await editor(page).fill(staleOriginal);
   await selectEditorRange(page, 16, staleOriginal.length);
   await page.getByRole("button", { name: "Rewrite", exact: true }).click();
-  await expect(page.getByTestId("assistant-selection-preview")).toContainText("Rewrite preview", { timeout: 20_000 });
+  await expect(page.getByTestId("assistant-edit-preview")).toContainText("Revision preview", { timeout: 20_000 });
   await editor(page).fill(`Inserted prefix. ${staleOriginal}`);
-  await page.getByRole("button", { name: "Apply to selection" }).click();
+  await page.getByRole("button", { name: "Apply" }).click();
   await expect(page.getByTestId("toolbar-status")).toContainText(/blocked|changed after the preview/i);
   await expect(editor(page)).toHaveValue(`Inserted prefix. ${staleOriginal}`);
 });
@@ -620,7 +653,7 @@ test("full project JSON export includes six modules and all metadata groups", as
   await editor(page).fill("Topic: Export test.\n\nWorking thesis: Export should preserve project metadata.");
   await selectEditorRange(page, 0, "Topic: Export test.".length);
   await page.keyboard.press("Control+Enter");
-  await page.getByPlaceholder(/Tell EssayCraft what to fix here/).fill("This patch should be exported.");
+  await page.getByPlaceholder("Add a note for EssayCraft").fill("This patch should be exported.");
   await page.keyboard.press("Enter");
 
   await page.getByRole("tab", { name: /Snapshots/i }).click();
@@ -634,13 +667,14 @@ test("full project JSON export includes six modules and all metadata groups", as
 
   await page.getByRole("tab", { name: /Assistant/i }).click();
   await page.getByRole("button", { name: "Chat" }).click();
-  await page.getByPlaceholder("Ask about this module...").fill("What should I improve?");
+  await page.getByPlaceholder("Ask EssayCraft about this module...").fill("What should I improve?");
   await page.getByRole("button", { name: "Send" }).click();
   await expect(page.getByTestId("assistant-chat-messages")).toContainText("What should I improve?");
   await expect(page.getByTestId("assistant-chat-messages")).toContainText(/Module 1|thesis|topic/i, { timeout: 20_000 });
 
-  await page.getByRole("button", { name: "Refresh Highlighting" }).click();
-  await expect(page.getByTestId("toolbar-status")).toContainText(/Mock refresh|Highlights refreshed/i);
+  await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
+  await expect(page.getByTestId("apply-notes-preview")).toContainText("Apply notes preview", { timeout: 20_000 });
+  await page.getByRole("button", { name: "Accept" }).click();
 
   await page.getByRole("tab", { name: /Export/i }).click();
   await expect(page.getByRole("tabpanel", { name: "Export" })).toContainText("Full project JSON includes all 6 modules");
