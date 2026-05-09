@@ -96,10 +96,12 @@ test("toolbar hierarchy stays visible without global page scroll", async ({ page
     const metrics = await page.evaluate(() => {
       const toolbar = document.querySelector('[data-testid="action-toolbar"]') as HTMLElement;
       const generate = document.querySelector('[data-testid="workflow-generate"]') as HTMLElement;
+      const bottomBar = document.querySelector('[data-testid="bottom-action-bar"]') as HTMLElement;
       const key = document.querySelector('[data-testid="highlight-key"]') as HTMLElement;
       const progress = document.querySelector('[data-testid="module-progress"]') as HTMLElement;
       const toolbarRect = toolbar.getBoundingClientRect();
       const generateRect = generate.getBoundingClientRect();
+      const bottomRect = bottomBar.getBoundingClientRect();
       const keyRect = key.getBoundingClientRect();
       const progressRect = progress.getBoundingClientRect();
       return {
@@ -107,6 +109,7 @@ test("toolbar hierarchy stays visible without global page scroll", async ({ page
         toolbarRight: toolbarRect.right,
         generateTop: generateRect.top,
         generateRight: generateRect.right,
+        bottomBarTop: bottomRect.top,
         keyBottom: keyRect.bottom,
         progressHeight: progressRect.height,
         documentOverflow: document.documentElement.scrollHeight - window.innerHeight
@@ -116,12 +119,17 @@ test("toolbar hierarchy stays visible without global page scroll", async ({ page
     expect(metrics.toolbarRight).toBeLessThanOrEqual(viewport.width + 1);
     expect(metrics.generateTop).toBeGreaterThanOrEqual(0);
     expect(metrics.generateRight).toBeLessThanOrEqual(viewport.width + 1);
+    expect(metrics.bottomBarTop).toBeGreaterThan(viewport.height - 90);
     expect(metrics.keyBottom).toBeLessThanOrEqual(viewport.height + 1);
     expect(metrics.progressHeight).toBeLessThanOrEqual(44);
     expect(metrics.documentOverflow).toBeLessThanOrEqual(4);
   }
   await expect(page.getByTestId("compact-progress-circles")).toBeVisible();
   await expect(page.getByText("Module progress")).toHaveCount(0);
+  for (const step of ["Preparing context", "Drafting preview", "Ready"]) {
+    await expect(page.getByText(step, { exact: true })).toHaveCount(0);
+  }
+  await expect(page.getByTestId("bottom-action-bar")).toContainText("Save Snapshot");
 });
 
 test("left sidebar highlight key uses visible marker chips", async ({ page }) => {
@@ -137,6 +145,25 @@ test("left sidebar highlight key uses visible marker chips", async ({ page }) =>
   expect(swatches.length).toBeGreaterThanOrEqual(8);
   expect(swatches.every((color) => color && color !== "rgba(0, 0, 0, 0)" && color !== "transparent")).toBe(true);
   await expect(page.getByText("Project title and Module 1 research question differ")).toHaveCount(0);
+});
+
+test("highlight rendering ignores stale and blank annotation bars", async ({ page }) => {
+  await editor(page).fill("Topic: Clean highlights\n\nWorking thesis: Highlight bars should only appear behind text.");
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}");
+    state.modules["1"].annotations = [
+      { id: "blank", start: 23, end: 25, text: "\n\n", label: "thesis" },
+      { id: "stale", start: 999, end: 1005, text: "ghost", label: "thesis" },
+      { id: "valid", start: 0, end: 23, text: "Topic: Clean highlights", label: "background" }
+    ];
+    localStorage.setItem("essaycraft:mvp:project", JSON.stringify(state));
+  });
+  await page.reload();
+  await expect(page.getByTestId("editor-backdrop")).toBeVisible();
+  const blankMarks = await page.locator(".highlight-backdrop").evaluateAll((nodes) =>
+    nodes.filter((node) => !((node.textContent ?? "").trim())).length
+  );
+  expect(blankMarks).toBe(0);
 });
 
 test("right panel tabs keep secondary work organized and toolbar clutter is reduced", async ({ page }) => {
@@ -161,7 +188,7 @@ test("right panel tabs keep secondary work organized and toolbar clutter is redu
   await expect(page.getByTestId("last-action")).toHaveCount(0);
 
   await rail.getByRole("tab", { name: /Snapshots/i }).click();
-  await page.getByRole("button", { name: "Save Snapshot" }).click();
+  await rail.getByRole("tabpanel", { name: "Snapshots" }).getByRole("button", { name: "Save Snapshot" }).click();
   await expect(page.getByText("Manual snapshot")).toBeVisible();
 
   await openExportTab(page);
@@ -638,6 +665,29 @@ test("inline notes drive apply notes preview and preserve text until accepted", 
   expect(undoState.modules["1"].patches[0].resolved).toBe(false);
 });
 
+test("Chinese title note visibly revises topic only after Accept", async ({ page }) => {
+  const original = "Topic: Social media balance\n\nResearch question: How can social media be healthier?";
+  await editor(page).fill(original);
+  await selectEditorRange(page, 0, "Topic: Social media balance".length);
+  await page.keyboard.press("Control+Enter");
+  await page.getByPlaceholder("Add a note for EssayCraft").fill("标题可以更长一点");
+  await page.keyboard.press("Enter");
+
+  await expect(page.getByTestId("patch-marker")).toBeVisible();
+  await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
+  await expect(editor(page)).toHaveValue(original);
+  await expect(editor(page)).not.toHaveValue(/标题可以更长一点/);
+
+  await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
+  await expect(page.getByTestId("apply-notes-preview")).toContainText("Apply notes preview", { timeout: 20_000 });
+  await expect(page.getByTestId("apply-notes-preview")).toContainText(/causes|consequences|responses|students|communities/i);
+  await expect(editor(page)).toHaveValue(original);
+  await page.getByRole("button", { name: "Accept" }).click();
+  await expect(editor(page)).not.toHaveValue(original);
+  await expect(editor(page)).toHaveValue(/Topic: Social media balance, including its causes, consequences, and practical responses/);
+  await expect(page.getByTestId("patch-margin-marker")).toHaveCount(0);
+});
+
 test("assistant apply snapshots selected replacement and blocks stale ranges", async ({ page }) => {
   const original = "Alpha sentence. kids get good things.";
   await editor(page).fill(original);
@@ -703,7 +753,7 @@ test("full project JSON export includes six modules and all metadata groups", as
   await page.keyboard.press("Enter");
 
   await page.getByRole("tab", { name: /Snapshots/i }).click();
-  await page.getByRole("button", { name: "Save Snapshot" }).click();
+  await page.getByRole("tabpanel", { name: "Snapshots" }).getByRole("button", { name: "Save Snapshot" }).click();
 
   await page.getByRole("tab", { name: /Sources/i }).click();
   await page.getByPlaceholder("Source title").fill("Export source");

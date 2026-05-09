@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMockAnnotations } from "./annotations";
+import { buildMockAnnotations, normalizeAnnotations } from "./annotations";
 
 function labelFor(text: string, needle: string) {
   const annotation = buildMockAnnotations(text).find((item) => item.text.includes(needle));
@@ -68,5 +68,35 @@ Conclusion plan
   it("treats citation-needed in draft prose as an issue", () => {
     const text = "Research on social media wellbeing would strengthen this claim [citation needed].";
     expect(labelFor(text, "[citation needed]")).toBe("issue");
+  });
+
+  it("drops stale or whitespace-only annotation ranges before rendering", () => {
+    const text = "Topic: Social media balance\n\nWorking thesis: Balance is possible.";
+    const annotations = normalizeAnnotations(text, [
+      {
+        id: "stale",
+        start: 999,
+        end: 1009,
+        text: "missing",
+        label: "thesis"
+      },
+      {
+        id: "blank",
+        start: 27,
+        end: 29,
+        text: "\n\n",
+        label: "thesis"
+      },
+      {
+        id: "valid",
+        start: 0,
+        end: 27,
+        text: "Topic: Social media balance",
+        label: "background"
+      }
+    ]);
+
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0].id).toBe("valid");
   });
 });
