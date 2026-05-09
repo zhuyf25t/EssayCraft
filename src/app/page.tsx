@@ -957,21 +957,6 @@ export default function Home() {
             </div>
           </header>
 
-          <Toolbar
-            currentModule={activeProject.currentModule}
-            loading={loading}
-            status={status}
-            toastVisible={toastVisible}
-            canUndo={undoStack.length > 0 && /Undo is available|AI edit applied|Notes applied/.test(status)}
-            lastAction={lastAction}
-            hasOpenPatches={openPatches.length > 0}
-            onBack={() => switchModule(clampModule(activeProject.currentModule - 1))}
-            onGenerateNext={handleGenerateNext}
-            onFinalizeExport={handleDownloadHtml}
-            onRetryGenerate={handleGenerateNext}
-            onRefresh={handleRefresh}
-            onUndo={undoLastAiEdit}
-          />
           <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void handleImportJson(event.target.files?.[0])} />
 
           <div data-testid="workspace-body" className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 xl:grid-cols-[minmax(0,1fr)_360px]">
@@ -1092,6 +1077,23 @@ export default function Home() {
               </section>
             </aside>
           </div>
+
+          <Toolbar
+            currentModule={activeProject.currentModule}
+            loading={loading}
+            status={status}
+            toastVisible={toastVisible}
+            canUndo={undoStack.length > 0 && /Undo is available|AI edit applied|Notes applied/.test(status)}
+            lastAction={lastAction}
+            hasOpenPatches={openPatches.length > 0}
+            onBack={() => switchModule(clampModule(activeProject.currentModule - 1))}
+            onGenerateNext={handleGenerateNext}
+            onFinalizeExport={handleDownloadHtml}
+            onRetryGenerate={handleGenerateNext}
+            onRefresh={handleRefresh}
+            onSaveSnapshot={handleSaveSnapshot}
+            onUndo={undoLastAiEdit}
+          />
         </section>
       </div>
 

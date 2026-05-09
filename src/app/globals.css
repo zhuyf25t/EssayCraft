@@ -155,11 +155,26 @@ body {
 }
 
 .patch-marker::after {
-  content: "";
+  content: "\1F4DD  " attr(data-note);
   position: absolute;
   left: 0.2rem;
   top: -0.85rem;
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 18rem;
+  min-height: 1.15rem;
+  padding: 0.05rem 0.4rem;
+  border: 1px solid #f59e0b;
+  border-radius: 999px;
+  background: #fffbeb;
+  color: #92400e;
+  font-family: Arial, sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+  vertical-align: super;
 }
 
 .patch-inline-markers {
@@ -184,23 +199,28 @@ body {
   justify-content: center;
   gap: 0.25rem;
   padding: 0.1rem 0.45rem;
-  border: 1px solid #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.7);
   border-radius: 0.65rem;
   background: #fffbeb;
   color: transparent;
   font-family: Arial, sans-serif;
-  font-size: 10px;
+  font-size: 0;
   font-weight: 700;
   line-height: 1.15;
   text-align: left;
-  box-shadow: 0 2px 4px rgba(146, 64, 14, 0.16);
+  opacity: 0.72;
+  box-shadow: 0 2px 4px rgba(146, 64, 14, 0.12);
 }
 
 .patch-inline-marker::before {
-  content: "\1F4DD  " attr(data-note);
+  content: none;
+}
+
+.patch-inline-marker-label {
   min-width: 0;
   overflow: hidden;
   color: #92400e;
+  font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }

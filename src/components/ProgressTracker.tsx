@@ -4,12 +4,12 @@ import { moduleDisplayStatus } from "@/lib/moduleStatus";
 
 type ProgressTrackerProps = {
   project: Project;
-  actionSteps: string[];
+  actionSteps?: string[];
   activeStep?: string;
   onSelect: (moduleNumber: ModuleNumber) => void;
 };
 
-export function ProgressTracker({ project, actionSteps, activeStep, onSelect }: ProgressTrackerProps) {
+export function ProgressTracker({ project, onSelect }: ProgressTrackerProps) {
   const modules = [1, 2, 3, 4, 5, 6] as ModuleNumber[];
 
   return (
@@ -51,15 +51,6 @@ export function ProgressTracker({ project, actionSteps, activeStep, onSelect }: 
         </div>
       </nav>
 
-      {actionSteps.length ? (
-        <div className="flex max-w-full flex-wrap justify-end gap-1 text-[11px] text-blue-900">
-          {actionSteps.map((step, index) => (
-            <span key={`${index}-${step}`} className={`rounded-full border px-2 py-0.5 ${step === activeStep ? "border-blue-600 bg-blue-600 text-white" : "border-blue-100 bg-blue-50 text-blue-700"}`}>
-              {step}
-            </span>
-          ))}
-        </div>
-      ) : null}
     </section>
   );
 }
