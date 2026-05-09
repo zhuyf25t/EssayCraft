@@ -51,8 +51,7 @@ export function ModuleSidebar({ project, activeLabel, onSelect }: { project: Pro
         })}
       </div>
 
-      <div className="min-h-2 flex-1" />
-      <div className="shrink-0 space-y-2">
+      <div className="mt-1.5 shrink-0 space-y-2">
         <HighlightKey activeLabel={activeLabel} />
       </div>
     </aside>
