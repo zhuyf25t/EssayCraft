@@ -91,10 +91,11 @@ function coerceAssistResponse(input: AssistRequest, raw: unknown, providerMode: 
     if (!parsed.proposedText?.trim() || !parsed.replaceRange) {
       throw new Error("Provider returned an unusable edit preview.");
     }
+    const proposedText = sanitizeReplacement(parsed.proposedText, input.selectedText ?? input.text.slice(parsed.replaceRange.start, parsed.replaceRange.end));
     return {
       ...base,
       kind: "edit",
-      proposedText: parsed.proposedText,
+      proposedText,
       replaceRange: parsed.replaceRange,
       originalText: parsed.originalText,
       originalExcerpt: parsed.originalExcerpt
@@ -231,8 +232,8 @@ function mockAssist(input: AssistRequest): AssistResponse {
   if ((action.includes("rewrite") || action.includes("academic") || action.includes("analysis")) && range) {
     const base = selected.trim() || "This point needs clearer explanation.";
     const proposedText = action.includes("analysis")
-      ? `${base} This matters because it connects the evidence back to the thesis and explains why the reader should accept the argument.`
-      : `A more academic version could state: ${base.replace(/\s+/g, " ")} [citation needed if this includes factual evidence].`;
+      ? strengthenAnalysis(base)
+      : makeAcademicReplacement(base);
 
     return {
       title: action.includes("analysis") ? "Strengthen analysis preview" : "Rewrite preview",
@@ -240,10 +241,10 @@ function mockAssist(input: AssistRequest): AssistResponse {
       actionType: action.includes("analysis") ? "strengthen-analysis" : "rewrite-selection",
       originalExcerpt: excerpt(base),
       reply: "Preview ready. I did not change the document; apply the suggestion only if it matches your intended meaning.",
-      proposedText,
+      proposedText: sanitizeReplacement(proposedText, base),
       replaceRange: range,
       annotations: [],
-      explanation: "Apply replaces only the selected range after checking that the original text has not changed.",
+      explanation: "Cleaner replacement; apply only if it preserves your meaning.",
       warnings,
       providerMode: "mock"
     };
@@ -322,6 +323,45 @@ function explainSelection(value: string) {
 function excerpt(value: string) {
   const cleaned = value.replace(/\s+/g, " ").trim();
   return cleaned.length > 220 ? `${cleaned.slice(0, 217)}...` : cleaned;
+}
+
+function makeAcademicReplacement(value: string) {
+  const cleaned = sanitizeReplacement(value, value);
+  if (/^Topic\s*:/i.test(cleaned) || /^Research question\s*:/i.test(cleaned) || /^Working thesis\s*:/i.test(cleaned)) {
+    return cleaned
+      .replace(/\bkids\b/gi, "young people")
+      .replace(/\bgood\b/gi, "beneficial")
+      .replace(/\bbad\b/gi, "harmful")
+      .replace(/\s+/g, " ");
+  }
+  return cleaned
+    .replace(/\bkids\b/gi, "young people")
+    .replace(/\bgood\b/gi, "beneficial")
+    .replace(/\bbad\b/gi, "harmful")
+    .replace(/\bthings\b/gi, "factors")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function strengthenAnalysis(value: string) {
+  const cleaned = sanitizeReplacement(value, value).replace(/\s+/g, " ").trim();
+  const sentence = /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
+  if (/because|therefore|this (shows|suggests|means|matters)/i.test(sentence)) return sentence;
+  return `${sentence} This matters because it explains how the point supports the essay's main claim.`;
+}
+
+function sanitizeReplacement(value: string, fallback: string) {
+  const cleaned = value
+    .replace(/^A more academic version could state:\s*/i, "")
+    .replace(/^Here is a revised version:\s*/i, "")
+    .replace(/^I would rewrite it as:\s*/i, "")
+    .replace(/^This selected text means\s*/i, "")
+    .replace(/^The student should\s*/i, "")
+    .replace(/\s*\[citation needed if this includes factual evidence\]\.?/gi, "")
+    .replace(/\s*if this includes factual evidence\.?/gi, "")
+    .replace(/This rewrite improves.*$/i, "")
+    .trim();
+  return cleaned || fallback.trim();
 }
 
 function mockAssistantChinese(value: string) {
