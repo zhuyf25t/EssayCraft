@@ -2,12 +2,26 @@ import type { Snapshot } from "@/types/essaycraft";
 import { formatTime } from "@/lib/utils";
 import { countWords } from "@/lib/sentence";
 
-export function SnapshotPanel({ snapshots, onRestore }: { snapshots: Snapshot[]; onRestore: (snapshot: Snapshot) => void }) {
+export function SnapshotPanel({
+  snapshots,
+  onRestore,
+  onSaveSnapshot,
+  onClearModule
+}: {
+  snapshots: Snapshot[];
+  onRestore: (snapshot: Snapshot) => void;
+  onSaveSnapshot: () => void;
+  onClearModule: () => void;
+}) {
   return (
     <section className="panel">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-800">Snapshots</h2>
         <span className="text-xs text-slate-400">{snapshots.length} saved</span>
+      </div>
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <button className="btn-secondary py-1.5 text-left text-xs" onClick={onSaveSnapshot}>Save Snapshot</button>
+        <button className="btn-danger py-1.5 text-left text-xs" onClick={onClearModule}>Clear Module</button>
       </div>
       {snapshots.length === 0 ? (
         <p className="text-xs text-slate-500">Save a snapshot before major edits. Generate, assistant apply, citation insertion, and clear actions snapshot automatically. Reference Translation never changes text or creates snapshots.</p>

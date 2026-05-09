@@ -12,13 +12,28 @@ type EditorProps = {
   annotations: Annotation[];
   patches: Patch[];
   selectedRange: TextRange;
+  activeSentenceRange?: TextRange;
   resetKey: number;
   onTextChange: (text: string) => void;
   onSelectionChange: (range: TextRange) => void;
+  onActiveSentenceChange: (range: TextRange | undefined) => void;
   onOpenPatch: (range: TextRange) => void;
+  onPatchMarkerClick: (patch: Patch) => void;
 };
 
-export function Editor({ text, annotations, patches, selectedRange, resetKey, onTextChange, onSelectionChange, onOpenPatch }: EditorProps) {
+export function Editor({
+  text,
+  annotations,
+  patches,
+  selectedRange,
+  activeSentenceRange,
+  resetKey,
+  onTextChange,
+  onSelectionChange,
+  onActiveSentenceChange,
+  onOpenPatch,
+  onPatchMarkerClick
+}: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
 
@@ -35,7 +50,14 @@ export function Editor({ text, annotations, patches, selectedRange, resetKey, on
   function syncSelection() {
     const textarea = textareaRef.current;
     if (!textarea) return;
-    onSelectionChange({ start: textarea.selectionStart, end: textarea.selectionEnd });
+    const range = { start: textarea.selectionStart, end: textarea.selectionEnd };
+    onSelectionChange(range);
+    if (range.end > range.start) {
+      onActiveSentenceChange(undefined);
+      return;
+    }
+    const sentence = sentenceRangeAt(text, range.start, range.end);
+    onActiveSentenceChange(sentence.end > sentence.start ? sentence : undefined);
   }
 
   useEffect(() => {
@@ -55,14 +77,22 @@ export function Editor({ text, annotations, patches, selectedRange, resetKey, on
       backdrop.scrollLeft = 0;
     }
     onSelectionChange({ start: 0, end: 0 });
-  }, [resetKey, onSelectionChange]);
+    onActiveSentenceChange(undefined);
+  }, [resetKey, onSelectionChange, onActiveSentenceChange]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
     const syncNativeSelection = () => {
       if (document.activeElement !== textarea) return;
-      onSelectionChange({ start: textarea.selectionStart, end: textarea.selectionEnd });
+      const range = { start: textarea.selectionStart, end: textarea.selectionEnd };
+      onSelectionChange(range);
+      if (range.end > range.start) {
+        onActiveSentenceChange(undefined);
+      } else {
+        const sentence = sentenceRangeAt(text, range.start, range.end);
+        onActiveSentenceChange(sentence.end > sentence.start ? sentence : undefined);
+      }
     };
     textarea.addEventListener("select", syncNativeSelection);
     document.addEventListener("selectionchange", syncNativeSelection);
@@ -70,7 +100,7 @@ export function Editor({ text, annotations, patches, selectedRange, resetKey, on
       textarea.removeEventListener("select", syncNativeSelection);
       document.removeEventListener("selectionchange", syncNativeSelection);
     };
-  }, [onSelectionChange]);
+  }, [onActiveSentenceChange, onSelectionChange, text]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -98,8 +128,9 @@ export function Editor({ text, annotations, patches, selectedRange, resetKey, on
 
       <div data-testid="editor-stack" className="editor-stack">
         <div ref={backdropRef} data-testid="editor-backdrop" className="editor-backdrop" aria-hidden="true">
-          <HighlightText text={text} annotations={annotations} patches={patches} />
+          <HighlightText text={text} annotations={annotations} patches={patches} activeSentenceRange={activeSentenceRange} />
         </div>
+        <PatchMarginMarkers patches={patches} onPatchMarkerClick={onPatchMarkerClick} />
         <textarea
           ref={textareaRef}
           data-testid="editor-textarea"
@@ -138,7 +169,17 @@ export function Editor({ text, annotations, patches, selectedRange, resetKey, on
   );
 }
 
-function HighlightText({ text, annotations, patches }: { text: string; annotations: Annotation[]; patches: Patch[] }) {
+function HighlightText({
+  text,
+  annotations,
+  patches,
+  activeSentenceRange
+}: {
+  text: string;
+  annotations: Annotation[];
+  patches: Patch[];
+  activeSentenceRange?: TextRange;
+}) {
   const nodes: ReactNode[] = [];
   const sorted = annotations
     .filter((annotation) => annotation.end > annotation.start && annotation.end <= text.length && text.slice(annotation.start, annotation.end) === annotation.text)
@@ -155,6 +196,10 @@ function HighlightText({ text, annotations, patches }: { text: string; annotatio
     points.add(patch.anchorStart);
     points.add(patch.anchorEnd);
   }
+  if (activeSentenceRange) {
+    points.add(activeSentenceRange.start);
+    points.add(activeSentenceRange.end);
+  }
   const ordered = [...points].sort((a, b) => a - b);
 
   for (let index = 0; index < ordered.length - 1; index += 1) {
@@ -164,7 +209,8 @@ function HighlightText({ text, annotations, patches }: { text: string; annotatio
     const segment = text.slice(start, end);
     const annotation = sorted.find((item) => item.start <= start && item.end >= end);
     const patch = openPatches.find((item) => item.anchorStart <= start && item.anchorEnd >= end);
-    const className = `${annotation ? `highlight-backdrop ${LABELS[annotation.label].className}` : ""} ${patch ? "patch-backdrop" : ""}`.trim();
+    const activeSentence = activeSentenceRange && activeSentenceRange.start <= start && activeSentenceRange.end >= end;
+    const className = `${annotation ? `highlight-backdrop ${LABELS[annotation.label].className}` : ""} ${patch ? "patch-backdrop" : ""} ${activeSentence ? "active-sentence-backdrop" : ""}`.trim();
     const key = `${start}-${end}-${annotation?.id ?? "plain"}-${patch?.id ?? "nopatch"}`;
     const content = className ? <mark key={key} className={className}>{segment}</mark> : <span key={key}>{segment}</span>;
     nodes.push(content);
@@ -190,4 +236,26 @@ function HighlightText({ text, annotations, patches }: { text: string; annotatio
 
   if (nodes.length === 0) return <span>{text || " "}</span>;
   return <>{nodes}</>;
+}
+
+function PatchMarginMarkers({ patches, onPatchMarkerClick }: { patches: Patch[]; onPatchMarkerClick: (patch: Patch) => void }) {
+  const openPatches = patches.filter((patch) => !patch.resolved && !patch.stale).slice(0, 8);
+  if (!openPatches.length) return null;
+  return (
+    <div data-testid="patch-margin-markers" className="patch-margin-markers" aria-label="Patch markers">
+      {openPatches.map((patch, index) => (
+        <button
+          key={patch.id}
+          type="button"
+          data-testid="patch-margin-marker"
+          className="patch-margin-marker"
+          style={{ top: `${0.75 + index * 1.75}rem` }}
+          title={`Patch ${index + 1}: ${patch.text}`}
+          onClick={() => onPatchMarkerClick(patch)}
+        >
+          note
+        </button>
+      ))}
+    </div>
+  );
 }

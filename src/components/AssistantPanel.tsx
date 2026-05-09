@@ -1,37 +1,40 @@
 "use client";
 
-import { useState } from "react";
-import type { Annotation, AssistResponse, Patch, TextRange } from "@/types/essaycraft";
-import { LABELS } from "@/lib/labels";
+import { useEffect, useState } from "react";
+import type { Annotation, AssistResponse, SegmentLabel, TextRange } from "@/types/essaycraft";
+import { LABELS, LABEL_ORDER } from "@/lib/labels";
 
-const ACTIONS: Array<{ label: string; requiresSelection?: boolean; requiresAnnotation?: boolean }> = [
-  { label: "Rewrite selected passage", requiresSelection: true },
-  { label: "Make more academic", requiresSelection: true },
-  { label: "Strengthen analysis", requiresSelection: true },
-  { label: "Translate selected text", requiresSelection: true },
-  { label: "Relabel selected range", requiresSelection: true },
-  { label: "Explain this highlight", requiresAnnotation: true },
-  { label: "Explain current module highlights", requiresSelection: false },
-  { label: "Find citation gaps", requiresSelection: false }
-];
+const EDIT_ACTIONS = [
+  "Rewrite",
+  "Make more academic",
+  "Strengthen analysis",
+  "Translate selected text",
+  "Explain highlight"
+] as const;
 
 export function AssistantPanel({
   selectedText,
   selectedRange,
+  activeSentenceText,
+  activeSentenceRange,
   activeAnnotation,
-  activePatch,
+  activePatchCount,
   loading,
   suggestion,
   onAction,
   onApply,
   onDismiss,
   onRefresh,
-  onAddPatchForRange
+  onAddPatchForRange,
+  onSaveSuggestionAsPatch,
+  onRelabel
 }: {
   selectedText: string;
   selectedRange: TextRange;
+  activeSentenceText: string;
+  activeSentenceRange?: TextRange;
   activeAnnotation?: Annotation;
-  activePatch?: Patch;
+  activePatchCount: number;
   loading: boolean;
   suggestion?: AssistResponse;
   onAction: (action: string) => void;
@@ -39,81 +42,150 @@ export function AssistantPanel({
   onDismiss: () => void;
   onRefresh: () => void;
   onAddPatchForRange: (range: TextRange) => void;
+  onSaveSuggestionAsPatch: () => void;
+  onRelabel: (label: SegmentLabel) => void;
 }) {
-  const [instruction, setInstruction] = useState("");
+  const [mode, setMode] = useState<"chat" | "edit">("chat");
+  const [chatInstruction, setChatInstruction] = useState("");
+  const [editInstruction, setEditInstruction] = useState("");
+  const [labelChoice, setLabelChoice] = useState<SegmentLabel>(activeAnnotation?.label ?? "analysis");
   const hasSelection = selectedRange.end > selectedRange.start && selectedText.trim().length > 0;
+  const hasActiveSentence = Boolean(activeSentenceRange && activeSentenceText.trim());
+  const editRange = hasSelection ? selectedRange : activeSentenceRange;
+  const editText = hasSelection ? selectedText : activeSentenceText;
+  const canEdit = Boolean(editRange && editText.trim());
   const canApply = Boolean(suggestion && ((suggestion.proposedText && suggestion.replaceRange) || suggestion.annotations.length));
   const isTranslationPreview = Boolean(suggestion?.proposedText && /translat/i.test(`${suggestion.reply} ${suggestion.actionType ?? ""}`));
   const applyLabel = suggestion?.proposedText ? (isTranslationPreview ? "Apply to selection" : "Apply replacement") : "Apply labels";
 
-  function submitInstruction() {
-    const value = instruction.trim();
+  useEffect(() => {
+    if (hasSelection || hasActiveSentence) setMode("edit");
+  }, [hasActiveSentence, hasSelection]);
+
+  useEffect(() => {
+    if (activeAnnotation) setLabelChoice(activeAnnotation.label);
+  }, [activeAnnotation]);
+
+  function submitChat() {
+    const value = chatInstruction.trim();
     if (!value) return;
     onAction(value);
-    setInstruction("");
+    setChatInstruction("");
+  }
+
+  function submitEditInstruction() {
+    const value = editInstruction.trim();
+    if (!value || !canEdit) return;
+    onAction(value);
+    setEditInstruction("");
   }
 
   return (
-    <section className="panel">
+    <section className="panel" data-testid="assistant-copilot">
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-slate-800">AI Assistant</h2>
+        <h2 className="text-sm font-semibold text-slate-800">Essay Copilot</h2>
         {loading ? <span className="rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">Working</span> : null}
       </div>
 
-      <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">
-        <div className="font-semibold">Current context</div>
-        {hasSelection ? (
-          <p className="mt-1 line-clamp-3">
-            Selected text, range {selectedRange.start}-{selectedRange.end}: {selectedText}
-          </p>
-        ) : (
-          <p className="mt-1">No text selected. Ask about the current module, or select text for targeted rewrite, relabel, or translation help.</p>
-        )}
+      <div className="grid grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 text-xs font-semibold">
+        <button
+          type="button"
+          className={`rounded-md px-2 py-1.5 ${mode === "chat" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}`}
+          onClick={() => setMode("chat")}
+        >
+          Chat about module
+        </button>
+        <button
+          type="button"
+          className={`rounded-md px-2 py-1.5 ${mode === "edit" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600"}`}
+          onClick={() => setMode("edit")}
+          disabled={!canEdit}
+          title={canEdit ? undefined : "Click a sentence or select text to edit with the copilot."}
+        >
+          Edit selection
+        </button>
       </div>
 
-      <AnnotationInspector
-        annotation={activeAnnotation}
-        patch={activePatch}
-        canAddPatch={hasSelection}
-        onExplain={() => onAction("Explain this highlight")}
-        onRelabel={() => onAction("Relabel selected range")}
-        onAddPatch={() => {
-          if (activeAnnotation) onAddPatchForRange({ start: activeAnnotation.start, end: activeAnnotation.end });
-          else if (hasSelection) onAddPatchForRange(selectedRange);
-        }}
-      />
-
-      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2">
-        <textarea
-          value={instruction}
-          onChange={(event) => setInstruction(event.currentTarget.value)}
-          placeholder="Ask EssayCraft to revise, explain, or check this module..."
-          className="min-h-16 w-full resize-none border-0 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
-        />
-        <div className="flex justify-end">
-          <button className="btn-primary" onClick={submitInstruction} disabled={loading || !instruction.trim()}>Ask</button>
+      {mode === "chat" ? (
+        <div data-testid="assistant-chat-mode" className="mt-3 space-y-3">
+          <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">
+            <div className="font-semibold">Module chat</div>
+            <p className="mt-1">Ask about thesis, structure, evidence/source gaps, clarity, tone, or next steps. Chat responses do not edit the document.</p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-2">
+            <textarea
+              value={chatInstruction}
+              onChange={(event) => setChatInstruction(event.currentTarget.value)}
+              placeholder="Ask EssayCraft about this module..."
+              className="min-h-20 w-full resize-none border-0 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+            />
+            <div className="flex justify-end">
+              <button className="btn-primary" onClick={submitChat} disabled={loading || !chatInstruction.trim()}>Ask</button>
+            </div>
+          </div>
+          <button className="btn-secondary w-full py-1.5 text-left text-xs" onClick={() => onAction("Find citation gaps")} disabled={loading}>Find citation gaps</button>
         </div>
-      </div>
+      ) : (
+        <div data-testid="assistant-edit-mode" className="mt-3 space-y-3">
+          <EditContext
+            hasSelection={hasSelection}
+            text={editText}
+            range={editRange}
+            annotation={activeAnnotation}
+            patchCount={activePatchCount}
+          />
 
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        {ACTIONS.map((action) => (
-          <button
-            key={action.label}
-            className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
-            onClick={() => onAction(action.label)}
-            disabled={loading || (action.requiresSelection && !hasSelection) || (action.requiresAnnotation && !activeAnnotation)}
-            title={
-              action.requiresAnnotation && !activeAnnotation
-                ? "Click a highlighted sentence or place the cursor inside a highlight first."
-                : action.requiresSelection && !hasSelection
-                  ? "Select text first for this targeted action."
-                  : undefined
-            }
-          >
-            {action.label}
-          </button>
-        ))}
-      </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-2">
+            <textarea
+              value={editInstruction}
+              onChange={(event) => setEditInstruction(event.currentTarget.value)}
+              placeholder="Tell EssayCraft how to revise this sentence or passage"
+              className="min-h-16 w-full resize-none border-0 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400"
+              disabled={!canEdit}
+            />
+            <div className="flex justify-end">
+              <button className="btn-primary" onClick={submitEditInstruction} disabled={loading || !canEdit || !editInstruction.trim()}>Preview edit</button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            {EDIT_ACTIONS.map((action) => {
+              const needsHighlight = action === "Explain highlight";
+              return (
+                <button
+                  key={action}
+                  className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+                  onClick={() => onAction(action)}
+                  disabled={loading || !canEdit || (needsHighlight && !activeAnnotation)}
+                  title={!canEdit ? "Click a sentence or select text first." : needsHighlight && !activeAnnotation ? "Click a highlighted sentence first." : undefined}
+                >
+                  {action}
+                </button>
+              );
+            })}
+            <button
+              className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-2 text-left text-xs text-amber-800 hover:bg-amber-100 disabled:opacity-45"
+              onClick={() => editRange && onAddPatchForRange(editRange)}
+              disabled={!editRange}
+            >
+              Add patch note
+            </button>
+          </div>
+
+          <AnnotationInspector annotation={activeAnnotation} />
+
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs">
+            <div className="mb-2 font-semibold text-slate-700">Relabel highlight</div>
+            <div className="flex gap-2">
+              <select value={labelChoice} onChange={(event) => setLabelChoice(event.target.value as SegmentLabel)} className="input min-w-0 flex-1 py-1.5 text-xs">
+                {LABEL_ORDER.map((label) => <option key={label} value={label}>{LABELS[label].name}</option>)}
+              </select>
+              <button className="btn-secondary px-2 py-1.5 text-xs" onClick={() => onRelabel(labelChoice)} disabled={!editRange}>Apply label</button>
+            </div>
+            <p className="mt-2 text-slate-500">Relabel updates annotation metadata only. A snapshot is saved first.</p>
+          </div>
+        </div>
+      )}
 
       {suggestion ? (
         <div data-testid="assistant-preview" className="mt-4 rounded-lg border border-emerald-100 bg-emerald-50 p-3 text-sm text-emerald-950">
@@ -137,13 +209,10 @@ export function AssistantPanel({
               {suggestion.warnings.map((warning, index) => <li key={`${index}-${warning.slice(0, 48)}`}>- {warning}</li>)}
             </ul>
           ) : null}
-          <div className="mt-3 flex gap-2">
-            {canApply ? (
-              <button className="btn-primary" onClick={onApply}>{applyLabel}</button>
-            ) : null}
-            {suggestion.proposedText ? (
-              <button className="btn-secondary" onClick={() => void navigator.clipboard?.writeText(suggestion.proposedText ?? "")}>Copy</button>
-            ) : null}
+          <div className="mt-3 flex flex-wrap gap-2">
+            {canApply ? <button className="btn-primary" onClick={onApply}>{applyLabel}</button> : null}
+            {suggestion.proposedText ? <button className="btn-secondary" onClick={() => void navigator.clipboard?.writeText(suggestion.proposedText ?? "")}>Copy</button> : null}
+            {suggestion.proposedText || suggestion.reply ? <button className="btn-secondary" onClick={onSaveSuggestionAsPatch} disabled={!canEdit}>Save as patch</button> : null}
             <button className="btn-secondary" onClick={onRefresh} disabled={loading}>Refresh Highlights</button>
             <button className="btn-secondary" onClick={onDismiss}>Dismiss</button>
           </div>
@@ -153,23 +222,35 @@ export function AssistantPanel({
   );
 }
 
-function AnnotationInspector({
+function EditContext({
+  hasSelection,
+  text,
+  range,
   annotation,
-  patch,
-  canAddPatch,
-  onExplain,
-  onRelabel,
-  onAddPatch
+  patchCount
 }: {
+  hasSelection: boolean;
+  text: string;
+  range?: TextRange;
   annotation?: Annotation;
-  patch?: Patch;
-  canAddPatch: boolean;
-  onExplain: () => void;
-  onRelabel: () => void;
-  onAddPatch: () => void;
+  patchCount: number;
 }) {
   return (
-    <div data-testid="annotation-inspector" className="mt-3 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
+    <div data-testid="assistant-edit-context" className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">
+      <div className="font-semibold">{hasSelection ? "Selected range" : "Active sentence"}</div>
+      {range ? <p className="mt-1 text-blue-700">Range {range.start}-{range.end}</p> : null}
+      <p className="mt-1 line-clamp-4">{text || "Click a sentence in the editor, or drag to select a passage."}</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {annotation ? <span className="rounded-full bg-white px-2 py-0.5 text-blue-700">Label: {LABELS[annotation.label].name}</span> : <span className="rounded-full bg-white px-2 py-0.5 text-slate-500">No active label</span>}
+        <span className="rounded-full bg-white px-2 py-0.5 text-blue-700">Patches: {patchCount}</span>
+      </div>
+    </div>
+  );
+}
+
+function AnnotationInspector({ annotation }: { annotation?: Annotation }) {
+  return (
+    <div data-testid="annotation-inspector" className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
       <div className="mb-2 font-semibold text-slate-800">Highlight inspector</div>
       {annotation ? (
         <>
@@ -177,23 +258,13 @@ function AnnotationInspector({
             <span className={`h-3 w-8 rounded-sm border border-slate-200 ${LABELS[annotation.label].swatch}`} />
             <span className="font-semibold">{LABELS[annotation.label].name}</span>
             <span className="text-slate-400">confidence {Math.round((annotation.confidence ?? 0) * 100)}%</span>
+            <span className="text-slate-400">provider local/AI</span>
           </div>
           <p className="mt-2 rounded-md bg-slate-50 p-2">{annotation.text}</p>
           <p className="mt-2 text-slate-600">{annotation.comment ?? LABELS[annotation.label].description}</p>
-          {patch ? <p className="mt-2 rounded-md bg-amber-50 p-2 text-amber-900">Patch here: {patch.text}</p> : null}
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button className="rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-700" onClick={onExplain}>Explain this highlight</button>
-            <button className="rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-700" onClick={onRelabel}>Relabel</button>
-            <button className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800" onClick={onAddPatch}>Add patch note</button>
-          </div>
         </>
       ) : (
-        <div>
-          <p>Click a highlighted sentence first, or select text for targeted help.</p>
-          <button className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-800 disabled:opacity-50" onClick={onAddPatch} disabled={!canAddPatch}>
-            Add patch note
-          </button>
-        </div>
+        <p>Click a highlighted sentence first, or select text for targeted help.</p>
       )}
     </div>
   );

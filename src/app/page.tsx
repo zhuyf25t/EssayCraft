@@ -29,6 +29,7 @@ import type {
   Patch,
   Project,
   RefreshResponse,
+  SegmentLabel,
   Snapshot,
   SourceCard,
   TextRange,
@@ -49,6 +50,7 @@ type LastAction = {
 export default function Home() {
   const [project, setProject] = useState<Project | null>(null);
   const [selectedRange, setSelectedRange] = useState<TextRange>(EMPTY_RANGE);
+  const [activeSentenceRange, setActiveSentenceRange] = useState<TextRange | undefined>();
   const [patchRange, setPatchRange] = useState<TextRange | null>(null);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("Ready");
@@ -89,8 +91,13 @@ export default function Home() {
 
   const patchQuote = currentDoc && patchRange ? currentDoc.text.slice(patchRange.start, patchRange.end) : "";
   const translateSourceText = currentDoc ? selectedText || currentDoc.text : "";
+  const activeSentenceText = currentDoc && activeSentenceRange ? currentDoc.text.slice(activeSentenceRange.start, activeSentenceRange.end) : "";
+  const editRange = selectedRange.end > selectedRange.start ? selectedRange : activeSentenceRange;
   const activeAnnotation = currentDoc ? annotationAtOffset(currentDoc.annotations, selectedRange.start) : undefined;
   const activePatch = currentDoc ? patchAtOffset(currentDoc.patches, selectedRange.start) : undefined;
+  const activePatchCount = currentDoc && editRange
+    ? currentDoc.patches.filter((patch) => !patch.resolved && rangesOverlap(patch.anchorStart, patch.anchorEnd, editRange.start, editRange.end)).length
+    : 0;
 
   if (!project || !currentDoc) {
     return <main className="flex min-h-screen items-center justify-center text-slate-500">Loading EssayCraft...</main>;
@@ -153,6 +160,7 @@ export default function Home() {
     setEditingPatchId(null);
     setPatchRange(nextRange);
     setSelectedRange(nextRange);
+    setActiveSentenceRange(nextRange);
   }
 
   function handlePatchSubmit(text: string) {
@@ -188,11 +196,13 @@ export default function Home() {
 
   function jumpToPatch(patch: Patch) {
     setSelectedRange({ start: patch.anchorStart, end: patch.anchorEnd });
+    setActiveSentenceRange({ start: patch.anchorStart, end: patch.anchorEnd });
     setStatus(patch.stale ? "Patch needs re-anchor. Edit or recreate it on the current text." : "Patch anchor selected.");
   }
 
   function editPatch(patch: Patch) {
     setSelectedRange({ start: patch.anchorStart, end: patch.anchorEnd });
+    setActiveSentenceRange({ start: patch.anchorStart, end: patch.anchorEnd });
     setPatchRange({ start: patch.anchorStart, end: patch.anchorEnd });
     setEditingPatchId(patch.id);
   }
@@ -329,6 +339,7 @@ export default function Home() {
         return next;
       });
       setSelectedRange(EMPTY_RANGE);
+      setActiveSentenceRange(undefined);
       setPatchRange(null);
       setAssistantSuggestion(undefined);
       resetEditorViewport();
@@ -357,6 +368,8 @@ export default function Home() {
 
   function handleRestoreSnapshot(snapshot: Snapshot) {
     updateCurrentModule((doc) => restoreSnapshot(doc, snapshot));
+    setSelectedRange(EMPTY_RANGE);
+    setActiveSentenceRange(undefined);
     setStatus("Snapshot restored.");
     resetEditorViewport();
   }
@@ -370,6 +383,7 @@ export default function Home() {
     }
     updateProject((prev) => ({ ...prev, currentModule: moduleNumber }));
     setSelectedRange(EMPTY_RANGE);
+    setActiveSentenceRange(undefined);
     setPatchRange(null);
     setEditingPatchId(null);
     setAssistantSuggestion(undefined);
@@ -381,6 +395,7 @@ export default function Home() {
     if (!window.confirm(`Clear Module ${activeProject.currentModule} content? A snapshot will be saved first.`)) return;
     updateCurrentModule((doc) => clearModule(doc));
     setSelectedRange(EMPTY_RANGE);
+    setActiveSentenceRange(undefined);
     setPatchRange(null);
     setEditingPatchId(null);
     resetEditorViewport();
@@ -392,6 +407,7 @@ export default function Home() {
     resetProjectStorage();
     setProject(loadProject());
     setSelectedRange(EMPTY_RANGE);
+    setActiveSentenceRange(undefined);
     setPatchRange(null);
     setEditingPatchId(null);
     setAssistantSuggestion(undefined);
@@ -426,6 +442,7 @@ export default function Home() {
       downloadProjectJson(activeProject);
       setProject(imported);
       setSelectedRange(EMPTY_RANGE);
+      setActiveSentenceRange(undefined);
       setPatchRange(null);
       setEditingPatchId(null);
       setAssistantSuggestion(undefined);
@@ -550,10 +567,13 @@ export default function Home() {
   async function handleAssist(action: string) {
     const hasSelection = selectedRange.end > selectedRange.start;
     const useActiveAnnotation = !hasSelection && activeAnnotation && /highlight|relabel/i.test(action);
+    const useActiveSentence = !hasSelection && !useActiveAnnotation && activeSentenceRange && /rewrite|academic|analysis|translate|revise|sentence|passage/i.test(action);
     const submittedRange = hasSelection
       ? selectedRange
       : useActiveAnnotation
         ? { start: activeAnnotation.start, end: activeAnnotation.end }
+        : useActiveSentence
+          ? activeSentenceRange
         : undefined;
     const submittedText = submittedRange ? activeDoc.text.slice(submittedRange.start, submittedRange.end) : undefined;
     const steps = ["Preparing context", "Drafting suggestion", "Preview ready"];
@@ -643,6 +663,63 @@ export default function Home() {
     });
     setAssistantSuggestion(undefined);
     setStatus("Assistant suggestion applied after snapshot.");
+  }
+
+  function handleSaveSuggestionAsPatch() {
+    if (!assistantSuggestion) return;
+    const targetRange = assistantSuggestion.replaceRange ?? editRange;
+    if (!targetRange) {
+      setStatus("Click a sentence or select text before saving the suggestion as a patch.");
+      return;
+    }
+    const text = assistantSuggestion.proposedText
+      ? `Assistant suggestion: ${assistantSuggestion.proposedText}`
+      : `Assistant note: ${assistantSuggestion.reply}`;
+    const patch: Patch = {
+      id: id("patch"),
+      anchorStart: targetRange.start,
+      anchorEnd: targetRange.end,
+      anchorQuote: activeDoc.text.slice(targetRange.start, targetRange.end),
+      text,
+      createdAt: nowIso(),
+      resolved: false,
+      stale: false
+    };
+    updateCurrentModule((doc) => ({
+      ...doc,
+      patches: [patch, ...doc.patches],
+      updatedAt: nowIso()
+    }));
+    setStatus("Assistant suggestion saved as a patch note.");
+  }
+
+  function handleRelabel(label: SegmentLabel) {
+    const targetRange = activeAnnotation
+      ? { start: activeAnnotation.start, end: activeAnnotation.end }
+      : editRange;
+    if (!targetRange || targetRange.end <= targetRange.start) {
+      setStatus("Click a highlighted sentence or select text before relabeling.");
+      return;
+    }
+    updateCurrentModule((doc) => {
+      const snapDoc = addSnapshot(doc, "Before relabeling highlight");
+      const text = snapDoc.text.slice(targetRange.start, targetRange.end);
+      const annotation = {
+        id: activeAnnotation?.id ?? id("ann"),
+        start: targetRange.start,
+        end: targetRange.end,
+        text,
+        label,
+        confidence: 0.9,
+        comment: `User relabeled this range as ${label}.`
+      };
+      return {
+        ...snapDoc,
+        annotations: mergeAnnotationSuggestions(snapDoc.text, snapDoc.annotations, [annotation]),
+        updatedAt: nowIso()
+      };
+    });
+    setStatus(`Relabeled active range as ${label}. Snapshot saved first.`);
   }
 
   function openTranslate() {
@@ -738,17 +815,6 @@ export default function Home() {
             onFinalizeExport={handleDownloadHtml}
             onRetryGenerate={handleGenerateNext}
             onRefresh={handleRefresh}
-            onSaveSnapshot={handleSaveSnapshot}
-            onClearModule={handleClearModule}
-            onCopyRichText={handleCopyRichText}
-            onDownloadHtml={handleDownloadHtml}
-            onDownloadJson={() => {
-              downloadProjectJson(activeProject);
-              setStatus("Full project JSON downloaded with all six modules.");
-            }}
-            onImportJson={handleImportJsonClick}
-            onResetDemo={handleResetDemo}
-            onTranslate={openTranslate}
           />
           <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void handleImportJson(event.target.files?.[0])} />
 
@@ -780,10 +846,13 @@ export default function Home() {
                   annotations={activeDoc.annotations}
                   patches={activeDoc.patches}
                   selectedRange={selectedRange}
+                  activeSentenceRange={activeSentenceRange}
                   resetKey={editorResetKey}
                   onTextChange={handleTextChange}
                   onSelectionChange={setSelectedRange}
+                  onActiveSentenceChange={setActiveSentenceRange}
                   onOpenPatch={handleOpenPatch}
+                  onPatchMarkerClick={editPatch}
                 />
               </div>
 
@@ -817,8 +886,10 @@ export default function Home() {
                     <AssistantPanel
                       selectedText={selectedText}
                       selectedRange={selectedRange}
+                      activeSentenceText={activeSentenceText}
+                      activeSentenceRange={activeSentenceRange}
                       activeAnnotation={activeAnnotation}
-                      activePatch={activePatch}
+                      activePatchCount={activePatch ? Math.max(1, activePatchCount) : activePatchCount}
                       loading={loading}
                       suggestion={assistantSuggestion}
                       onAction={handleAssist}
@@ -826,6 +897,8 @@ export default function Home() {
                       onDismiss={() => setAssistantSuggestion(undefined)}
                       onRefresh={handleRefresh}
                       onAddPatchForRange={handleOpenPatch}
+                      onSaveSuggestionAsPatch={handleSaveSuggestionAsPatch}
+                      onRelabel={handleRelabel}
                     />
                   </div>
                   <div id="right-panel-sources" role="tabpanel" aria-label="Sources" hidden={rightTab !== "sources"}>
@@ -843,7 +916,7 @@ export default function Home() {
                     />
                   </div>
                   <div id="right-panel-snapshots" role="tabpanel" aria-label="Snapshots" hidden={rightTab !== "snapshots"}>
-                    <SnapshotPanel snapshots={activeDoc.snapshots} onRestore={handleRestoreSnapshot} />
+                    <SnapshotPanel snapshots={activeDoc.snapshots} onRestore={handleRestoreSnapshot} onSaveSnapshot={handleSaveSnapshot} onClearModule={handleClearModule} />
                   </div>
                   <div id="right-panel-export" role="tabpanel" aria-label="Export" hidden={rightTab !== "export"}>
                     <ExportPanel
@@ -858,6 +931,7 @@ export default function Home() {
                       }}
                       onImportJson={handleImportJsonClick}
                       onReferenceTranslation={openTranslate}
+                      onResetDemo={handleResetDemo}
                     />
                   </div>
                 </div>
@@ -906,7 +980,8 @@ function ExportPanel({
   onDownloadHtml,
   onDownloadJson,
   onImportJson,
-  onReferenceTranslation
+  onReferenceTranslation,
+  onResetDemo
 }: {
   moduleNumber: ModuleNumber;
   hasText: boolean;
@@ -916,6 +991,7 @@ function ExportPanel({
   onDownloadJson: () => void;
   onImportJson: () => void;
   onReferenceTranslation: () => void;
+  onResetDemo: () => void;
 }) {
   const moduleSix = moduleNumber === 6;
   return (
@@ -951,6 +1027,7 @@ function ExportPanel({
         <button className="btn-secondary text-left" onClick={onDownloadJson}>Download full project JSON</button>
         <button className="btn-secondary text-left" onClick={onImportJson}>Import full project JSON</button>
         <button className="btn-secondary text-left" onClick={onReferenceTranslation}>Reference Translation</button>
+        <button className="btn-danger text-left" onClick={onResetDemo}>Reset Demo</button>
       </div>
 
       <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
