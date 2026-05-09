@@ -40,9 +40,10 @@ Open `http://localhost:3000`.
    - Open the Assistant tab.
    - Show the two modes: `Chat` for module discussion and `Edit` for local sentence/range work.
    - Click a sentence to activate it, or drag-select a passage.
-   - Click `Rewrite`, `Strengthen`, or `Translate`.
-   - Show the preview card with the original excerpt and proposed change.
-   - Apply only if desired; applying snapshots first and changes only the selected range.
+   - Click `Rewrite` or `Make academic`.
+   - Show the Accept / Reject / Copy preview.
+   - Accept only if desired; accepting snapshots first and changes only the selected range.
+   - Show that `Translate` and `Explain highlight` are read-only previews.
 
 7. Use Reference Translation.
    - Open the Export tab -> Reference Translation.
@@ -62,7 +63,8 @@ Open `http://localhost:3000`.
    - Show the visible inline marker and amber note marker.
    - Explain that notes are metadata, not essay text.
    - Click `Apply Notes & Refresh`.
-   - Show the accept/reject revision preview; reject leaves text unchanged, accept snapshots and resolves the notes.
+   - Show the Accept / Reject / Copy revision preview; reject leaves text unchanged, accept snapshots and resolves the notes.
+   - Use the toast `Undo` action, or Ctrl/Cmd+Z immediately after accepting, to restore the previous text and notes.
    - Click a highlighted sentence and show the label/explanation inside Copilot Edit mode.
 
 ## Talking Points
