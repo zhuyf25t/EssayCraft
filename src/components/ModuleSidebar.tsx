@@ -1,6 +1,6 @@
 import type { ModuleNumber, Project } from "@/types/essaycraft";
 import { MODULE_TITLES } from "@/lib/project";
-import { moduleStatus, moduleStatusTone } from "@/lib/moduleStatus";
+import { moduleDisplayStatus, moduleStatusTone, type ModuleDisplayStatus } from "@/lib/moduleStatus";
 
 const MODULES: ModuleNumber[] = [1, 2, 3, 4, 5, 6];
 
@@ -20,7 +20,7 @@ export function ModuleSidebar({ project, onSelect }: { project: Project; onSelec
         {MODULES.map((moduleNumber) => {
           const doc = project.modules[moduleNumber];
           const active = moduleNumber === project.currentModule;
-          const status = moduleStatus(doc);
+          const status = moduleDisplayStatus(doc, project.currentModule);
           const tone = moduleStatusTone(status);
           return (
             <button
@@ -35,9 +35,10 @@ export function ModuleSidebar({ project, onSelect }: { project: Project; onSelec
                       ? "border-emerald-200 bg-emerald-50/70 text-slate-700 hover:bg-emerald-50"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
               }`}
+              title={`Module ${moduleNumber}: ${MODULE_TITLES[moduleNumber]} - ${status}`}
             >
               <span className={`flex h-8 w-8 items-center justify-center rounded-full border-2 bg-white text-sm font-bold ${active ? "border-blue-600 text-blue-700" : tone === "emerald" ? "border-emerald-600 text-emerald-700" : tone === "red" ? "border-red-400 text-red-600" : "border-slate-300 text-slate-500"}`}>
-                {status === "done" && !active ? "✓" : moduleNumber}
+                {status === "done" && !active ? "ok" : moduleNumber}
               </span>
               <span className="min-w-0">
                 <span className="block text-xs font-semibold uppercase tracking-wide text-slate-400">Module {moduleNumber}</span>
@@ -49,16 +50,17 @@ export function ModuleSidebar({ project, onSelect }: { project: Project; onSelec
         })}
       </div>
 
-      <div className="mt-3 shrink-0 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-3 text-xs text-slate-500">
-        Local-first MVP. AI runs only through server routes; mock mode works without an API key.
+      <div className="mt-3 shrink-0 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-2 text-xs text-slate-500">
+        Local-first. AI runs through server routes; mock mode works without an API key.
       </div>
     </aside>
   );
 }
 
-function statusClass(status: ReturnType<typeof moduleStatus>) {
+function statusClass(status: ModuleDisplayStatus) {
   if (status === "has issues") return "bg-red-100 text-red-700";
   if (status === "done") return "bg-emerald-100 text-emerald-700";
+  if (status === "current") return "bg-blue-100 text-blue-700";
   if (status === "in progress") return "bg-blue-100 text-blue-700";
   return "bg-slate-100 text-slate-500";
 }
