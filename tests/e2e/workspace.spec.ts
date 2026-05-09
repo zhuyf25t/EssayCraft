@@ -13,6 +13,16 @@ async function clickMoreTool(page: Page, name: string) {
   await page.getByRole("button", { name, exact: true }).click();
 }
 
+async function selectEditorRange(page: Page, start: number, end: number) {
+  await editor(page).evaluate((node, [selectionStart, selectionEnd]) => {
+    const textarea = node as HTMLTextAreaElement;
+    textarea.focus();
+    textarea.setSelectionRange(selectionStart as number, selectionEnd as number);
+    textarea.dispatchEvent(new Event("select", { bubbles: true }));
+    document.dispatchEvent(new Event("selectionchange"));
+  }, [start, end]);
+}
+
 async function expectEditorAtTop(page: Page) {
   await expect.poll(async () => editor(page).evaluate((node) => Math.round(node.scrollTop))).toBeLessThanOrEqual(2);
   await expect.poll(async () => page.getByTestId("editor-backdrop").evaluate((node) => Math.round((node as HTMLElement).scrollTop))).toBeLessThanOrEqual(2);
@@ -100,6 +110,35 @@ test("toolbar hierarchy stays visible without global page scroll", async ({ page
   }
 });
 
+test("right panel tabs and More tools keep secondary work organized", async ({ page }) => {
+  const rail = page.getByTestId("right-rail");
+  await expect(rail.getByRole("tablist", { name: "Right workspace" })).toBeVisible();
+
+  await rail.getByRole("tab", { name: /Sources/i }).click();
+  await expect(rail.getByRole("tab", { name: /Sources/i })).toHaveAttribute("aria-selected", "true");
+  await expect(rail.getByRole("tabpanel", { name: "Sources" })).toBeVisible();
+  await expect(rail.getByRole("tabpanel", { name: "Assistant" })).toBeHidden();
+
+  await rail.getByRole("tab", { name: /Snapshots/i }).click();
+  await expect(rail.getByRole("tabpanel", { name: "Snapshots" })).toContainText("saved");
+
+  await rail.getByRole("tab", { name: /Export/i }).click();
+  await expect(rail.getByRole("tabpanel", { name: "Export" })).toContainText("Export & Project Files");
+
+  await rail.getByRole("tab", { name: /Assistant/i }).click();
+  await expect(rail.getByRole("tabpanel", { name: "Assistant" })).toContainText("AI Assistant");
+
+  await moreTools(page).click();
+  const panel = page.getByTestId("toolbar-more-panel");
+  for (const name of ["Save Snapshot", "Clear Module", "Copy Rich Text", "Download HTML", "Download JSON", "Import JSON", "Reference Translation", "Reset Demo"]) {
+    await expect(panel.getByRole("button", { name })).toBeVisible();
+  }
+  await panel.getByRole("button", { name: "Save Snapshot" }).click();
+  await expect(panel).toBeHidden();
+  await rail.getByRole("tab", { name: /Snapshots/i }).click();
+  await expect(page.getByText("Manual snapshot")).toBeVisible();
+});
+
 test("student can edit paragraphs, add a patch, and insert a manual citation", async ({ page }) => {
   await expect(page.getByText("EssayCraft").first()).toBeVisible();
 
@@ -115,6 +154,7 @@ test("student can edit paragraphs, add a patch, and insert a manual citation", a
   await page.keyboard.press("Control+Enter");
   await expect(page.getByText("Make the question more specific")).toBeVisible();
 
+  await page.getByRole("tab", { name: /Sources/i }).click();
   await page.getByPlaceholder("Source title").fill("Student focus survey");
   await page.getByPlaceholder("Authors separated by ;").fill("Rivera");
   await page.getByPlaceholder("Year").fill("2024");
@@ -130,6 +170,7 @@ test("student can edit paragraphs, add a patch, and insert a manual citation", a
 });
 
 test("source needs are not treated as insertable citations", async ({ page }) => {
+  await page.getByRole("tab", { name: /Sources/i }).click();
   await page.getByRole("button", { name: "Create source need" }).click();
   await expect(page.getByText("Source need, not a real source yet")).toBeVisible();
   await expect(page.getByText("No reference entry. Replace this source need with student-supplied metadata first.")).toBeVisible();
@@ -331,9 +372,9 @@ test("Translate preview shows Chinese mock output without changing the document"
   const beforeState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   const beforeSnapshots = beforeState.modules["1"].snapshots.length;
 
-  await clickMoreTool(page, "Translate");
-  await expect(page.getByText("Translate Preview")).toBeVisible();
+  await clickMoreTool(page, "Reference Translation");
   const dialog = page.getByTestId("translate-dialog");
+  await expect(dialog.getByRole("heading", { name: "Reference Translation" })).toBeVisible();
   await dialog.locator("select").selectOption("auto-to-zh");
   await page.getByRole("button", { name: "Create Preview" }).click();
   const translation = dialog.locator("pre").last();
@@ -342,11 +383,17 @@ test("Translate preview shows Chinese mock output without changing the document"
   await expect(translation).not.toContainText("How can schools reduce distraction");
   await expect(page.getByRole("button", { name: "Apply translation" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy translation" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send to Assistant" })).toBeVisible();
   await expect(editor(page)).toHaveValue(original);
 
   await page.getByRole("button", { name: "Copy translation" }).click();
   await expect(editor(page)).toHaveValue(original);
 
+  await page.getByRole("button", { name: "Send to Assistant" }).click();
+  await expect(page.getByRole("tabpanel", { name: "Assistant" })).toContainText("Reference translation sent to Assistant");
+  await expect(editor(page)).toHaveValue(original);
+
+  await clickMoreTool(page, "Reference Translation");
   await page.getByRole("button", { name: "Close" }).last().click();
   await expect(editor(page)).toHaveValue(original);
   const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
@@ -364,8 +411,8 @@ test("Translate modal does not corrupt editor scroll position", async ({ page })
   const beforeScroll = await editor(page).evaluate((node) => node.scrollTop);
   expect(beforeScroll).toBeGreaterThan(100);
 
-  await clickMoreTool(page, "Translate");
-  await expect(page.getByText("Translate Preview")).toBeVisible();
+  await clickMoreTool(page, "Reference Translation");
+  await expect(page.getByTestId("translate-dialog").getByRole("heading", { name: "Reference Translation" })).toBeVisible();
   await page.getByRole("button", { name: "Close" }).last().click();
 
   await expect(editor(page)).toHaveValue(original);
@@ -383,6 +430,49 @@ test("assistant uses selection context and dismisses preview without changing te
   await expect(page.getByText("Preview ready")).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "Dismiss" }).click();
   await expect(editor(page)).toHaveValue(original);
+});
+
+test("assistant apply snapshots selected replacement and blocks stale ranges", async ({ page }) => {
+  const original = "Alpha sentence. Beta sentence.";
+  await editor(page).fill(original);
+  await selectEditorRange(page, 16, original.length);
+  await page.getByRole("button", { name: "Rewrite selected passage" }).click();
+  await expect(page.getByText("Preview ready", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Apply replacement" }).click();
+  await expect(editor(page)).toHaveValue(/^Alpha sentence\. A more academic version could state:/);
+  const appliedState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(appliedState.modules["1"].snapshots[0].text).toBe(original);
+
+  const staleOriginal = "Alpha sentence. Beta sentence.";
+  await editor(page).fill(staleOriginal);
+  await selectEditorRange(page, 16, staleOriginal.length);
+  await page.getByRole("button", { name: "Rewrite selected passage" }).click();
+  await expect(page.getByText("Preview ready", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await editor(page).fill(`Inserted prefix. ${staleOriginal}`);
+  await page.getByRole("button", { name: "Apply replacement" }).click();
+  await expect(page.getByTestId("toolbar-status")).toContainText(/blocked|changed after the preview/i);
+  await expect(editor(page)).toHaveValue(`Inserted prefix. ${staleOriginal}`);
+});
+
+test("Module 5 citation check and Module 6 final export workflow are clear", async ({ page }) => {
+  await moduleButton(page, 4, "Drafting").click();
+  await editor(page).fill("This draft makes a factual research claim about attention and wellbeing [citation needed].\n\nThe conclusion returns to the thesis.");
+  await generateButton(page, 4).click();
+  await expect(page.getByText("Module 5 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("tab", { name: /Sources/i })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("module5-citation-checklist")).toContainText("Referencing / Citation Check checklist");
+  await expect(page.getByTestId("module5-citation-checklist")).toContainText("Any [citation needed] markers?");
+
+  await generateButton(page, 5).click();
+  await expect(page.getByText("Module 6 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByRole("tab", { name: /Export/i })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByTestId("module6-final-checklist")).toContainText("Final review checklist");
+  await expect(page.getByText("Generate Module 7 from Module 6")).toHaveCount(0);
+  await expect(page.getByTestId("workflow-generate")).toContainText("Finalize / Export");
+  await page.getByTestId("workflow-generate").click();
+  await expect(page.getByText("EssayCraft Finish")).toBeVisible();
+  await expect(page.getByText("Inspired by John-Paul Grima's argumentative essay journey.")).toBeVisible();
+  await expect(page.getByAltText("EssayCraft finish moment")).toBeVisible();
 });
 
 test("generate-next API returns valid mock response shape", async ({ request }) => {
