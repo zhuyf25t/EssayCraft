@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { Annotation, Patch, TextRange } from "@/types/essaycraft";
 import { LABELS } from "@/lib/labels";
 import { annotationAtOffset, sentenceRangeAt } from "@/lib/annotations";
@@ -12,12 +12,13 @@ type EditorProps = {
   annotations: Annotation[];
   patches: Patch[];
   selectedRange: TextRange;
+  resetKey: number;
   onTextChange: (text: string) => void;
   onSelectionChange: (range: TextRange) => void;
   onOpenPatch: (range: TextRange) => void;
 };
 
-export function Editor({ text, annotations, patches, selectedRange, onTextChange, onSelectionChange, onOpenPatch }: EditorProps) {
+export function Editor({ text, annotations, patches, selectedRange, resetKey, onTextChange, onSelectionChange, onOpenPatch }: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
 
@@ -36,6 +37,41 @@ export function Editor({ text, annotations, patches, selectedRange, onTextChange
     if (!textarea) return;
     onSelectionChange({ start: textarea.selectionStart, end: textarea.selectionEnd });
   }
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    const backdrop = backdropRef.current;
+    if (textarea) {
+      textarea.scrollTop = 0;
+      textarea.scrollLeft = 0;
+      try {
+        textarea.setSelectionRange(0, 0);
+      } catch {
+        // The textarea can be temporarily unavailable during fast route hydration.
+      }
+    }
+    if (backdrop) {
+      backdrop.scrollTop = 0;
+      backdrop.scrollLeft = 0;
+    }
+    onSelectionChange({ start: 0, end: 0 });
+  }, [resetKey, onSelectionChange]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const syncNativeSelection = () => {
+      if (document.activeElement !== textarea) return;
+      onSelectionChange({ start: textarea.selectionStart, end: textarea.selectionEnd });
+    };
+    textarea.addEventListener("select", syncNativeSelection);
+    document.addEventListener("selectionchange", syncNativeSelection);
+    return () => {
+      textarea.removeEventListener("select", syncNativeSelection);
+      document.removeEventListener("selectionchange", syncNativeSelection);
+    };
+  }, [onSelectionChange]);
+
 
   return (
     <section data-testid="editor-shell" className="editor-shell">
@@ -69,6 +105,7 @@ export function Editor({ text, annotations, patches, selectedRange, onTextChange
             }
           }}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
             if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
               event.preventDefault();
               const target = event.currentTarget;

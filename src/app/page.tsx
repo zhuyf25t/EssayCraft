@@ -58,6 +58,7 @@ export default function Home() {
   const [translateOpen, setTranslateOpen] = useState(false);
   const [translatePreview, setTranslatePreview] = useState<TranslateResponse | undefined>();
   const [translateMode, setTranslateMode] = useState<TranslateMode>("en-to-zh");
+  const [editorResetKey, setEditorResetKey] = useState(0);
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -115,6 +116,10 @@ export default function Home() {
   function clearProgress() {
     setActionSteps([]);
     setActiveStep(undefined);
+  }
+
+  function resetEditorViewport() {
+    setEditorResetKey((value) => value + 1);
   }
 
   function handleTextChange(value: string) {
@@ -270,6 +275,7 @@ export default function Home() {
       setSelectedRange(EMPTY_RANGE);
       setPatchRange(null);
       setAssistantSuggestion(undefined);
+      resetEditorViewport();
       const message = `Module ${target} generated and opened. Previous Module ${target} saved as a snapshot.`;
       const details = [
         `Provider mode: ${data.providerMode}.`,
@@ -296,6 +302,7 @@ export default function Home() {
   function handleRestoreSnapshot(snapshot: Snapshot) {
     updateCurrentModule((doc) => restoreSnapshot(doc, snapshot));
     setStatus("Snapshot restored.");
+    resetEditorViewport();
   }
 
   function switchModule(moduleNumber: ModuleNumber) {
@@ -309,6 +316,7 @@ export default function Home() {
     setSelectedRange(EMPTY_RANGE);
     setPatchRange(null);
     setAssistantSuggestion(undefined);
+    resetEditorViewport();
     setLastAction({ tone: "info", message: `Viewing Module ${moduleNumber}: ${MODULE_TITLES[moduleNumber]}.` });
   }
 
@@ -317,6 +325,7 @@ export default function Home() {
     updateCurrentModule((doc) => clearModule(doc));
     setSelectedRange(EMPTY_RANGE);
     setPatchRange(null);
+    resetEditorViewport();
     setStatus(`Module ${activeProject.currentModule} cleared. Restore is available from snapshots.`);
   }
 
@@ -327,6 +336,7 @@ export default function Home() {
     setSelectedRange(EMPTY_RANGE);
     setPatchRange(null);
     setAssistantSuggestion(undefined);
+    resetEditorViewport();
     setStatus("Demo reset.");
   }
 
@@ -359,6 +369,7 @@ export default function Home() {
       setSelectedRange(EMPTY_RANGE);
       setPatchRange(null);
       setAssistantSuggestion(undefined);
+      resetEditorViewport();
       setStatus("Project JSON imported.");
     } catch (error) {
       setStatus(error instanceof Error ? `Import failed: ${error.message}` : "Import failed.");
@@ -477,6 +488,7 @@ export default function Home() {
   }
 
   async function handleAssist(action: string) {
+    const hasSelection = selectedRange.end > selectedRange.start;
     const steps = ["Preparing context", "Drafting suggestion", "Preview ready"];
     setLoading(true);
     setProgress(steps, steps[0]);
@@ -494,8 +506,8 @@ export default function Home() {
           annotations: activeDoc.annotations,
           patches: activeDoc.patches,
           sources: activeDoc.sources,
-          selectedRange,
-          selectedText,
+          selectedRange: hasSelection ? selectedRange : undefined,
+          selectedText: hasSelection ? selectedText : undefined,
           action,
           history: activeProject.assistantHistory
         })
@@ -523,6 +535,17 @@ export default function Home() {
 
   function handleApplyAssistant() {
     if (!assistantSuggestion) return;
+    if (assistantSuggestion.proposedText && !assistantSuggestion.replaceRange) {
+      setStatus("Assistant preview is reference-only. Copy it or select text before requesting an applyable rewrite.");
+      return;
+    }
+    if (assistantSuggestion.proposedText && assistantSuggestion.replaceRange) {
+      const range = assistantSuggestion.replaceRange;
+      if (range.start < 0 || range.end <= range.start || range.end > activeDoc.text.length) {
+        setStatus("Assistant replacement was blocked because the target selection is no longer valid.");
+        return;
+      }
+    }
     updateCurrentModule((doc) => {
       const snapDoc = addSnapshot(doc, "Before applying assistant suggestion");
       if (assistantSuggestion.proposedText && assistantSuggestion.replaceRange) {
@@ -640,19 +663,17 @@ export default function Home() {
           <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void handleImportJson(event.target.files?.[0])} />
 
           <div className="shrink-0 border-b border-slate-200 bg-[#fffdf8]/95 px-4 py-2">
-            <div className="flex items-center justify-center gap-3 overflow-x-auto">
-              <button className="btn-secondary min-w-40 whitespace-nowrap" onClick={() => switchModule(clampModule(activeProject.currentModule - 1))} disabled={activeProject.currentModule <= 1 || loading}>
+            <div className="flex items-center justify-center gap-3">
+              <button className="btn-secondary min-w-36 whitespace-nowrap" onClick={() => switchModule(clampModule(activeProject.currentModule - 1))} disabled={activeProject.currentModule <= 1 || loading}>
                 Back to Module {Math.max(1, activeProject.currentModule - 1)}
               </button>
-              <button className="btn-primary min-w-80 whitespace-nowrap text-base" onClick={handleGenerateNext} disabled={activeProject.currentModule >= 6 || loading}>
+              <button data-testid="workflow-generate" className="btn-primary min-w-80 whitespace-nowrap px-6 text-base" onClick={handleGenerateNext} disabled={activeProject.currentModule >= 6 || loading}>
                 {loading && activeProject.currentModule < 6
                   ? `Generating Module ${activeProject.currentModule + 1}...`
                   : activeProject.currentModule >= 6
                     ? "Module 6 is final: export or download"
                     : `Generate Module ${activeProject.currentModule + 1} from Module ${activeProject.currentModule}`}
               </button>
-              <button className="btn-secondary min-w-36 whitespace-nowrap" onClick={handleSaveSnapshot} disabled={loading}>Quick Snapshot</button>
-              <button className="btn-secondary min-w-36 whitespace-nowrap" onClick={handleDownloadHtml} disabled={loading}>Export HTML</button>
             </div>
             <div data-testid="last-action" className={`mx-auto mt-2 max-w-5xl rounded-lg border px-3 py-1.5 text-sm ${lastActionClasses(lastAction.tone)}`} aria-live="polite">
               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -695,17 +716,16 @@ export default function Home() {
                   annotations={activeDoc.annotations}
                   patches={activeDoc.patches}
                   selectedRange={selectedRange}
+                  resetKey={editorResetKey}
                   onTextChange={handleTextChange}
                   onSelectionChange={setSelectedRange}
                   onOpenPatch={handleOpenPatch}
                 />
               </div>
 
-              <section className="panel max-h-24 shrink-0 overflow-auto py-3">
-                <h2 className="mb-2 text-sm font-semibold text-slate-800">Patch notes</h2>
-                {activeDoc.patches.length === 0 ? (
-                  <p className="text-xs text-slate-500">No patch notes yet.</p>
-                ) : (
+              {activeDoc.patches.length ? (
+                <section className="panel max-h-24 shrink-0 overflow-auto py-3">
+                  <h2 className="mb-2 text-sm font-semibold text-slate-800">Patch notes</h2>
                   <div className="flex flex-wrap gap-2">
                     {activeDoc.patches.map((patch) => (
                       <button
@@ -718,8 +738,8 @@ export default function Home() {
                       </button>
                     ))}
                   </div>
-                )}
-              </section>
+                </section>
+              ) : null}
             </div>
 
             <aside data-testid="right-rail" className="min-h-0 space-y-3 overflow-y-auto pr-1">
