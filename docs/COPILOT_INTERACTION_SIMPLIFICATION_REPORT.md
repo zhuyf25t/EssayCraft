@@ -16,20 +16,20 @@ This pass made EssayCraft feel more like a focused essay copilot instead of a co
 
 ## Assistant Chat Mode
 
-The Assistant tab is now an `Essay Copilot` with two modes.
+The Assistant tab is now an Essay Copilot with two normal modes.
 
 `Chat about module` is for module-level questions. It works without selected text and answers about the current module's thesis, structure, evidence/source gaps, clarity, and next step. Chat responses are reference-only and do not modify the document.
 
 ## Edit Selection Mode
 
-`Edit selection` activates when the user selects text or clicks inside a sentence. It shows:
+`Edit` activates when the user selects text or clicks inside a sentence. It shows:
 
 - selected range or active sentence
-- range offsets
 - active label when present
 - patch count
+- a compact head/tail excerpt for long selections
 
-The user can give a custom edit instruction or use focused actions: Rewrite, Make more academic, Strengthen analysis, Translate selected text, Explain highlight, Relabel highlight, and Add patch note. Text-changing actions return a preview card first. Apply snapshots first, checks the original range, and changes only that range.
+The user can give a custom edit instruction or use focused actions: Rewrite, Make academic, Strengthen, Translate, Explain highlight, and Add note. Text-changing actions return a preview card first. Apply snapshots first, checks the original range, and changes only that range.
 
 ## Sentence Activation
 
@@ -40,7 +40,7 @@ Clicking inside the editor activates the sentence under the cursor. The active s
 Patch notes still anchor to selected text or the active sentence with Ctrl/Cmd+Enter. Saved patches now have:
 
 - an amber underline on patched text
-- a small inline `msg` marker
+- a small inline `note` marker
 - a clickable right-margin patch marker
 - a Patch notes list with Jump, Edit, Resolve/Reopen, and Delete
 
@@ -48,7 +48,7 @@ Clicking a margin marker opens the existing patch note for editing.
 
 ## Highlight Inspector
 
-The Edit mode includes a compact highlight inspector. It shows label name, color, confidence, provider note, excerpt, and comment. `Explain highlight` targets the active highlight. Relabel uses a dropdown of EssayCraft labels and saves a snapshot before updating annotation metadata.
+Highlight explanation is merged into Edit mode. It shows label name, color, excerpt, and a human-readable comment. Confidence values and relabel dropdowns are hidden from normal users.
 
 ## Reference Translation
 
@@ -79,7 +79,7 @@ Assistant, refresh, and translation already use the fast model path with a short
 
 ## Remaining Limitations
 
-- Patch markers are practical right-margin markers, not a fully position-accurate comment gutter.
-- Relabeling is snapshot-backed but does not provide a dedicated undo button beyond snapshot restore.
+- Patch markers are practical inline/right-margin markers, not a fully position-accurate comment gutter.
+- Relabeling is intentionally hidden from normal UI for now.
 - Provider fallback remains deterministic and local for testing.
 - Source search and source verification remain manual-only by design.

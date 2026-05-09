@@ -4,18 +4,19 @@ Branch: `feat/chat-shell-selection-copilot`
 
 ## Product Goal
 
-This pass turns the right-side Assistant tab into a clearer Essay Copilot instead of a mixed list of buttons and preview cards. The core split is:
+This pass turned the right-side Assistant tab into a clearer Essay Copilot instead of a mixed list of buttons and preview cards. It has since been refined by `docs/INLINE_PATCH_SELECTION_REFINEMENT_REPORT.md`. The current normal UI split is:
 
 - `Chat`: whole-module conversation. Replies are chat bubbles only and never show Apply controls.
-- `Selection`: active sentence or selected range editing. Rewrite/academic/analysis/translation actions return preview cards before Apply.
-- `Inspect`: active highlight inspection. The panel shows label, confidence, excerpt, comment, relabel control, and explain action.
+- `Edit`: active sentence, selected range, highlight explanation, note creation, and local rewrite/translation previews.
+
+Earlier experimental `Selection` and `Inspect` sub-modes were merged into Edit mode. Confidence values and relabel dropdowns are hidden from the normal student-facing interface.
 
 ## What Changed
 
 - Chat mode now uses a fixed-height shell with a small header, one scrollable message list, and a sticky bottom composer.
 - Module-level asks append user and assistant chat messages to `assistantHistory`.
-- Selection actions use edit-only previews with `Apply to selection`, `Copy`, `Save as patch`, and `Dismiss`.
-- Inspect mode explains only the active highlight/annotation and does not render selection rewrite cards.
+- Edit actions use preview cards with Apply, Copy, Save as note, and Reject.
+- Highlight explanation now appears inside Edit mode and does not render as a separate Inspect tab.
 - Reference Translation remains preview-only in the Export tab. `Send to Assistant` now appends a copy-only chat message instead of creating an editable preview.
 - Patch markers remain visible in the editor, and patch creation/editing remains anchored to the current selection/sentence.
 

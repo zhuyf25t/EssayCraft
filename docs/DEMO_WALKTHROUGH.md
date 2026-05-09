@@ -38,14 +38,14 @@ Open `http://localhost:3000`.
 6. Use Assistant on selected text.
    - Select a sentence in the editor.
    - Open the Assistant tab.
-   - Show `Essay Copilot` with `Chat about module` and `Edit selection`.
+   - Show the two modes: `Chat` for module discussion and `Edit` for local sentence/range work.
    - Click a sentence to activate it, or drag-select a passage.
-   - Click `Rewrite`, `Strengthen analysis`, or `Translate selected text`.
+   - Click `Rewrite`, `Strengthen`, or `Translate`.
    - Show the preview card with the original excerpt and proposed change.
    - Apply only if desired; applying snapshots first and changes only the selected range.
 
 7. Use Reference Translation.
-   - Open More tools -> Reference Translation.
+   - Open the Export tab -> Reference Translation.
    - Create a preview.
    - Copy or Send to Assistant.
    - Confirm the original module text does not change.
@@ -59,9 +59,11 @@ Open `http://localhost:3000`.
 
 9. Show patch and highlight assistance.
    - Press Ctrl/Cmd+Enter in the editor to add a patch note.
-   - Show the visible inline marker, right-margin patch marker, and Patch notes list.
-   - Click a highlighted sentence and show the Copilot highlight inspector.
-   - Use the relabel dropdown only when the current color is wrong.
+   - Show the visible inline marker and amber note marker.
+   - Explain that notes are metadata, not essay text.
+   - Click `Apply Notes & Refresh`.
+   - Show the accept/reject revision preview; reject leaves text unchanged, accept snapshots and resolves the notes.
+   - Click a highlighted sentence and show the label/explanation inside Copilot Edit mode.
 
 ## Talking Points
 
