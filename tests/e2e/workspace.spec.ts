@@ -6,6 +6,17 @@ const generateButton = (page: Page, fromModule: number) =>
   page.getByRole("button", { name: new RegExp(`^Generate Module ${fromModule + 1} from Module ${fromModule}$`) });
 const moduleButton = (page: Page, moduleNumber: number, title: string) =>
   page.getByTitle(`Module ${moduleNumber}: ${title}`).first();
+const moreTools = (page: Page) => page.getByTestId("toolbar-more");
+
+async function clickMoreTool(page: Page, name: string) {
+  await moreTools(page).click();
+  await page.getByRole("button", { name, exact: true }).click();
+}
+
+async function expectEditorAtTop(page: Page) {
+  await expect.poll(async () => editor(page).evaluate((node) => Math.round(node.scrollTop))).toBeLessThanOrEqual(2);
+  await expect.poll(async () => page.getByTestId("editor-backdrop").evaluate((node) => Math.round((node as HTMLElement).scrollTop))).toBeLessThanOrEqual(2);
+}
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear());
@@ -58,6 +69,37 @@ test("fixed shell keeps browser page from scrolling while editor owns long text 
   await expect.poll(async () => editor(page).evaluate((node) => node.scrollTop)).toBeGreaterThan(0);
 });
 
+test("toolbar hierarchy stays visible without global page scroll", async ({ page }) => {
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1280, height: 720 }
+  ]) {
+    await page.setViewportSize(viewport);
+    const metrics = await page.evaluate(() => {
+      const toolbar = document.querySelector('[data-testid="action-toolbar"]') as HTMLElement;
+      const generate = document.querySelector('[data-testid="workflow-generate"]') as HTMLElement;
+      const key = document.querySelector('[data-testid="highlight-key"]') as HTMLElement;
+      const toolbarRect = toolbar.getBoundingClientRect();
+      const generateRect = generate.getBoundingClientRect();
+      const keyRect = key.getBoundingClientRect();
+      return {
+        toolbarLeft: toolbarRect.left,
+        toolbarRight: toolbarRect.right,
+        generateTop: generateRect.top,
+        generateRight: generateRect.right,
+        keyBottom: keyRect.bottom,
+        documentOverflow: document.documentElement.scrollHeight - window.innerHeight
+      };
+    });
+    expect(metrics.toolbarLeft).toBeGreaterThanOrEqual(0);
+    expect(metrics.toolbarRight).toBeLessThanOrEqual(viewport.width + 1);
+    expect(metrics.generateTop).toBeGreaterThanOrEqual(0);
+    expect(metrics.generateRight).toBeLessThanOrEqual(viewport.width + 1);
+    expect(metrics.keyBottom).toBeLessThanOrEqual(viewport.height + 1);
+    expect(metrics.documentOverflow).toBeLessThanOrEqual(4);
+  }
+});
+
 test("student can edit paragraphs, add a patch, and insert a manual citation", async ({ page }) => {
   await expect(page.getByText("EssayCraft").first()).toBeVisible();
 
@@ -87,20 +129,36 @@ test("student can edit paragraphs, add a patch, and insert a manual citation", a
   await expect(page.getByTestId("toolbar-status")).toContainText("Inserted (Rivera, 2024) from your source card");
 });
 
-test("generate next moves Module 1 to Module 2 with visible success", async ({ page }) => {
+test("source needs are not treated as insertable citations", async ({ page }) => {
+  await page.getByRole("button", { name: "Create source need" }).click();
+  await expect(page.getByText("Source need, not a real source yet")).toBeVisible();
+  await expect(page.getByText("No reference entry. Replace this source need with student-supplied metadata first.")).toBeVisible();
+  await expect(page.getByTestId("source-insert-citation")).toBeDisabled();
+});
+
+test("generate next moves Module 1 to Module 2 with visible success and top scroll", async ({ page }) => {
   const textEditor = editor(page);
-  await textEditor.fill("Topic: AI study tools.\n\nQuestion: When do AI tools help students learn?");
+  await textEditor.fill(`Topic: AI study tools.
+
+Question: When do AI tools help students learn?
+
+${Array.from({ length: 28 }, (_, index) => `Planning note ${index + 1}: AI study tools should support revision without replacing student thinking.`).join("\n\n")}`);
   await expect(textEditor).toHaveValue(/AI study tools\.\n\nQuestion:/);
+  await textEditor.evaluate((node) => {
+    node.scrollTop = 500;
+    node.dispatchEvent(new Event("scroll"));
+  });
 
   await expect(generateButton(page, 1)).toBeEnabled();
   await generateButton(page, 1).click();
 
   await expect(page.getByText("Module 2 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expectEditorAtTop(page);
   await expect(editor(page)).toHaveValue(/Research plan for: AI study tools[\s\S]*Argument branch 1[\s\S]*\n\nArgument branch 2/);
   await expect(page.getByTestId("last-action")).toContainText("Module 2 generated and opened. Previous Module 2 saved as a snapshot.");
 });
 
-test("Module 2 to Module 3 creates a coherent branch-specific outline", async ({ page }) => {
+test("Module 2 to Module 3 creates a coherent branch-specific outline and opens at top", async ({ page }) => {
   await moduleButton(page, 2, "Research & Evidence").click();
   await editor(page).fill(`Research plan for: technology and humanity
 
@@ -125,12 +183,17 @@ Search keywords: AI ethics, technology dependence, privacy
 Source status: source needed
 
 Counterargument to investigate: Some people argue that technology is becoming less human because automation removes human judgment.`);
+  await editor(page).evaluate((node) => {
+    node.scrollTop = 500;
+    node.dispatchEvent(new Event("scroll"));
+  });
 
   await generateButton(page, 2).click();
 
   await expect(page.getByText("Module 3 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expectEditorAtTop(page);
   const value = await editor(page).inputValue();
-  expect(value).toContain("Introduction plan");
+  expect(value.startsWith("Introduction plan")).toBe(true);
   expect(value).toContain("Body paragraph 1");
   expect(value).toContain("Body paragraph 2");
   expect(value).toContain("Evidence to use");
@@ -166,7 +229,7 @@ Thesis map:
   await expect(editor(page)).not.toHaveValue(/social media/i);
 });
 
-test("generate next moves Module 3 outline to Module 4 draft paragraphs", async ({ page }) => {
+test("generate next moves Module 3 outline to Module 4 draft paragraphs and opens at top", async ({ page }) => {
   await moduleButton(page, 3, "Outline").click();
   const textEditor = editor(page);
   await textEditor.fill(`Topic: Social media balance and youth wellbeing
@@ -206,10 +269,16 @@ Conclusion plan
 - So what / implication: End by explaining that the goal is not to reject social media entirely, but to make its benefits less dependent on constant attention and comparison.`);
 
   await expect(generateButton(page, 3)).toBeEnabled();
+  await textEditor.evaluate((node) => {
+    node.scrollTop = 500;
+    node.dispatchEvent(new Event("scroll"));
+  });
   await generateButton(page, 3).click();
 
   await expect(page.getByText("Module 4 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expectEditorAtTop(page);
   const value = await editor(page).inputValue();
+  expect(value.startsWith("Social media")).toBe(true);
   expect(value).toContain("social media");
   expect(value).toContain("intentional habits");
   expect(value).toContain("platform");
@@ -256,43 +325,23 @@ test("refresh highlighting preserves exact editor text", async ({ page }) => {
   )).toBe(true);
 });
 
-test.skip("legacy Translate apply behavior is disabled", async ({ page }) => {
-  const original = "Topic: Campus notification habits.\n\nQuestion: How can schools reduce distraction while keeping students connected?";
-  await editor(page).fill(original);
-  await page.getByRole("button", { name: "Translate", exact: true }).click();
-  await expect(page.getByText("Translate Preview")).toBeVisible();
-  const dialog = page.getByTestId("translate-dialog");
-  await dialog.locator("select").selectOption("auto-to-zh");
-  await page.getByRole("button", { name: "Create Preview" }).click();
-  await expect(page.getByText("Translation / 中文翻译")).toBeVisible();
-  await expect(dialog.locator("pre").last()).toContainText(/[\u4e00-\u9fff]/);
-  await expect(editor(page)).toHaveValue(original);
-
-  await page.getByRole("button", { name: "Dismiss" }).click();
-  await expect(editor(page)).toHaveValue(original);
-
-  await page.getByRole("button", { name: "Translate", exact: true }).click();
-  await page.getByTestId("translate-dialog").locator("select").selectOption("en-to-zh");
-  await page.getByRole("button", { name: "Create Preview" }).click();
-  await page.getByRole("button", { name: "Apply translation" }).click();
-  await expect(editor(page)).toHaveValue(/[\u4e00-\u9fff][\s\S]*\n\n[\s\S]*[\u4e00-\u9fff]/);
-  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
-  expect(state.modules["1"].snapshots[0].reason).toBe("Before applying translation");
-});
-
 test("Translate preview shows Chinese mock output without changing the document", async ({ page }) => {
   const original = "Topic: Campus notification habits.\n\nQuestion: How can schools reduce distraction while keeping students connected?";
   await editor(page).fill(original);
   const beforeState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   const beforeSnapshots = beforeState.modules["1"].snapshots.length;
 
-  await page.getByRole("button", { name: "Translate", exact: true }).click();
+  await clickMoreTool(page, "Translate");
   await expect(page.getByText("Translate Preview")).toBeVisible();
   const dialog = page.getByTestId("translate-dialog");
   await dialog.locator("select").selectOption("auto-to-zh");
   await page.getByRole("button", { name: "Create Preview" }).click();
-  await expect(dialog.locator("pre").last()).toContainText(/[\u4e00-\u9fff]/);
+  const translation = dialog.locator("pre").last();
+  await expect(translation).toContainText(/[\u4e00-\u9fff]/);
+  await expect(translation).not.toContainText("Campus notification habits");
+  await expect(translation).not.toContainText("How can schools reduce distraction");
   await expect(page.getByRole("button", { name: "Apply translation" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Copy translation" })).toBeVisible();
   await expect(editor(page)).toHaveValue(original);
 
   await page.getByRole("button", { name: "Copy translation" }).click();
@@ -303,6 +352,37 @@ test("Translate preview shows Chinese mock output without changing the document"
   const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(state.modules["1"].text).toBe(original);
   expect(state.modules["1"].snapshots.length).toBe(beforeSnapshots);
+});
+
+test("Translate modal does not corrupt editor scroll position", async ({ page }) => {
+  const original = Array.from({ length: 45 }, (_, index) => `Paragraph ${index + 1}. This text keeps the editor scrollable for translation preview checks.`).join("\n\n");
+  await editor(page).fill(original);
+  await editor(page).evaluate((node) => {
+    node.scrollTop = 420;
+    node.dispatchEvent(new Event("scroll"));
+  });
+  const beforeScroll = await editor(page).evaluate((node) => node.scrollTop);
+  expect(beforeScroll).toBeGreaterThan(100);
+
+  await clickMoreTool(page, "Translate");
+  await expect(page.getByText("Translate Preview")).toBeVisible();
+  await page.getByRole("button", { name: "Close" }).last().click();
+
+  await expect(editor(page)).toHaveValue(original);
+  await expect.poll(async () => editor(page).evaluate((node) => node.scrollTop)).toBeGreaterThan(100);
+});
+
+test("assistant uses selection context and dismisses preview without changing text", async ({ page }) => {
+  const original = "Working thesis: Social media balance requires intentional habits and platform responsibility.";
+  await editor(page).fill(original);
+  await editor(page).selectText();
+
+  await expect(page.getByText(new RegExp(`Range 0-${original.length}`))).toBeVisible();
+  await expect(page.getByRole("button", { name: "Ask" })).toBeDisabled();
+  await page.getByRole("button", { name: "Rewrite selected passage" }).click();
+  await expect(page.getByText("Preview ready")).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Dismiss" }).click();
+  await expect(editor(page)).toHaveValue(original);
 });
 
 test("generate-next API returns valid mock response shape", async ({ request }) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addSnapshot, clearModule, createInitialProject, importProject, replaceModuleContent } from "./project";
-import { moduleStatus } from "./moduleStatus";
+import { moduleDisplayStatus, moduleStatus } from "./moduleStatus";
 
 describe("project model", () => {
   it("imports and exports six independent modules", () => {
@@ -35,5 +35,19 @@ describe("project model", () => {
     const draft = replaceModuleContent(project.modules[4], "This factual claim needs support [citation needed].", []);
     expect(moduleStatus(outline)).toBe("in progress");
     expect(moduleStatus(draft)).toBe("has issues");
+  });
+
+  it("does not mark a module done just because it has a snapshot", () => {
+    const project = createInitialProject();
+    const doc = addSnapshot(project.modules[4], "Manual snapshot");
+    expect(moduleStatus(doc)).toBe("empty");
+  });
+
+  it("shows previous clean draft modules as done while keeping active module current", () => {
+    const project = createInitialProject();
+    const moduleOne = replaceModuleContent(project.modules[1], "Topic: Test\n\nWorking thesis: A claim.", []);
+    expect(moduleDisplayStatus(moduleOne, 1)).toBe("current");
+    expect(moduleDisplayStatus(moduleOne, 4)).toBe("done");
+    expect(moduleDisplayStatus(project.modules[5], 4)).toBe("empty");
   });
 });
