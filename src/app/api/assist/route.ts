@@ -8,7 +8,7 @@ import { assistRequestSchema, assistResponseSchema } from "@/lib/schemas";
 export async function POST(request: Request) {
   try {
     const json = await request.json();
-    const input = assistRequestSchema.parse(json);
+    const input = normalizeAssistInput(assistRequestSchema.parse(json));
 
     if (!hasAiKey()) {
       return NextResponse.json(mockAssist(input));
@@ -54,12 +54,24 @@ export async function POST(request: Request) {
   }
 }
 
+function normalizeAssistInput(input: AssistRequest): AssistRequest {
+  const range = input.selectedRange;
+  if (!range || range.end <= range.start) {
+    return { ...input, selectedRange: undefined, selectedText: undefined };
+  }
+  return {
+    ...input,
+    selectedText: input.selectedText ?? input.text.slice(range.start, range.end)
+  };
+}
+
 function validateAssistReplaceRange(input: AssistRequest, response: AssistResponse) {
   if (!response.replaceRange) return "";
   const range = response.replaceRange;
-  const inBounds = range.start >= 0 && range.end >= range.start && range.end <= input.text.length;
-  if (!inBounds) return "Assistant replacement was blocked because it targeted an invalid range.";
-  if (input.selectedRange && (range.start !== input.selectedRange.start || range.end !== input.selectedRange.end)) {
+  const inBounds = range.start >= 0 && range.end > range.start && range.end <= input.text.length;
+  if (!inBounds) return "Assistant replacement was blocked because it did not target a valid text selection.";
+  if (!input.selectedRange) return "Assistant replacement was blocked because no text selection was submitted.";
+  if (range.start !== input.selectedRange.start || range.end !== input.selectedRange.end) {
     return "Assistant replacement was blocked because it did not target the submitted selection.";
   }
   return "";
@@ -91,7 +103,9 @@ function mockAssist(input: AssistRequest): AssistResponse {
 
   if (action.includes("relabel")) {
     return {
-      reply: "I prepared a label refresh for the selected area. Apply and refresh if the current color does not match the sentence role.",
+      reply: range
+        ? "I prepared a label refresh for the selected area. Apply and refresh if the current color does not match the sentence role."
+        : "Select text first before relabeling a range.",
       annotations: range
         ? [
             {
@@ -146,16 +160,36 @@ function mockAssist(input: AssistRequest): AssistResponse {
 
 function mockAssistantChinese(value: string) {
   const text = value.trim();
-  if (!text) return "请选择或输入要翻译的文本。";
+  if (!text) return "\u8bf7\u9009\u62e9\u6216\u8f93\u5165\u8981\u7ffb\u8bd1\u7684\u6587\u672c\u3002";
   return text
-    .replace(/social media/gi, "社交媒体")
-    .replace(/intentional habits/gi, "有意识的使用习惯")
-    .replace(/platforms?/gi, "平台")
-    .replace(/digital literacy/gi, "数字素养")
-    .replace(/students?/gi, "学生")
-    .replace(/evidence/gi, "证据")
-    .replace(/thesis/gi, "论点")
-    .replace(/research question/gi, "研究问题")
-    .replace(/Topic:/gi, "主题：")
-    .replace(/Question:/gi, "问题：");
+    .split("\n")
+    .map((line) => {
+      if (!line.trim()) return "";
+      if (/^Topic\s*:/i.test(line)) return `\u4e3b\u9898\uff1a${assistantChineseConcepts(line)}`;
+      if (/^Research question\s*:/i.test(line) || /^Question\s*:/i.test(line)) return `\u7814\u7a76\u95ee\u9898\uff1a${assistantChineseConcepts(line)}`;
+      if (/^Working thesis\s*:/i.test(line) || /^Thesis\s*:/i.test(line)) return `\u8bba\u70b9\uff1a${assistantChineseConcepts(line)}`;
+      const concepts = assistantChineseConcepts(line);
+      return concepts
+        ? `\u53c2\u8003\u8bd1\u6587\uff1a${concepts}`
+        : "\u53c2\u8003\u8bd1\u6587\uff1a\u8fd9\u53e5\u8bdd\u8868\u8fbe\u4e86\u539f\u6587\u7684\u4e00\u4e2a\u5199\u4f5c\u8981\u70b9\uff0c\u9002\u5408\u7ed3\u5408\u4e0a\u4e0b\u6587\u7406\u89e3\u3002";
+    })
+    .join("\n");
+}
+
+function assistantChineseConcepts(value: string) {
+  const lower = value.toLowerCase();
+  const concepts: string[] = [];
+  const add = (condition: boolean, text: string) => {
+    if (condition && !concepts.includes(text)) concepts.push(text);
+  };
+  add(/social media/.test(lower), "\u793e\u4ea4\u5a92\u4f53");
+  add(/balance|healthier/.test(lower), "\u5065\u5eb7\u5e73\u8861");
+  add(/youth|young|student/.test(lower), "\u9752\u5c11\u5e74\u548c\u5b66\u751f");
+  add(/intentional habits|passive scrolling|screen time/.test(lower), "\u6709\u610f\u8bc6\u7684\u4f7f\u7528\u4e60\u60ef");
+  add(/platform|algorithm|notification|engagement/.test(lower), "\u5e73\u53f0\u8bbe\u8ba1\u4e0e\u53c2\u4e0e\u673a\u5236");
+  add(/digital literacy|media education|school/.test(lower), "\u6570\u5b57\u7d20\u517b\u6559\u80b2");
+  add(/evidence|source|citation|reference/.test(lower), "\u8bc1\u636e\u4e0e\u6765\u6e90");
+  add(/technology|ai|human/.test(lower), "\u6280\u672f\u4e0e\u4eba\u7684\u9700\u8981");
+  if (!concepts.length) return "";
+  return `\u8fd9\u90e8\u5206\u8ba8\u8bba${concepts.join("\u3001")}\u7684\u5173\u7cfb\uff0c\u5e76\u53ef\u4f5c\u4e3a\u5199\u4f5c\u53c2\u8003\u3002`;
 }

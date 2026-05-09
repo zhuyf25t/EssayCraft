@@ -4,13 +4,13 @@ import { useState } from "react";
 import type { AssistResponse, TextRange } from "@/types/essaycraft";
 
 const ACTIONS = [
-  "Explain this highlight",
-  "Relabel selected range",
-  "Rewrite selected passage",
-  "Make more academic",
-  "Strengthen analysis",
-  "Find citation gaps",
-  "Translate selected/current module"
+  { label: "Rewrite selected passage", requiresSelection: true },
+  { label: "Strengthen analysis", requiresSelection: true },
+  { label: "Find citation gaps", requiresSelection: false },
+  { label: "Explain this highlight", requiresSelection: true },
+  { label: "Relabel selected range", requiresSelection: true },
+  { label: "Make more academic", requiresSelection: true },
+  { label: "Translate selected/current module", requiresSelection: false }
 ];
 
 export function AssistantPanel({
@@ -33,6 +33,8 @@ export function AssistantPanel({
   onRefresh: () => void;
 }) {
   const [instruction, setInstruction] = useState("");
+  const hasSelection = selectedRange.end > selectedRange.start && selectedText.trim().length > 0;
+  const canApply = Boolean(suggestion && ((suggestion.proposedText && suggestion.replaceRange) || suggestion.annotations.length));
 
   function submitInstruction() {
     const value = instruction.trim();
@@ -50,7 +52,13 @@ export function AssistantPanel({
 
       <div className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-900">
         <div className="font-semibold">Selected context</div>
-        <p className="mt-1 line-clamp-3">{selectedText || `Cursor at ${selectedRange.start}. Select text for a targeted suggestion.`}</p>
+        {hasSelection ? (
+          <p className="mt-1 line-clamp-3">
+            Range {selectedRange.start}-{selectedRange.end}: {selectedText}
+          </p>
+        ) : (
+          <p className="mt-1">No text selected. Ask about the current module or select text for targeted help.</p>
+        )}
       </div>
 
       <div className="mt-3 rounded-lg border border-slate-200 bg-white p-2">
@@ -68,12 +76,13 @@ export function AssistantPanel({
       <div className="mt-3 grid grid-cols-2 gap-2">
         {ACTIONS.map((action) => (
           <button
-            key={action}
-            className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-left text-xs text-slate-700 hover:bg-slate-50"
-            onClick={() => onAction(action)}
-            disabled={loading}
+            key={action.label}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-45"
+            onClick={() => onAction(action.label)}
+            disabled={loading || (action.requiresSelection && !hasSelection)}
+            title={action.requiresSelection && !hasSelection ? "Select text first for this targeted action." : undefined}
           >
-            {action}
+            {action.label}
           </button>
         ))}
       </div>
@@ -91,7 +100,7 @@ export function AssistantPanel({
             </ul>
           ) : null}
           <div className="mt-3 flex gap-2">
-            {suggestion.proposedText || suggestion.annotations.length ? (
+            {canApply ? (
               <button className="btn-primary" onClick={onApply}>Apply</button>
             ) : null}
             {suggestion.proposedText ? (
