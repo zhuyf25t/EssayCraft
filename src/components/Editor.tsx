@@ -177,7 +177,11 @@ function HighlightText({
 }) {
   const nodes: ReactNode[] = [];
   const sorted = annotations
-    .filter((annotation) => annotation.end > annotation.start && annotation.end <= text.length && text.slice(annotation.start, annotation.end) === annotation.text)
+    .filter((annotation) => {
+      if (annotation.end <= annotation.start || annotation.start < 0 || annotation.end > text.length) return false;
+      const segment = text.slice(annotation.start, annotation.end);
+      return segment === annotation.text && segment.trim().length > 0;
+    })
     .sort((a, b) => a.start - b.start || a.end - b.end);
   const openPatches = patches
     .filter((patch) => !patch.resolved && !patch.stale && patch.anchorStart >= 0 && patch.anchorStart <= text.length && patch.anchorEnd >= patch.anchorStart && patch.anchorEnd <= text.length)
@@ -202,32 +206,15 @@ function HighlightText({
     const end = ordered[index + 1];
     if (end <= start) continue;
     const segment = text.slice(start, end);
-    const annotation = sorted.find((item) => item.start <= start && item.end >= end);
-    const patch = openPatches.find((item) => item.anchorStart <= start && item.anchorEnd >= end);
-    const activeSentence = activeSentenceRange && activeSentenceRange.start <= start && activeSentenceRange.end >= end;
+    const decoratable = segment.trim().length > 0;
+    const annotation = decoratable ? sorted.find((item) => item.start <= start && item.end >= end) : undefined;
+    const patch = decoratable ? openPatches.find((item) => item.anchorStart <= start && item.anchorEnd >= end) : undefined;
+    const activeSentence = decoratable && activeSentenceRange && activeSentenceRange.start <= start && activeSentenceRange.end >= end;
     const className = `${annotation ? `highlight-backdrop ${LABELS[annotation.label].className}` : ""} ${patch ? "patch-backdrop" : ""} ${activeSentence ? "active-sentence-backdrop" : ""}`.trim();
     const key = `${start}-${end}-${annotation?.id ?? "plain"}-${patch?.id ?? "nopatch"}`;
     const content = className ? <mark key={key} className={className}>{segment}</mark> : <span key={key}>{segment}</span>;
     nodes.push(content);
 
-    const endingPatches = openPatches.filter((item) => item.anchorEnd === end && item.anchorEnd > item.anchorStart);
-    for (const endingPatch of endingPatches) {
-      nodes.push(
-        <span
-          key={`patch-marker-${endingPatch.id}-${end}`}
-          data-testid="patch-marker"
-          className="patch-marker"
-          data-note={compactNote(endingPatch.text)}
-          title={endingPatch.text}
-        >
-          note
-        </span>
-      );
-    }
-  }
-
-  for (const patch of openPatches.filter((item) => item.anchorStart === item.anchorEnd)) {
-    nodes.push(<span key={`patch-marker-caret-${patch.id}`} data-testid="patch-marker" className="patch-marker" data-note={compactNote(patch.text)} title={patch.text}>note</span>);
   }
 
   if (nodes.length === 0) return <span>{text || " "}</span>;
@@ -260,7 +247,7 @@ function PatchInlineMarkers({
           title={`Patch ${index + 1}: ${patch.text}`}
           onClick={() => onPatchMarkerClick(patch)}
         >
-          📝
+          <span data-testid="patch-marker" className="patch-inline-marker-label">Note · {compactNote(patch.text)}</span>
         </button>
       ))}
     </div>

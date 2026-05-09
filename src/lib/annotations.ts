@@ -75,7 +75,7 @@ export function repairAnnotation(text: string, annotation: Annotation): Annotati
   const end = Math.max(start, Math.min(text.length, annotation.end));
   const slice = text.slice(start, end);
 
-  if (slice && slice === annotation.text) {
+  if (slice.trim() && slice === annotation.text) {
     return { ...annotation, start, end, text: slice };
   }
 
