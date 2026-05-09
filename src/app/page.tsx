@@ -652,8 +652,8 @@ export default function Home() {
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <ModuleSidebar project={activeProject} onSelect={switchModule} />
         <section data-testid="workspace-shell" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
-          <header className="shrink-0 border-b border-slate-200 bg-white/90 px-4 py-2">
-            <div className="flex items-center gap-3">
+          <header className="shrink-0 border-b border-slate-200 bg-white/90 px-4 py-1.5">
+            <div className="flex min-w-0 items-center gap-3">
               <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-600">
                 Project Title
                 <input
@@ -662,16 +662,13 @@ export default function Home() {
                   className="input flex-1"
                 />
               </label>
-              <div className="shrink-0 rounded-full bg-blue-50 px-3 py-1 text-sm font-semibold text-blue-700">Module {activeProject.currentModule} of 6</div>
+              <ProgressTracker project={activeProject} actionSteps={actionSteps} activeStep={activeStep} onSelect={switchModule} />
             </div>
             {titleQuestionMismatch ? (
               <div className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900">
                 Project title and Module 1 research question differ. Which should Generate Next use? Using current module text first, with the project title as context.
               </div>
             ) : null}
-            <div className="mt-2">
-              <ProgressTracker project={activeProject} actionSteps={actionSteps} activeStep={activeStep} onSelect={switchModule} />
-            </div>
           </header>
 
           <Toolbar

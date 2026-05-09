@@ -13,15 +13,16 @@ export function ProgressTracker({ project, actionSteps, activeStep, onSelect }: 
   const modules = [1, 2, 3, 4, 5, 6] as ModuleNumber[];
 
   return (
-    <section className="space-y-1.5">
-      <nav data-testid="module-progress" className="rounded-lg border border-slate-200 bg-white/90 p-2 shadow-sm" aria-label="Module progress">
-        <div className="mb-1.5 flex items-center justify-between text-xs text-slate-500">
-          <span>Module progress</span>
-          <span>
-            Module {project.currentModule} of 6: {MODULE_TITLES[project.currentModule]}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
+    <section className="flex min-w-0 shrink-0 flex-col items-end gap-1">
+      <nav
+        data-testid="module-progress"
+        className="flex min-w-0 items-center gap-3 rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 shadow-[1px_1px_0_rgba(30,41,59,0.06)]"
+        aria-label="Compact module progress"
+      >
+        <span className="hidden max-w-52 truncate text-xs font-semibold text-slate-700 lg:inline">
+          Module {project.currentModule} of 6: {MODULE_TITLES[project.currentModule]}
+        </span>
+        <div data-testid="compact-progress-circles" className="flex items-center gap-1.5">
           {modules.map((moduleNumber) => {
             const doc = project.modules[moduleNumber];
             const status = moduleDisplayStatus(doc, project.currentModule);
@@ -31,22 +32,19 @@ export function ProgressTracker({ project, actionSteps, activeStep, onSelect }: 
                 key={moduleNumber}
                 type="button"
                 onClick={() => onSelect(moduleNumber)}
-                className={`flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition ${
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[11px] font-semibold transition ${
                   isCurrent
-                    ? "border-blue-300 bg-blue-50 text-blue-700"
+                    ? "border-blue-600 bg-blue-600 text-white shadow-sm"
                     : status === "done"
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      ? "border-emerald-400 bg-emerald-50 text-emerald-700"
                       : status === "has issues"
-                        ? "border-red-200 bg-red-50 text-red-700"
-                        : "border-slate-200 bg-slate-50 text-slate-500"
+                        ? "border-red-300 bg-red-50 text-red-600"
+                        : "border-slate-300 bg-slate-50 text-slate-500"
                 }`}
-                title={`Module ${moduleNumber}: ${MODULE_TITLES[moduleNumber]}`}
+                title={`Module ${moduleNumber}: ${MODULE_TITLES[moduleNumber]} (${status})`}
+                aria-label={`Open Module ${moduleNumber}: ${MODULE_TITLES[moduleNumber]}, ${isCurrent ? "current" : status}`}
               >
-                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-white font-semibold">
-                  {status === "done" && !isCurrent ? "ok" : moduleNumber}
-                </span>
-                <span className="hidden truncate md:block">{MODULE_TITLES[moduleNumber]}</span>
-                <span className="sr-only">{status}</span>
+                {status === "done" && !isCurrent ? "ok" : moduleNumber}
               </button>
             );
           })}
@@ -54,9 +52,9 @@ export function ProgressTracker({ project, actionSteps, activeStep, onSelect }: 
       </nav>
 
       {actionSteps.length ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+        <div className="flex max-w-full flex-wrap justify-end gap-1 text-[11px] text-blue-900">
           {actionSteps.map((step, index) => (
-            <span key={`${index}-${step}`} className={`rounded-full px-2 py-1 ${step === activeStep ? "bg-blue-600 text-white" : "bg-white text-blue-700"}`}>
+            <span key={`${index}-${step}`} className={`rounded-full border px-2 py-0.5 ${step === activeStep ? "border-blue-600 bg-blue-600 text-white" : "border-blue-100 bg-blue-50 text-blue-700"}`}>
               {step}
             </span>
           ))}

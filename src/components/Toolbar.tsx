@@ -40,15 +40,15 @@ export function Toolbar(props: ToolbarProps) {
   const showLastAction = props.lastAction.message !== "Ready" || props.lastAction.retryGenerate || props.lastAction.details?.length;
 
   return (
-    <div data-testid="action-toolbar" className="relative z-20 shrink-0 border-b border-slate-200 bg-white/95 px-3 py-1.5">
+    <div data-testid="action-toolbar" className="relative z-20 shrink-0 border-b border-slate-200 bg-white/95 px-3 py-1">
       <div className="flex min-w-0 items-center gap-2">
-        <button className="btn-secondary whitespace-nowrap" onClick={props.onBack} disabled={props.currentModule <= 1 || props.loading}>
+        <button className="btn-secondary whitespace-nowrap py-1.5" onClick={props.onBack} disabled={props.currentModule <= 1 || props.loading}>
           Back to Module {Math.max(1, props.currentModule - 1)}
         </button>
 
         <button
           data-testid="workflow-generate"
-          className="btn-primary min-w-72 whitespace-nowrap px-6 text-base"
+          className="btn-primary min-w-[21rem] whitespace-nowrap px-5 py-1.5 text-base"
           onClick={finalModule ? props.onFinalizeExport : props.onGenerateNext}
           disabled={props.loading}
         >
@@ -59,12 +59,12 @@ export function Toolbar(props: ToolbarProps) {
               : `Generate Module ${props.currentModule + 1} from Module ${props.currentModule}`}
         </button>
 
-        <button className="btn-secondary whitespace-nowrap" onClick={props.onRefresh} disabled={props.loading}>Refresh Highlighting</button>
+        <button className="btn-secondary whitespace-nowrap py-1.5" onClick={props.onRefresh} disabled={props.loading}>Refresh Highlighting</button>
 
         <button
           type="button"
           data-testid="toolbar-more"
-          className="btn-secondary whitespace-nowrap"
+          className="btn-secondary whitespace-nowrap py-1.5"
           onClick={() => setMoreOpen((value) => !value)}
           disabled={props.loading}
           aria-expanded={moreOpen}
@@ -99,18 +99,18 @@ export function Toolbar(props: ToolbarProps) {
         <div data-testid="toolbar-more-panel" className="absolute left-3 top-[calc(100%+0.35rem)] w-[min(720px,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
           <div className="grid gap-3 md:grid-cols-3">
             <PanelGroup label="Module">
-              <button className="btn-secondary w-full text-left" onClick={() => run(props.onSaveSnapshot)} disabled={props.loading}>Save Snapshot</button>
-              <button className="btn-secondary w-full text-left" onClick={() => run(props.onClearModule)} disabled={props.loading}>Clear Module</button>
+              <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onSaveSnapshot)} disabled={props.loading}>Save Snapshot</button>
+              <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onClearModule)} disabled={props.loading}>Clear Module</button>
             </PanelGroup>
             <PanelGroup label="Export">
-              <button className="btn-secondary w-full text-left" onClick={() => run(props.onCopyRichText)} disabled={props.loading}>Copy Rich Text</button>
-              <button className="btn-secondary w-full text-left" onClick={() => run(props.onDownloadHtml)} disabled={props.loading}>Download HTML</button>
-              <button className="btn-secondary w-full text-left" onClick={() => run(props.onDownloadJson)} disabled={props.loading}>Download JSON</button>
-              <button className="btn-secondary w-full text-left" onClick={() => run(props.onImportJson)} disabled={props.loading}>Import JSON</button>
+              <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onCopyRichText)} disabled={props.loading}>Copy Rich Text</button>
+              <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onDownloadHtml)} disabled={props.loading}>Download HTML</button>
+              <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onDownloadJson)} disabled={props.loading}>Download JSON</button>
+              <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onImportJson)} disabled={props.loading}>Import JSON</button>
             </PanelGroup>
             <PanelGroup label="Tools">
-              <button className="btn-secondary w-full text-left" onClick={() => run(props.onTranslate)} disabled={props.loading}>Reference Translation</button>
-              <button className="btn-danger w-full text-left" onClick={() => run(props.onResetDemo)} disabled={props.loading}>Reset Demo</button>
+              <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onTranslate)} disabled={props.loading}>Reference Translation</button>
+              <button className="btn-danger w-full py-1.5 text-left" onClick={() => run(props.onResetDemo)} disabled={props.loading}>Reset Demo</button>
             </PanelGroup>
           </div>
         </div>
