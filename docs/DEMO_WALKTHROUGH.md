@@ -38,8 +38,9 @@ Open `http://localhost:3000`.
 6. Use Assistant on selected text.
    - Select a sentence in the editor.
    - Open the Assistant tab.
-   - Show that selected-text actions become enabled.
-   - Click `Rewrite selected passage`, `Strengthen analysis`, or `Translate selected text`.
+   - Show `Essay Copilot` with `Chat about module` and `Edit selection`.
+   - Click a sentence to activate it, or drag-select a passage.
+   - Click `Rewrite`, `Strengthen analysis`, or `Translate selected text`.
    - Show the preview card with the original excerpt and proposed change.
    - Apply only if desired; applying snapshots first and changes only the selected range.
 
@@ -58,8 +59,9 @@ Open `http://localhost:3000`.
 
 9. Show patch and highlight assistance.
    - Press Ctrl/Cmd+Enter in the editor to add a patch note.
-   - Show the visible patch marker and Patch notes list.
-   - Click a highlighted sentence and show the Assistant highlight inspector.
+   - Show the visible inline marker, right-margin patch marker, and Patch notes list.
+   - Click a highlighted sentence and show the Copilot highlight inspector.
+   - Use the relabel dropdown only when the current color is wrong.
 
 ## Talking Points
 
