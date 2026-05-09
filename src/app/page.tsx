@@ -4,10 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AssistantPanel } from "@/components/AssistantPanel";
 import { Editor } from "@/components/Editor";
 import { FinishModal } from "@/components/FinishModal";
-import { HighlightKey } from "@/components/HighlightKey";
 import { ModuleSidebar } from "@/components/ModuleSidebar";
 import { PatchPopover } from "@/components/PatchPopover";
-import { PatchList } from "@/components/PatchList";
 import { ProgressTracker } from "@/components/ProgressTracker";
 import { SnapshotPanel } from "@/components/SnapshotPanel";
 import { SourceWorkbench } from "@/components/SourceWorkbench";
@@ -49,6 +47,14 @@ type LastAction = {
 
 type AssistIntent = "chat" | "edit" | "inspect";
 
+type AiUndoEntry = {
+  id: string;
+  moduleNumber: ModuleNumber;
+  doc: ModuleDocument;
+  label: string;
+  createdAt: string;
+};
+
 export default function Home() {
   const [project, setProject] = useState<Project | null>(null);
   const [selectedRange, setSelectedRange] = useState<TextRange>(EMPTY_RANGE);
@@ -69,6 +75,9 @@ export default function Home() {
   const [editingPatchId, setEditingPatchId] = useState<string | null>(null);
   const [assistantModeRequest, setAssistantModeRequest] = useState<{ mode: "chat" | "edit"; id: number }>({ mode: "chat", id: 0 });
   const [revisionPreview, setRevisionPreview] = useState<RefreshResponse | undefined>();
+  const [toastVisible, setToastVisible] = useState(false);
+  const [undoStack, setUndoStack] = useState<AiUndoEntry[]>([]);
+  const editorAiUndoReadyRef = useRef(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   const currentModuleNumber = project?.currentModule;
 
@@ -79,6 +88,49 @@ export default function Home() {
   useEffect(() => {
     if (project) saveProject(project);
   }, [project]);
+
+  useEffect(() => {
+    if (!status || status === "Ready") {
+      setToastVisible(false);
+      return;
+    }
+    setToastVisible(true);
+    const timeout = window.setTimeout(() => setToastVisible(false), undoStack.length ? 6000 : 2800);
+    return () => window.clearTimeout(timeout);
+  }, [status, undoStack.length]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "z") return;
+      if (!undoStack.length || !editorAiUndoReadyRef.current) return;
+      event.preventDefault();
+      const entry = undoStack.at(-1);
+      if (!entry) return;
+      setProject((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          currentModule: entry.moduleNumber,
+          modules: {
+            ...prev.modules,
+            [entry.moduleNumber]: cloneModuleDocument(entry.doc)
+          },
+          updatedAt: nowIso()
+        };
+      });
+      setUndoStack((prev) => prev.slice(0, -1));
+      editorAiUndoReadyRef.current = undoStack.length > 1;
+      setSelectedRange(EMPTY_RANGE);
+      setActiveSentenceRange(undefined);
+      setAssistantSuggestion(undefined);
+      setRevisionPreview(undefined);
+      setEditorResetKey((value) => value + 1);
+      setStatus("Undid last AI edit.");
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [undoStack]);
 
   useEffect(() => {
     if (!currentModuleNumber) return;
@@ -168,8 +220,48 @@ export default function Home() {
     setAssistantModeRequest((request) => ({ mode, id: request.id + 1 }));
   }
 
+  function pushAiUndo(moduleNumber: ModuleNumber, doc: ModuleDocument, label: string) {
+    setUndoStack((prev) => [
+      ...prev.slice(-9),
+      {
+        id: id("undo"),
+        moduleNumber,
+        doc: cloneModuleDocument(doc),
+        label,
+        createdAt: nowIso()
+      }
+    ]);
+    editorAiUndoReadyRef.current = true;
+  }
+
+  function undoLastAiEdit() {
+    const entry = undoStack.at(-1);
+    if (!entry) return;
+    setProject((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        currentModule: entry.moduleNumber,
+        modules: {
+          ...prev.modules,
+          [entry.moduleNumber]: cloneModuleDocument(entry.doc)
+        },
+        updatedAt: nowIso()
+      };
+    });
+    setUndoStack((prev) => prev.slice(0, -1));
+    editorAiUndoReadyRef.current = undoStack.length > 1;
+    setSelectedRange(EMPTY_RANGE);
+    setActiveSentenceRange(undefined);
+    setAssistantSuggestion(undefined);
+    setRevisionPreview(undefined);
+    resetEditorViewport();
+    setStatus("Undid last AI edit.");
+  }
+
   function handleTextChange(value: string) {
     const text = normalizeText(value);
+    editorAiUndoReadyRef.current = false;
     updateCurrentModule((doc) => ({
       ...doc,
       text,
@@ -223,41 +315,11 @@ export default function Home() {
     setPatchRange(null);
   }
 
-  function jumpToPatch(patch: Patch) {
-    setSelectedRange({ start: patch.anchorStart, end: patch.anchorEnd });
-    setActiveSentenceRange({ start: patch.anchorStart, end: patch.anchorEnd });
-    setStatus(patch.stale ? "Patch needs re-anchor. Edit or recreate it on the current text." : "Patch anchor selected.");
-  }
-
   function editPatch(patch: Patch) {
     setSelectedRange({ start: patch.anchorStart, end: patch.anchorEnd });
     setActiveSentenceRange({ start: patch.anchorStart, end: patch.anchorEnd });
     setPatchRange({ start: patch.anchorStart, end: patch.anchorEnd });
     setEditingPatchId(patch.id);
-  }
-
-  function toggleResolvePatch(patch: Patch) {
-    updateCurrentModule((doc) => ({
-      ...doc,
-      patches: doc.patches.map((item) => item.id === patch.id ? {
-        ...item,
-        resolved: !item.resolved,
-        status: item.resolved ? "open" : "resolved",
-        stale: false,
-        updatedAt: nowIso()
-      } : item),
-      updatedAt: nowIso()
-    }));
-    setStatus(patch.resolved ? "Note reopened." : "Note resolved.");
-  }
-
-  function deletePatch(patch: Patch) {
-    updateCurrentModule((doc) => ({
-      ...doc,
-      patches: doc.patches.filter((item) => item.id !== patch.id),
-      updatedAt: nowIso()
-    }));
-    setStatus("Patch deleted.");
   }
 
   async function handleRefresh() {
@@ -707,6 +769,7 @@ export default function Home() {
 
   function acceptRevisionPreview() {
     if (!revisionPreview?.proposedText) return;
+    pushAiUndo(activeProject.currentModule, activeDoc, "Before applying notes");
     updateCurrentModule((doc) => {
       const snapDoc = addSnapshot(doc, "Before applying patch notes");
       const text = normalizeText(revisionPreview.proposedText ?? snapDoc.text);
@@ -726,7 +789,7 @@ export default function Home() {
       };
     });
     setRevisionPreview(undefined);
-    setStatus("Notes applied. Snapshot saved.");
+    setStatus("Notes applied. Undo is available.");
   }
 
   function rejectRevisionPreview() {
@@ -749,6 +812,7 @@ export default function Home() {
       setStatus("Assistant replacement was blocked because the selected text changed after the preview was created.");
       return;
     }
+    pushAiUndo(activeProject.currentModule, activeDoc, "Before applying assistant edit");
     updateCurrentModule((doc) => {
       const snapDoc = addSnapshot(doc, "Before applying assistant suggestion");
       const text = `${snapDoc.text.slice(0, range.start)}${assistantSuggestion.proposedText}${snapDoc.text.slice(range.end)}`;
@@ -761,9 +825,9 @@ export default function Home() {
         updatedAt: nowIso()
       };
     });
-      setAssistantSuggestion(undefined);
-      setStatus("Assistant suggestion applied after snapshot.");
-      setRevisionPreview(undefined);
+    setAssistantSuggestion(undefined);
+    setStatus("AI edit applied. Undo is available.");
+    setRevisionPreview(undefined);
   }
 
   function handleSaveSuggestionAsPatch() {
@@ -868,12 +932,21 @@ export default function Home() {
   return (
     <main data-testid="app-shell" className="flex h-dvh flex-col overflow-hidden bg-paper">
       <div className="flex min-h-0 flex-1 overflow-hidden">
-        <ModuleSidebar project={activeProject} onSelect={switchModule} />
+        <ModuleSidebar project={activeProject} activeLabel={activeAnnotation?.label} onSelect={switchModule} />
         <section data-testid="workspace-shell" className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           <header className="shrink-0 border-b border-slate-200 bg-white/90 px-4 py-1.5">
             <div className="flex min-w-0 items-center gap-3">
               <label className="flex min-w-0 flex-1 items-center gap-2 text-sm text-slate-600">
                 Project Title
+                {titleQuestionMismatch ? (
+                  <span
+                    className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-amber-300 bg-amber-50 text-xs font-bold text-amber-700"
+                    title="Project title differs from Module 1 question. Generate uses current module first."
+                    aria-label="Project title differs from Module 1 question. Generate uses current module first."
+                  >
+                    !
+                  </span>
+                ) : null}
                 <input
                   value={activeProject.title}
                   onChange={(event) => updateProject((prev) => ({ ...prev, title: event.target.value, topic: event.target.value }))}
@@ -882,17 +955,14 @@ export default function Home() {
               </label>
               <ProgressTracker project={activeProject} actionSteps={actionSteps} activeStep={activeStep} onSelect={switchModule} />
             </div>
-            {titleQuestionMismatch ? (
-              <div className="mt-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-900">
-                Project title and Module 1 research question differ. Which should Generate Next use? Using current module text first, with the project title as context.
-              </div>
-            ) : null}
           </header>
 
           <Toolbar
             currentModule={activeProject.currentModule}
             loading={loading}
             status={status}
+            toastVisible={toastVisible}
+            canUndo={undoStack.length > 0 && /Undo is available|AI edit applied|Notes applied/.test(status)}
             lastAction={lastAction}
             hasOpenPatches={openPatches.length > 0}
             onBack={() => switchModule(clampModule(activeProject.currentModule - 1))}
@@ -900,6 +970,7 @@ export default function Home() {
             onFinalizeExport={handleDownloadHtml}
             onRetryGenerate={handleGenerateNext}
             onRefresh={handleRefresh}
+            onUndo={undoLastAiEdit}
           />
           <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void handleImportJson(event.target.files?.[0])} />
 
@@ -940,18 +1011,6 @@ export default function Home() {
                 />
               </div>
 
-              {activeDoc.patches.length ? (
-                <details className="panel shrink-0 py-2 text-xs">
-                  <summary className="cursor-pointer font-semibold text-amber-800">Notes ({activeDoc.patches.length})</summary>
-                  <PatchList
-                    patches={activeDoc.patches}
-                    onJump={jumpToPatch}
-                    onEdit={editPatch}
-                    onResolve={toggleResolvePatch}
-                    onDelete={deletePatch}
-                  />
-                </details>
-              ) : null}
             </div>
 
             <aside data-testid="right-rail" className="min-h-0 overflow-hidden pr-1">
@@ -1035,7 +1094,6 @@ export default function Home() {
         </section>
       </div>
 
-      <HighlightKey />
       <FinishModal
         open={finishOpen}
         onClose={() => setFinishOpen(false)}
@@ -1190,4 +1248,8 @@ function hasBlockingIssues(doc: ModuleDocument) {
   return doc.annotations.some((annotation) => annotation.label === "issue") ||
     /\[citation needed\]|\[source needed(?::[^\]]*)?\]/i.test(doc.text) ||
     doc.sources.some((source) => source.placeholder || !source.title || !source.authors?.length || !source.year);
+}
+
+function cloneModuleDocument(doc: ModuleDocument): ModuleDocument {
+  return JSON.parse(JSON.stringify(doc)) as ModuleDocument;
 }
