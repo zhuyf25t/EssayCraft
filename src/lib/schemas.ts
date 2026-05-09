@@ -137,6 +137,7 @@ export const assistResponseSchema = z.object({
   reply: z.string(),
   proposedText: z.string().optional(),
   replaceRange: rangeSchema.optional(),
+  originalText: z.string().optional(),
   annotations: z.array(annotationSchema).default([]),
   warnings: z.array(z.string()).default([])
 });

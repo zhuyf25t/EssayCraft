@@ -118,6 +118,19 @@ export function SourceWorkbench({
         <Metric label="Source needs" value={sourceNeeds.length} tone="amber" />
       </div>
 
+      {moduleFive ? (
+        <div data-testid="module5-citation-checklist" className="mt-3 rounded-lg border border-red-100 bg-red-50 p-3 text-xs text-red-900">
+          <div className="mb-2 font-semibold">Referencing / Citation Check checklist</div>
+          <ul className="space-y-1">
+            <li>- In-text citations present? {audit.inTextCitations.length ? `${audit.inTextCitations.length} found` : "not yet"}</li>
+            <li>- Reference list entries present? {audit.realSources.length ? `${audit.realSources.length} real source card(s)` : "add real source cards"}</li>
+            <li>- Each real source has both halves? {audit.uncitedSources.length || audit.incompleteSources.length ? "needs review" : "locally clear"}</li>
+            <li>- Any [citation needed] markers? {audit.citationNeededMarkers.length}</li>
+            <li>- Any invented/placeholder citations? placeholders are source needs only and cannot be inserted as citations</li>
+          </ul>
+        </div>
+      ) : null}
+
       <div className="mt-3 space-y-2">
         <input value={draft.title} onChange={(event) => setDraft((prev) => ({ ...prev, title: event.target.value }))} placeholder="Source title" className="input w-full" />
         <div className="grid grid-cols-2 gap-2">

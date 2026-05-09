@@ -35,6 +35,7 @@ export function AssistantPanel({
   const [instruction, setInstruction] = useState("");
   const hasSelection = selectedRange.end > selectedRange.start && selectedText.trim().length > 0;
   const canApply = Boolean(suggestion && ((suggestion.proposedText && suggestion.replaceRange) || suggestion.annotations.length));
+  const applyLabel = suggestion?.proposedText ? "Apply replacement" : "Apply labels";
 
   function submitInstruction() {
     const value = instruction.trim();
@@ -101,7 +102,7 @@ export function AssistantPanel({
           ) : null}
           <div className="mt-3 flex gap-2">
             {canApply ? (
-              <button className="btn-primary" onClick={onApply}>Apply</button>
+              <button className="btn-primary" onClick={onApply}>{applyLabel}</button>
             ) : null}
             {suggestion.proposedText ? (
               <button className="btn-secondary" onClick={() => void navigator.clipboard?.writeText(suggestion.proposedText ?? "")}>Copy</button>

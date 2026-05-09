@@ -155,6 +155,7 @@ export type AssistResponse = {
   reply: string;
   proposedText?: string;
   replaceRange?: TextRange;
+  originalText?: string;
   annotations: Annotation[];
   warnings: string[];
 };

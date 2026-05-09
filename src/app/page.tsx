@@ -36,6 +36,7 @@ import type {
 
 const EMPTY_RANGE: TextRange = { start: 0, end: 0 };
 type TranslateMode = "en-to-zh" | "zh-to-en" | "auto-to-zh";
+type RightTab = "assistant" | "sources" | "snapshots" | "export";
 
 type LastAction = {
   tone: "info" | "success" | "error" | "warning";
@@ -59,7 +60,9 @@ export default function Home() {
   const [translatePreview, setTranslatePreview] = useState<TranslateResponse | undefined>();
   const [translateMode, setTranslateMode] = useState<TranslateMode>("en-to-zh");
   const [editorResetKey, setEditorResetKey] = useState(0);
+  const [rightTab, setRightTab] = useState<RightTab>("assistant");
   const importInputRef = useRef<HTMLInputElement>(null);
+  const currentModuleNumber = project?.currentModule;
 
   useEffect(() => {
     setProject(loadProject());
@@ -68,6 +71,13 @@ export default function Home() {
   useEffect(() => {
     if (project) saveProject(project);
   }, [project]);
+
+  useEffect(() => {
+    if (!currentModuleNumber) return;
+    if (currentModuleNumber === 5) setRightTab("sources");
+    else if (currentModuleNumber === 6) setRightTab("export");
+    else setRightTab("assistant");
+  }, [currentModuleNumber]);
 
   const currentDoc = project ? project.modules[project.currentModule] : null;
   const selectedText = useMemo(() => {
@@ -514,13 +524,17 @@ export default function Home() {
       });
       const data = (await response.json()) as AssistResponse & { error?: string };
       if (!response.ok) throw new Error(data.error ?? "Assistant failed.");
+      const anchoredData = data.replaceRange
+        ? { ...data, originalText: activeDoc.text.slice(data.replaceRange.start, data.replaceRange.end) }
+        : data;
       setProgress(steps, steps[2]);
-      setAssistantSuggestion(data);
+      setAssistantSuggestion(anchoredData);
+      setRightTab("assistant");
       updateProject((prev) => ({
         ...prev,
         assistantHistory: [
           { id: id("msg"), role: "user" as const, text: action, createdAt: nowIso() },
-          { id: id("msg"), role: "assistant" as const, text: data.reply, createdAt: nowIso() },
+          { id: id("msg"), role: "assistant" as const, text: anchoredData.reply, createdAt: nowIso() },
           ...prev.assistantHistory
         ].slice(0, 30)
       }));
@@ -543,6 +557,10 @@ export default function Home() {
       const range = assistantSuggestion.replaceRange;
       if (range.start < 0 || range.end <= range.start || range.end > activeDoc.text.length) {
         setStatus("Assistant replacement was blocked because the target selection is no longer valid.");
+        return;
+      }
+      if (assistantSuggestion.originalText !== undefined && activeDoc.text.slice(range.start, range.end) !== assistantSuggestion.originalText) {
+        setStatus("Assistant replacement was blocked because the selected text changed after the preview was created.");
         return;
       }
     }
@@ -616,6 +634,19 @@ export default function Home() {
     }
   }
 
+  function sendTranslateToAssistant() {
+    if (!translatePreview) return;
+    setAssistantSuggestion({
+      reply: "Reference translation sent to Assistant as a copy-only preview. Select text and ask for a translation rewrite if you want an applyable replacement.",
+      proposedText: translatePreview.translatedText,
+      annotations: [],
+      warnings: ["Reference Translation never edits the document. Use Assistant on a selected range for preview/apply insertion."]
+    });
+    setRightTab("assistant");
+    setTranslateOpen(false);
+    setStatus("Reference translation sent to Assistant preview.");
+  }
+
   return (
     <main data-testid="app-shell" className="flex h-dvh flex-col overflow-hidden bg-paper">
       <div className="flex min-h-0 flex-1 overflow-hidden">
@@ -647,6 +678,11 @@ export default function Home() {
             currentModule={activeProject.currentModule}
             loading={loading}
             status={status}
+            lastAction={lastAction}
+            onBack={() => switchModule(clampModule(activeProject.currentModule - 1))}
+            onGenerateNext={handleGenerateNext}
+            onFinalizeExport={handleDownloadHtml}
+            onRetryGenerate={handleGenerateNext}
             onRefresh={handleRefresh}
             onSaveSnapshot={handleSaveSnapshot}
             onClearModule={handleClearModule}
@@ -661,36 +697,6 @@ export default function Home() {
             onTranslate={openTranslate}
           />
           <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void handleImportJson(event.target.files?.[0])} />
-
-          <div className="shrink-0 border-b border-slate-200 bg-[#fffdf8]/95 px-4 py-2">
-            <div className="flex items-center justify-center gap-3">
-              <button className="btn-secondary min-w-36 whitespace-nowrap" onClick={() => switchModule(clampModule(activeProject.currentModule - 1))} disabled={activeProject.currentModule <= 1 || loading}>
-                Back to Module {Math.max(1, activeProject.currentModule - 1)}
-              </button>
-              <button data-testid="workflow-generate" className="btn-primary min-w-80 whitespace-nowrap px-6 text-base" onClick={handleGenerateNext} disabled={activeProject.currentModule >= 6 || loading}>
-                {loading && activeProject.currentModule < 6
-                  ? `Generating Module ${activeProject.currentModule + 1}...`
-                  : activeProject.currentModule >= 6
-                    ? "Module 6 is final: export or download"
-                    : `Generate Module ${activeProject.currentModule + 1} from Module ${activeProject.currentModule}`}
-              </button>
-            </div>
-            <div data-testid="last-action" className={`mx-auto mt-2 max-w-5xl rounded-lg border px-3 py-1.5 text-sm ${lastActionClasses(lastAction.tone)}`} aria-live="polite">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <span className="font-semibold">Last action:</span> {lastAction.message}
-                  {lastAction.details?.length ? (
-                    <ul className="mt-1 list-disc space-y-0.5 pl-5 text-xs">
-                      {lastAction.details.slice(0, 4).map((detail, index) => <li key={`${index}-${detail.slice(0, 48)}`}>{detail}</li>)}
-                    </ul>
-                  ) : null}
-                </div>
-                {lastAction.retryGenerate ? (
-                  <button className="btn-secondary" onClick={handleGenerateNext} disabled={loading}>Retry</button>
-                ) : null}
-              </div>
-            </div>
-          </div>
 
           <div data-testid="workspace-body" className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 xl:grid-cols-[minmax(0,1fr)_360px]">
             <div data-testid="editor-column" className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
@@ -742,30 +748,69 @@ export default function Home() {
               ) : null}
             </div>
 
-            <aside data-testid="right-rail" className="min-h-0 space-y-3 overflow-y-auto pr-1">
-              <AssistantPanel
-                selectedText={selectedText}
-                selectedRange={selectedRange}
-                loading={loading}
-                suggestion={assistantSuggestion}
-                onAction={handleAssist}
-                onApply={handleApplyAssistant}
-                onDismiss={() => setAssistantSuggestion(undefined)}
-                onRefresh={handleRefresh}
-              />
-              <SnapshotPanel snapshots={activeDoc.snapshots} onRestore={handleRestoreSnapshot} />
-              <SourceWorkbench
-                moduleNumber={activeProject.currentModule}
-                text={activeDoc.text}
-                annotations={activeDoc.annotations}
-                sources={activeDoc.sources}
-                onAdd={addSource}
-                onToggleVerified={toggleSourceVerified}
-                onDelete={deleteSource}
-                onAddPlaceholder={addPlaceholderSource}
-                onInsertCitation={insertCitation}
-                onMarkSelectionNeedsCitation={markSelectionNeedsCitation}
-              />
+            <aside data-testid="right-rail" className="min-h-0 overflow-hidden pr-1">
+              <section className="panel flex h-full min-h-0 flex-col p-0">
+                <div role="tablist" aria-label="Right workspace" className="grid shrink-0 grid-cols-4 gap-1 border-b border-slate-200 p-2 text-xs">
+                  {(["assistant", "sources", "snapshots", "export"] as RightTab[]).map((tab) => (
+                    <button
+                      key={tab}
+                      role="tab"
+                      aria-selected={rightTab === tab}
+                      aria-controls={`right-panel-${tab}`}
+                      className={`rounded-md px-2 py-2 font-semibold capitalize transition ${rightTab === tab ? "bg-blue-600 text-white" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}
+                      onClick={() => setRightTab(tab)}
+                    >
+                      {tab === "sources" ? "Sources" : tab}
+                    </button>
+                  ))}
+                </div>
+                <div className="min-h-0 flex-1 overflow-auto p-3">
+                  <div id="right-panel-assistant" role="tabpanel" aria-label="Assistant" hidden={rightTab !== "assistant"}>
+                    <AssistantPanel
+                      selectedText={selectedText}
+                      selectedRange={selectedRange}
+                      loading={loading}
+                      suggestion={assistantSuggestion}
+                      onAction={handleAssist}
+                      onApply={handleApplyAssistant}
+                      onDismiss={() => setAssistantSuggestion(undefined)}
+                      onRefresh={handleRefresh}
+                    />
+                  </div>
+                  <div id="right-panel-sources" role="tabpanel" aria-label="Sources" hidden={rightTab !== "sources"}>
+                    <SourceWorkbench
+                      moduleNumber={activeProject.currentModule}
+                      text={activeDoc.text}
+                      annotations={activeDoc.annotations}
+                      sources={activeDoc.sources}
+                      onAdd={addSource}
+                      onToggleVerified={toggleSourceVerified}
+                      onDelete={deleteSource}
+                      onAddPlaceholder={addPlaceholderSource}
+                      onInsertCitation={insertCitation}
+                      onMarkSelectionNeedsCitation={markSelectionNeedsCitation}
+                    />
+                  </div>
+                  <div id="right-panel-snapshots" role="tabpanel" aria-label="Snapshots" hidden={rightTab !== "snapshots"}>
+                    <SnapshotPanel snapshots={activeDoc.snapshots} onRestore={handleRestoreSnapshot} />
+                  </div>
+                  <div id="right-panel-export" role="tabpanel" aria-label="Export" hidden={rightTab !== "export"}>
+                    <ExportPanel
+                      moduleNumber={activeProject.currentModule}
+                      hasText={Boolean(activeDoc.text.trim())}
+                      hasIssues={hasBlockingIssues(activeDoc)}
+                      onCopyRichText={handleCopyRichText}
+                      onDownloadHtml={handleDownloadHtml}
+                      onDownloadJson={() => {
+                        downloadProjectJson(activeProject);
+                        setStatus("Project JSON downloaded.");
+                      }}
+                      onImportJson={handleImportJsonClick}
+                      onReferenceTranslation={openTranslate}
+                    />
+                  </div>
+                </div>
+              </section>
             </aside>
           </div>
         </section>
@@ -795,9 +840,72 @@ export default function Home() {
         onModeChange={setTranslateMode}
         onRequest={requestTranslatePreview}
         onCopy={copyTranslatePreview}
+        onSendToAssistant={sendTranslateToAssistant}
         onClose={() => setTranslateOpen(false)}
       />
     </main>
+  );
+}
+
+function ExportPanel({
+  moduleNumber,
+  hasText,
+  hasIssues,
+  onCopyRichText,
+  onDownloadHtml,
+  onDownloadJson,
+  onImportJson,
+  onReferenceTranslation
+}: {
+  moduleNumber: ModuleNumber;
+  hasText: boolean;
+  hasIssues: boolean;
+  onCopyRichText: () => void;
+  onDownloadHtml: () => void;
+  onDownloadJson: () => void;
+  onImportJson: () => void;
+  onReferenceTranslation: () => void;
+}) {
+  const moduleSix = moduleNumber === 6;
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-sm font-semibold text-slate-800">{moduleSix ? "Final Review / Export" : "Export & Project Files"}</h2>
+        <p className="mt-1 text-xs text-slate-500">
+          {moduleSix
+            ? "Use this as a final review checklist before downloading. Export is available even if you still have issues to resolve."
+            : "Copy or download the current module/project without changing the editor text."}
+        </p>
+      </div>
+
+      {moduleSix ? (
+        <div data-testid="module6-final-checklist" className="rounded-lg border border-blue-100 bg-blue-50 p-3 text-xs text-blue-950">
+          <div className="mb-2 font-semibold">Final review checklist</div>
+          <ul className="space-y-1">
+            <li>- Content: answered the question?</li>
+            <li>- Structure: logical sequence?</li>
+            <li>- Clarity: easy to understand?</li>
+            <li>- Style: academic tone?</li>
+            <li>- Proofreading: grammar, punctuation, formatting, citations?</li>
+          </ul>
+          <div className={`mt-2 rounded-md px-2 py-1 ${hasIssues ? "bg-amber-100 text-amber-900" : "bg-emerald-100 text-emerald-800"}`}>
+            {hasIssues ? "Export available, not submission-ready: resolve citation/source issues first." : hasText ? "Export ready: no blocking issues detected locally." : "Add Module 6 text before final export."}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid gap-2">
+        <button className="btn-primary text-left" onClick={onDownloadHtml}>{moduleSix ? "Finalize / Export HTML" : "Download HTML"}</button>
+        <button className="btn-secondary text-left" onClick={onCopyRichText}>Copy Rich Text</button>
+        <button className="btn-secondary text-left" onClick={onDownloadJson}>Download JSON</button>
+        <button className="btn-secondary text-left" onClick={onImportJson}>Import JSON</button>
+        <button className="btn-secondary text-left" onClick={onReferenceTranslation}>Reference Translation</button>
+      </div>
+
+      <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+        JSON export includes schema version, project title/topic/current module, six module documents, annotations, patches, snapshots, sources, assistant history, and timestamps. It never includes API keys.
+      </p>
+    </section>
   );
 }
 
@@ -812,13 +920,6 @@ function mergeSources(primary: SourceCard[], secondary: SourceCard[]) {
   }
 
   return result;
-}
-
-function lastActionClasses(tone: LastAction["tone"]) {
-  if (tone === "success") return "border-emerald-200 bg-emerald-50 text-emerald-900";
-  if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-900";
-  if (tone === "error") return "border-red-200 bg-red-50 text-red-900";
-  return "border-blue-100 bg-blue-50 text-blue-900";
 }
 
 function extractModuleOneQuestion(text: string) {
@@ -857,4 +958,10 @@ function findCitationNeededMarker(text: string, caret: number) {
     }
   }
   return null;
+}
+
+function hasBlockingIssues(doc: ModuleDocument) {
+  return doc.annotations.some((annotation) => annotation.label === "issue") ||
+    /\[citation needed\]|\[source needed(?::[^\]]*)?\]/i.test(doc.text) ||
+    doc.sources.some((source) => source.placeholder || !source.title || !source.authors?.length || !source.year);
 }

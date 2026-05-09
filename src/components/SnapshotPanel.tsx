@@ -10,7 +10,7 @@ export function SnapshotPanel({ snapshots, onRestore }: { snapshots: Snapshot[];
         <span className="text-xs text-slate-400">{snapshots.length} saved</span>
       </div>
       {snapshots.length === 0 ? (
-        <p className="text-xs text-slate-500">Save a snapshot before major edits. Generate, translate, assistant apply, and clear actions snapshot automatically.</p>
+        <p className="text-xs text-slate-500">Save a snapshot before major edits. Generate, assistant apply, citation insertion, and clear actions snapshot automatically. Reference Translation never changes text or creates snapshots.</p>
       ) : (
         <div className="max-h-52 space-y-2 overflow-auto pr-1">
           {snapshots.map((snapshot) => (

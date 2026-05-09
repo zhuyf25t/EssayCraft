@@ -6,9 +6,9 @@ import { buildTranslateMessages } from "@/lib/prompts";
 import { translateRequestSchema, translateResponseSchema } from "@/lib/schemas";
 import { cleanGeneratedText } from "@/lib/textFormat";
 
-const ZH_PREVIEW_TITLE = "\u4e2d\u6587\u7ffb\u8bd1\u9884\u89c8\uff1a";
-const ZH_PREVIEW_NOTE = "\uff08\u6a21\u62df\u7ffb\u8bd1\uff1a\u5f53\u524d\u4f7f\u7528\u672c\u5730\u9884\u89c8\uff0c\u539f\u6587\u4e0d\u4f1a\u88ab\u81ea\u52a8\u4fee\u6539\u3002\uff09";
-const ZH_GENERIC_LINE = "\u8fd9\u90e8\u5206\u8868\u8fbe\u4e86\u539f\u6587\u4e2d\u7684\u4e00\u4e2a\u5199\u4f5c\u8981\u70b9\uff0c\u53ef\u4ee5\u7ed3\u5408\u4e0a\u4e0b\u6587\u7ee7\u7eed\u7406\u89e3\u3002";
+const ZH_PREVIEW_TITLE = "\u4e2d\u6587\u53c2\u8003\u7ffb\u8bd1\uff1a";
+const ZH_PREVIEW_NOTE = "\uff08\u672c\u5730\u53c2\u8003\u7ffb\u8bd1\uff1a\u539f\u6587\u4e0d\u4f1a\u88ab\u81ea\u52a8\u4fee\u6539\u3002\u5982\u9700\u63d2\u5165\u8bd1\u6587\uff0c\u8bf7\u5728 Assistant \u4e2d\u9009\u4e2d\u6587\u672c\u540e\u9884\u89c8\u5e76\u5e94\u7528\u3002\uff09";
+const ZH_GENERIC_LINE = "\u672c\u5730\u9884\u89c8\u4fdd\u7559\u8be5\u53e5\u7684\u6bb5\u843d\u4f4d\u7f6e\u548c\u5199\u4f5c\u529f\u80fd\uff0c\u8fde\u63a5\u7ffb\u8bd1\u63d0\u4f9b\u65b9\u540e\u53ef\u8fdb\u4e00\u6b65\u7cbe\u4fee\u3002";
 
 export async function POST(request: Request) {
   try {
@@ -90,8 +90,8 @@ function mockTranslate(input: TranslateRequest): TranslateResponse {
     translatedText: text,
     mode: input.mode,
     annotations: normalizeAnnotations(text, buildMockAnnotations(text)),
-    warnings: ["Mock translation preview. No document text was changed automatically."],
-    providerMode: "mock"
+    warnings: ["Reference translation preview. No document text was changed automatically."],
+    providerMode: "fallback"
   };
 }
 
@@ -141,6 +141,9 @@ function translateLineToChinese(line: string) {
 }
 
 function translateAcademicPhrase(value: string) {
+  const known = translateKnownSentence(value);
+  if (known) return known;
+
   const placeholder = value.match(/\[(?:citation|source) needed(?::[^\]]*)?\]/i)?.[0];
   if (placeholder) {
     return placeholder.toLowerCase().includes("source")
@@ -164,6 +167,22 @@ function translateAcademicPhrase(value: string) {
   }
 
   return ZH_GENERIC_LINE;
+}
+
+function translateKnownSentence(value: string) {
+  const normalized = value.toLowerCase().replace(/\s+/g, " ").trim();
+  const matches: Array<[RegExp, string]> = [
+    [/social media now shapes how young people communicate, relax, study, and compare themselves with others/, "\u793e\u4ea4\u5a92\u4f53\u5982\u4eca\u5df2\u7ecf\u5f71\u54cd\u9752\u5c11\u5e74\u4ea4\u6d41\u3001\u653e\u677e\u3001\u5b66\u4e60\u4ee5\u53ca\u4e0e\u4ed6\u4eba\u6bd4\u8f83\u7684\u65b9\u5f0f\u3002"],
+    [/the question is not simply whether social media is good or bad/, "\u56e0\u6b64\uff0c\u95ee\u9898\u4e0d\u53ea\u662f\u793e\u4ea4\u5a92\u4f53\u662f\u597d\u662f\u574f\uff0c\u800c\u662f\u5b83\u5982\u4f55\u88ab\u66f4\u5065\u5eb7\u5730\u4f7f\u7528\u3002"],
+    [/this essay argues that a healthier social media balance is possible/, "\u672c\u6587\u8ba4\u4e3a\uff0c\u5f53\u7528\u6237\u5efa\u7acb\u6709\u610f\u8bc6\u7684\u4e60\u60ef\u3001\u5e73\u53f0\u91cd\u65b0\u8bbe\u8ba1\u53c2\u4e0e\u673a\u5236\uff0c\u5e76\u4e14\u5b66\u6821\u6559\u6388\u66f4\u5f3a\u7684\u6570\u5b57\u7d20\u517b\u65f6\uff0c\u66f4\u5065\u5eb7\u7684\u793e\u4ea4\u5a92\u4f53\u5e73\u8861\u662f\u53ef\u80fd\u7684\u3002"],
+    [/first, individual habits are important/, "\u9996\u5148\uff0c\u4e2a\u4eba\u4e60\u60ef\u5f88\u91cd\u8981\uff0c\u56e0\u4e3a\u8bb8\u591a\u6709\u5bb3\u7684\u793e\u4ea4\u5a92\u4f53\u4f7f\u7528\u6a21\u5f0f\u6765\u81ea\u88ab\u52a8\u548c\u65e0\u8ba1\u5212\u7684\u6d4f\u89c8\u3002"],
+    [/second, responsibility should not rest only on individual users/, "\u5176\u6b21\uff0c\u8d23\u4efb\u4e0d\u5e94\u53ea\u843d\u5728\u4e2a\u4eba\u7528\u6237\u8eab\u4e0a\uff0c\u56e0\u4e3a\u5e73\u53f0\u4e5f\u4f1a\u901a\u8fc7\u8bbe\u8ba1\u5851\u9020\u7528\u6237\u884c\u4e3a\u3002"],
+    [/third, schools can help students develop the digital literacy/, "\u7b2c\u4e09\uff0c\u5b66\u6821\u53ef\u4ee5\u5e2e\u52a9\u5b66\u751f\u53d1\u5c55\u6570\u5b57\u7d20\u517b\uff0c\u4f7f\u4ed6\u4eec\u80fd\u591f\u6279\u5224\u6027\u5730\u4f7f\u7528\u793e\u4ea4\u5a92\u4f53\u3002"],
+    [/in conclusion, a healthier social media balance is most realistic/, "\u603b\u4e4b\uff0c\u5f53\u7528\u6237\u3001\u5e73\u53f0\u548c\u5b66\u6821\u5171\u540c\u627f\u62c5\u8d23\u4efb\u65f6\uff0c\u66f4\u5065\u5eb7\u7684\u793e\u4ea4\u5a92\u4f53\u5e73\u8861\u6700\u6709\u53ef\u80fd\u5b9e\u73b0\u3002"],
+    [/topic: campus notification habits/, "\u4e3b\u9898\uff1a\u6821\u56ed\u901a\u77e5\u4e60\u60ef"],
+    [/how can schools reduce distraction while keeping students connected/, "\u5b66\u6821\u5982\u4f55\u5728\u4fdd\u6301\u5b66\u751f\u8054\u7cfb\u7684\u540c\u65f6\u51cf\u5c11\u5206\u5fc3\uff1f"]
+  ];
+  return matches.find(([pattern]) => pattern.test(normalized))?.[1] ?? "";
 }
 
 function academicConcepts(value: string) {

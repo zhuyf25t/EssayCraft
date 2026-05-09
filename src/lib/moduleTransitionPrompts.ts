@@ -119,7 +119,7 @@ Include counterargument paragraph and a conclusion plan explaining why the argum
 `,
     validationRules: [
       "Must include introduction, body, and conclusion plan.",
-      "Evidence without supplied source should be marked [citation needed].",
+      "Evidence without supplied source should be marked [source needed: ...] in the outline, not [citation needed].",
       "At least one analysis component should appear after evidence components.",
       "Must preserve branch-specific content from Module 2 when available.",
       "Must not include nonsensical body claims such as 'Refined question: Where is...'.",
