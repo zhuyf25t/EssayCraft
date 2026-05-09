@@ -308,7 +308,8 @@ function normalizePatches(patches: unknown, text: string): Patch[] {
         anchorQuote: patch.anchorQuote || text.slice(start, end),
         text: patch.text || "",
         createdAt: patch.createdAt || nowIso(),
-        resolved: patch.resolved
+        resolved: patch.resolved,
+        stale: patch.stale
       };
     });
 }

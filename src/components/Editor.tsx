@@ -72,6 +72,17 @@ export function Editor({ text, annotations, patches, selectedRange, resetKey, on
     };
   }, [onSelectionChange]);
 
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || document.activeElement === textarea) return;
+    if (textarea.selectionStart === selectedRange.start && textarea.selectionEnd === selectedRange.end) return;
+    try {
+      textarea.focus();
+      textarea.setSelectionRange(selectedRange.start, selectedRange.end);
+    } catch {
+      // Ignore external selection sync during transient DOM updates.
+    }
+  }, [selectedRange.start, selectedRange.end]);
 
   return (
     <section data-testid="editor-shell" className="editor-shell">
@@ -87,7 +98,7 @@ export function Editor({ text, annotations, patches, selectedRange, resetKey, on
 
       <div data-testid="editor-stack" className="editor-stack">
         <div ref={backdropRef} data-testid="editor-backdrop" className="editor-backdrop" aria-hidden="true">
-          <HighlightText text={text} annotations={annotations} />
+          <HighlightText text={text} annotations={annotations} patches={patches} />
         </div>
         <textarea
           ref={textareaRef}
@@ -127,27 +138,54 @@ export function Editor({ text, annotations, patches, selectedRange, resetKey, on
   );
 }
 
-function HighlightText({ text, annotations }: { text: string; annotations: Annotation[] }) {
+function HighlightText({ text, annotations, patches }: { text: string; annotations: Annotation[]; patches: Patch[] }) {
   const nodes: ReactNode[] = [];
   const sorted = annotations
     .filter((annotation) => annotation.end > annotation.start && annotation.end <= text.length && text.slice(annotation.start, annotation.end) === annotation.text)
     .sort((a, b) => a.start - b.start || a.end - b.end);
+  const openPatches = patches
+    .filter((patch) => !patch.resolved && !patch.stale && patch.anchorStart >= 0 && patch.anchorStart <= text.length && patch.anchorEnd >= patch.anchorStart && patch.anchorEnd <= text.length)
+    .sort((a, b) => a.anchorStart - b.anchorStart || a.anchorEnd - b.anchorEnd);
+  const points = new Set<number>([0, text.length]);
+  for (const annotation of sorted) {
+    points.add(annotation.start);
+    points.add(annotation.end);
+  }
+  for (const patch of openPatches) {
+    points.add(patch.anchorStart);
+    points.add(patch.anchorEnd);
+  }
+  const ordered = [...points].sort((a, b) => a - b);
 
-  let cursor = 0;
-  sorted.forEach((annotation) => {
-    if (annotation.start > cursor) {
-      nodes.push(<span key={`plain-${cursor}`}>{text.slice(cursor, annotation.start)}</span>);
+  for (let index = 0; index < ordered.length - 1; index += 1) {
+    const start = ordered[index];
+    const end = ordered[index + 1];
+    if (end <= start) continue;
+    const segment = text.slice(start, end);
+    const annotation = sorted.find((item) => item.start <= start && item.end >= end);
+    const patch = openPatches.find((item) => item.anchorStart <= start && item.anchorEnd >= end);
+    const className = `${annotation ? `highlight-backdrop ${LABELS[annotation.label].className}` : ""} ${patch ? "patch-backdrop" : ""}`.trim();
+    const key = `${start}-${end}-${annotation?.id ?? "plain"}-${patch?.id ?? "nopatch"}`;
+    const content = className ? <mark key={key} className={className}>{segment}</mark> : <span key={key}>{segment}</span>;
+    nodes.push(content);
+
+    const endingPatches = openPatches.filter((item) => item.anchorEnd === end && item.anchorEnd > item.anchorStart);
+    for (const endingPatch of endingPatches) {
+      nodes.push(
+        <span
+          key={`patch-marker-${endingPatch.id}-${end}`}
+          data-testid="patch-marker"
+          className="patch-marker"
+          title={endingPatch.text}
+        >
+          note
+        </span>
+      );
     }
-    nodes.push(
-      <mark key={annotation.id} className={`highlight-backdrop ${LABELS[annotation.label].className}`}>
-        {text.slice(annotation.start, annotation.end)}
-      </mark>
-    );
-    cursor = annotation.end;
-  });
+  }
 
-  if (cursor < text.length) {
-    nodes.push(<span key={`plain-${cursor}`}>{text.slice(cursor)}</span>);
+  for (const patch of openPatches.filter((item) => item.anchorStart === item.anchorEnd)) {
+    nodes.push(<span key={`patch-marker-caret-${patch.id}`} data-testid="patch-marker" className="patch-marker" title={patch.text}>note</span>);
   }
 
   if (nodes.length === 0) return <span>{text || " "}</span>;

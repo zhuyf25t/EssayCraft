@@ -126,6 +126,7 @@ export function sentenceRangeAt(text: string, start: number, end = start): Range
   const ranges = sentenceRanges(normalized);
   const found = ranges.find((range) => boundedStart >= range.start && boundedStart < range.end);
   if (found) return found;
+  if (boundedStart === normalized.length && ranges.length) return ranges[ranges.length - 1];
 
   return {
     start: boundedStart,

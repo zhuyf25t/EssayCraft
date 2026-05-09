@@ -29,7 +29,7 @@ export function FinishModal({
         />
         <div className="mt-4 flex flex-wrap gap-2">
           <button className="btn-primary" onClick={onDownloadHtml}>Download highlighted HTML</button>
-          <button className="btn-secondary" onClick={onDownloadJson}>Download project JSON</button>
+          <button className="btn-secondary" onClick={onDownloadJson}>Download full project JSON</button>
           <button className="btn-secondary" onClick={onClose}>Close</button>
         </div>
       </div>

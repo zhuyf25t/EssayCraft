@@ -50,7 +50,8 @@ export const patchSchema = z.object({
   anchorQuote: z.string(),
   text: z.string(),
   createdAt: z.string(),
-  resolved: z.boolean().optional()
+  resolved: z.boolean().optional(),
+  stale: z.boolean().optional()
 });
 
 export const sourceCardSchema = z.object({
@@ -135,6 +136,11 @@ export const assistRequestSchema = z.object({
 
 export const assistResponseSchema = z.object({
   reply: z.string(),
+  title: z.string().optional(),
+  actionType: z.string().optional(),
+  originalExcerpt: z.string().optional(),
+  explanation: z.string().optional(),
+  providerMode: z.enum(["deepseek", "mock", "fallback"]).optional(),
   proposedText: z.string().optional(),
   replaceRange: rangeSchema.optional(),
   originalText: z.string().optional(),

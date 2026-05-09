@@ -30,6 +30,7 @@ export type Patch = {
   text: string;
   createdAt: string;
   resolved?: boolean;
+  stale?: boolean;
 };
 
 export type SourceCard = {
@@ -153,6 +154,11 @@ export type AssistRequest = {
 
 export type AssistResponse = {
   reply: string;
+  title?: string;
+  actionType?: string;
+  originalExcerpt?: string;
+  explanation?: string;
+  providerMode?: "deepseek" | "mock" | "fallback";
   proposedText?: string;
   replaceRange?: TextRange;
   originalText?: string;

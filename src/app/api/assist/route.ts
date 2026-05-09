@@ -30,17 +30,13 @@ export async function POST(request: Request) {
       const parsed = assistResponseSchema.parse(JSON.parse(raw));
       const exact = exactAnnotations(input.text, parsed.annotations ?? []);
       const rangeWarning = validateAssistReplaceRange(input, parsed);
-      const normalized: AssistResponse = rangeWarning
-        ? {
-            reply: `${parsed.reply} ${rangeWarning}`,
-            annotations: exact.annotations,
-            warnings: [...(parsed.warnings ?? []), ...exact.warnings, rangeWarning]
-          }
-        : {
-            ...parsed,
-            annotations: exact.annotations,
-            warnings: [...(parsed.warnings ?? []), ...exact.warnings]
-          };
+      const normalized: AssistResponse = {
+        ...parsed,
+        providerMode: "deepseek",
+        reply: rangeWarning ? `${parsed.reply} ${rangeWarning}` : parsed.reply,
+        annotations: exact.annotations,
+        warnings: rangeWarning ? [...(parsed.warnings ?? []), ...exact.warnings, rangeWarning] : [...(parsed.warnings ?? []), ...exact.warnings]
+      };
 
       return NextResponse.json(normalized);
     } catch (aiError) {
@@ -81,30 +77,55 @@ function mockAssist(input: AssistRequest): AssistResponse {
   const range = input.selectedRange;
   const selected = input.selectedText || (range ? input.text.slice(range.start, range.end) : input.text);
   const action = input.action.toLowerCase();
-  const warnings = ["Mock assistant response. Provider suggestions are unavailable or forced off in this session."];
+  const warnings = ["Provider unavailable; using local mock suggestion."];
 
   if (action.includes("citation")) {
     return {
+      title: "Citation-gap check",
+      actionType: "citation-check",
       reply: "I found citation-risk areas. Evidence claims should keep [citation needed] until you add real source details in source cards.",
+      explanation: "This check only marks possible citation gaps. It does not invent authors, dates, titles, or references.",
       annotations: normalizeAnnotations(input.text, buildMockAnnotations(input.text).filter((annotation) => annotation.label === "issue" || annotation.text.includes("[citation needed]"))),
-      warnings
+      warnings,
+      providerMode: "mock"
+    };
+  }
+
+  if (action.includes("explain current module")) {
+    return {
+      title: "Module highlight explanation",
+      actionType: "highlight-explanation",
+      reply: moduleHighlightSummary(input),
+      explanation: "Click inside a specific highlighted sentence for a focused explanation of one color label.",
+      annotations: [],
+      warnings,
+      providerMode: "mock"
     };
   }
 
   if (action.includes("explain")) {
     return {
+      title: "Highlight explanation",
+      actionType: "highlight-explanation",
+      originalExcerpt: selected ? excerpt(selected) : undefined,
       reply: selected
-        ? `This selection appears to function as ${buildMockAnnotations(selected)[0]?.label ?? "plain"} writing. Use the comment to decide whether the label matches your intention.`
+        ? explainSelection(selected)
         : "Select a sentence or range first, then ask me to explain the highlight.",
+      explanation: selected ? "Use Relabel selected range if the color does not match your intended rhetorical function." : undefined,
       annotations: [],
-      warnings
+      warnings,
+      providerMode: "mock"
     };
   }
 
   if (action.includes("relabel")) {
+    const label = selected && /because|therefore|this means|supports|shows/i.test(selected) ? "analysis" : "thesis";
     return {
+      title: "Relabel preview",
+      actionType: "relabel",
+      originalExcerpt: selected ? excerpt(selected) : undefined,
       reply: range
-        ? "I prepared a label refresh for the selected area. Apply and refresh if the current color does not match the sentence role."
+        ? `I prepared a label change for the selected range: ${label}. Apply only if that matches the sentence role.`
         : "Select text first before relabeling a range.",
       annotations: range
         ? [
@@ -113,26 +134,33 @@ function mockAssist(input: AssistRequest): AssistResponse {
               start: range.start,
               end: range.end,
               text: input.text.slice(range.start, range.end),
-              label: "analysis",
+              label,
               confidence: 0.7,
               comment: "Mock relabel suggestion."
             }
           ]
         : [],
-      warnings
+      explanation: "Applying this updates annotation metadata only; it does not rewrite the document text.",
+      warnings,
+      providerMode: "mock"
     };
   }
 
   if (action.includes("translate")) {
     const translated = mockAssistantChinese(selected || input.text);
     return {
+      title: "Translation preview",
+      actionType: "translate-selection",
+      originalExcerpt: selected ? excerpt(selected) : undefined,
       reply: range
         ? "Translation preview ready for the selected text. Apply only if you want to replace that selection."
         : "Translation preview ready. Select a passage first if you want an applyable replacement.",
       proposedText: translated,
       replaceRange: range,
       annotations: [],
-      warnings
+      explanation: "This path is the only translation workflow that can replace text, and it still requires Apply.",
+      warnings,
+      providerMode: "mock"
     };
   }
 
@@ -143,19 +171,91 @@ function mockAssist(input: AssistRequest): AssistResponse {
       : `A more academic version could state: ${base.replace(/\s+/g, " ")} [citation needed if this includes factual evidence].`;
 
     return {
+      title: action.includes("analysis") ? "Strengthen analysis preview" : "Rewrite preview",
+      actionType: action.includes("analysis") ? "strengthen-analysis" : "rewrite-selection",
+      originalExcerpt: excerpt(base),
       reply: "Preview ready. I did not change the document; apply the suggestion only if it matches your intended meaning.",
       proposedText,
       replaceRange: range,
       annotations: [],
-      warnings
+      explanation: "Apply replaces only the selected range after checking that the original text has not changed.",
+      warnings,
+      providerMode: "mock"
     };
   }
 
   return {
-    reply: "I can explain highlights, relabel a selected range, rewrite selected text, strengthen analysis, find citation gaps, or prepare translation. Select text for the most precise help.",
+    title: `Module ${input.moduleNumber} feedback`,
+    actionType: "module-feedback",
+    reply: moduleFeedback(input),
+    explanation: "This is module-level feedback because no text is selected. Select a sentence for an applyable rewrite.",
     annotations: [],
-    warnings
+    warnings,
+    providerMode: "mock"
   };
+}
+
+function moduleFeedback(input: AssistRequest) {
+  const text = input.text.trim();
+  if (!text) return `Module ${input.moduleNumber} is empty. Add draft text first, then I can comment on structure, clarity, and evidence needs.`;
+  const lower = text.toLowerCase();
+  if (input.moduleNumber === 1) {
+    const hasTopic = /^topic\s*:/im.test(text);
+    const hasQuestion = /^(research question|question)\s*:/im.test(text);
+    const hasThesis = /(working thesis|thesis)\s*:/i.test(text);
+    const reasons = (text.match(/reason\s*\d+\s*:/gi) ?? []).length;
+    const strengths = [
+      hasTopic ? "clear topic" : "",
+      hasQuestion ? "research question" : "",
+      hasThesis ? "working thesis" : "",
+      reasons ? `${reasons}-part thesis map` : ""
+    ].filter(Boolean).join(", ");
+    return `Your Module 1 has ${strengths || "the beginning of a topic plan"}. The strongest part is that the essay has a focused direction. A useful improvement is to make the thesis map parallel: each reason should use the same grammatical structure and clearly support the thesis.`;
+  }
+  if (input.moduleNumber === 2) {
+    return "Your research plan is moving in the right direction because it separates argument branches from source needs. The next improvement is to make each evidence need specific enough to search for: name the kind of study, report, data, or policy example that would support each branch.";
+  }
+  if (input.moduleNumber === 3) {
+    return "Your outline gives the draft a workable sequence. The next improvement is to check whether every body paragraph has four parts: a topic sentence, evidence to use, analysis purpose, and a link back to the thesis.";
+  }
+  if (input.moduleNumber === 4) {
+    const citations = (text.match(/\[citation needed\]/gi) ?? []).length;
+    return `Your draft is readable as essay prose rather than an outline. The main improvement is evidence integration: ${citations ? `${citations} citation-needed marker(s) still need real sources` : "check that factual claims have citations"}. Also make sure each paragraph ends by linking back to the thesis.`;
+  }
+  if (input.moduleNumber === 5) {
+    return "This module should focus on citation integrity. Check that every in-text citation has a matching source card and every source card used in the reference list is actually cited in the draft.";
+  }
+  if (lower.includes("final review") || input.moduleNumber === 6) {
+    return "Your final review should confirm content, structure, clarity, academic style, proofreading, and citation readiness. If any citation-needed marker remains, the essay is exportable but not submission-ready.";
+  }
+  return `Your Module ${input.moduleNumber} has usable material. The next improvement is to make the paragraph roles explicit: claim, evidence, analysis, and link back to the thesis.`;
+}
+
+function moduleHighlightSummary(input: AssistRequest) {
+  const annotations = buildMockAnnotations(input.text);
+  const counts = annotations.reduce<Record<string, number>>((acc, annotation) => {
+    acc[annotation.label] = (acc[annotation.label] ?? 0) + 1;
+    return acc;
+  }, {});
+  const summary = Object.entries(counts).map(([label, count]) => `${count} ${label}`).join(", ");
+  return summary
+    ? `The current module contains these local highlight roles: ${summary}. Use the colors to check whether each sentence is doing the job you intended.`
+    : "No highlightable text was found yet. Add text or refresh highlighting first.";
+}
+
+function explainSelection(value: string) {
+  const annotation = buildMockAnnotations(value)[0];
+  const label = annotation?.label ?? "plain";
+  const trimmed = value.trim();
+  if (/^topic|research question/i.test(trimmed)) return "This highlight gives background/context because it names the topic or question the essay will answer.";
+  if (/thesis|this essay argues/i.test(trimmed)) return "This highlight functions as a thesis because it states the essay's arguable position.";
+  if (/\[citation needed\]|\[source needed/i.test(trimmed)) return "This highlight is an issue because the claim still needs real source support before submission.";
+  return `This selection appears to function as ${label} writing. Check whether that matches your intent, then relabel it if needed.`;
+}
+
+function excerpt(value: string) {
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  return cleaned.length > 220 ? `${cleaned.slice(0, 217)}...` : cleaned;
 }
 
 function mockAssistantChinese(value: string) {

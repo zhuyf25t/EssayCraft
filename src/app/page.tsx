@@ -7,15 +7,16 @@ import { FinishModal } from "@/components/FinishModal";
 import { HighlightKey } from "@/components/HighlightKey";
 import { ModuleSidebar } from "@/components/ModuleSidebar";
 import { PatchPopover } from "@/components/PatchPopover";
+import { PatchList } from "@/components/PatchList";
 import { ProgressTracker } from "@/components/ProgressTracker";
 import { SnapshotPanel } from "@/components/SnapshotPanel";
 import { SourceWorkbench } from "@/components/SourceWorkbench";
 import { Toolbar } from "@/components/Toolbar";
 import { TranslateModal } from "@/components/TranslateModal";
-import { normalizeAnnotations, normalizeText, sentenceRangeAt } from "@/lib/annotations";
+import { annotationAtOffset, normalizeAnnotations, normalizeText, sentenceRangeAt } from "@/lib/annotations";
 import { inTextCitationPreview } from "@/lib/citationAudit";
 import { copyRichText, downloadCurrentModuleHtml, downloadProjectJson } from "@/lib/export";
-import { repairPatchesForText } from "@/lib/patches";
+import { patchAtOffset, repairPatchesForText } from "@/lib/patches";
 import { MODULE_TITLES, addSnapshot, clearModule, importProject, replaceModuleContent, restoreSnapshot } from "@/lib/project";
 import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
 import { loadProject, resetProjectStorage, saveProject } from "@/lib/storage";
@@ -61,6 +62,7 @@ export default function Home() {
   const [translateMode, setTranslateMode] = useState<TranslateMode>("en-to-zh");
   const [editorResetKey, setEditorResetKey] = useState(0);
   const [rightTab, setRightTab] = useState<RightTab>("assistant");
+  const [editingPatchId, setEditingPatchId] = useState<string | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const currentModuleNumber = project?.currentModule;
 
@@ -87,6 +89,8 @@ export default function Home() {
 
   const patchQuote = currentDoc && patchRange ? currentDoc.text.slice(patchRange.start, patchRange.end) : "";
   const translateSourceText = currentDoc ? selectedText || currentDoc.text : "";
+  const activeAnnotation = currentDoc ? annotationAtOffset(currentDoc.annotations, selectedRange.start) : undefined;
+  const activePatch = currentDoc ? patchAtOffset(currentDoc.patches, selectedRange.start) : undefined;
 
   if (!project || !currentDoc) {
     return <main className="flex min-h-screen items-center justify-center text-slate-500">Loading EssayCraft...</main>;
@@ -146,27 +150,69 @@ export default function Home() {
 
   function handleOpenPatch(range: TextRange) {
     const nextRange = range.end > range.start ? range : sentenceRangeAt(activeDoc.text, range.start, range.end);
+    setEditingPatchId(null);
     setPatchRange(nextRange);
     setSelectedRange(nextRange);
   }
 
   function handlePatchSubmit(text: string) {
     if (!patchRange) return;
-    const patch: Patch = {
-      id: id("patch"),
-      anchorStart: patchRange.start,
-      anchorEnd: patchRange.end,
-      anchorQuote: activeDoc.text.slice(patchRange.start, patchRange.end),
-      text,
-      createdAt: nowIso()
-    };
+    if (editingPatchId) {
+      updateCurrentModule((doc) => ({
+        ...doc,
+        patches: doc.patches.map((patch) => patch.id === editingPatchId ? { ...patch, text, resolved: false, stale: false } : patch),
+        updatedAt: nowIso()
+      }));
+      setStatus("Patch updated.");
+    } else {
+      const patch: Patch = {
+        id: id("patch"),
+        anchorStart: patchRange.start,
+        anchorEnd: patchRange.end,
+        anchorQuote: activeDoc.text.slice(patchRange.start, patchRange.end),
+        text,
+        createdAt: nowIso(),
+        resolved: false,
+        stale: false
+      };
+      updateCurrentModule((doc) => ({
+        ...doc,
+        patches: [patch, ...doc.patches],
+        updatedAt: nowIso()
+      }));
+      setStatus("Patch saved. Refresh or ask the assistant to use it.");
+    }
+    setEditingPatchId(null);
+    setPatchRange(null);
+  }
+
+  function jumpToPatch(patch: Patch) {
+    setSelectedRange({ start: patch.anchorStart, end: patch.anchorEnd });
+    setStatus(patch.stale ? "Patch needs re-anchor. Edit or recreate it on the current text." : "Patch anchor selected.");
+  }
+
+  function editPatch(patch: Patch) {
+    setSelectedRange({ start: patch.anchorStart, end: patch.anchorEnd });
+    setPatchRange({ start: patch.anchorStart, end: patch.anchorEnd });
+    setEditingPatchId(patch.id);
+  }
+
+  function toggleResolvePatch(patch: Patch) {
     updateCurrentModule((doc) => ({
       ...doc,
-      patches: [patch, ...doc.patches],
+      patches: doc.patches.map((item) => item.id === patch.id ? { ...item, resolved: !item.resolved, stale: false } : item),
       updatedAt: nowIso()
     }));
-    setPatchRange(null);
-    setStatus("Patch saved. Refresh or ask the assistant to use it.");
+    setStatus(patch.resolved ? "Patch reopened." : "Patch resolved.");
+  }
+
+  function deletePatch(patch: Patch) {
+    updateCurrentModule((doc) => ({
+      ...doc,
+      patches: doc.patches.filter((item) => item.id !== patch.id),
+      updatedAt: nowIso()
+    }));
+    setStatus("Patch deleted.");
   }
 
   async function handleRefresh() {
@@ -325,6 +371,7 @@ export default function Home() {
     updateProject((prev) => ({ ...prev, currentModule: moduleNumber }));
     setSelectedRange(EMPTY_RANGE);
     setPatchRange(null);
+    setEditingPatchId(null);
     setAssistantSuggestion(undefined);
     resetEditorViewport();
     setLastAction({ tone: "info", message: `Viewing Module ${moduleNumber}: ${MODULE_TITLES[moduleNumber]}.` });
@@ -335,6 +382,7 @@ export default function Home() {
     updateCurrentModule((doc) => clearModule(doc));
     setSelectedRange(EMPTY_RANGE);
     setPatchRange(null);
+    setEditingPatchId(null);
     resetEditorViewport();
     setStatus(`Module ${activeProject.currentModule} cleared. Restore is available from snapshots.`);
   }
@@ -345,6 +393,7 @@ export default function Home() {
     setProject(loadProject());
     setSelectedRange(EMPTY_RANGE);
     setPatchRange(null);
+    setEditingPatchId(null);
     setAssistantSuggestion(undefined);
     resetEditorViewport();
     setStatus("Demo reset.");
@@ -373,11 +422,12 @@ export default function Home() {
     try {
       const text = await file.text();
       const imported = importProject(JSON.parse(text));
-      if (!window.confirm(`Import "${imported.title}" and replace the current project? A JSON backup will download first.`)) return;
+      if (!window.confirm(`Import full project JSON "${imported.title}" and replace the entire local EssayCraft project? A JSON backup will download first.`)) return;
       downloadProjectJson(activeProject);
       setProject(imported);
       setSelectedRange(EMPTY_RANGE);
       setPatchRange(null);
+      setEditingPatchId(null);
       setAssistantSuggestion(undefined);
       resetEditorViewport();
       setStatus("Project JSON imported.");
@@ -499,6 +549,13 @@ export default function Home() {
 
   async function handleAssist(action: string) {
     const hasSelection = selectedRange.end > selectedRange.start;
+    const useActiveAnnotation = !hasSelection && activeAnnotation && /highlight|relabel/i.test(action);
+    const submittedRange = hasSelection
+      ? selectedRange
+      : useActiveAnnotation
+        ? { start: activeAnnotation.start, end: activeAnnotation.end }
+        : undefined;
+    const submittedText = submittedRange ? activeDoc.text.slice(submittedRange.start, submittedRange.end) : undefined;
     const steps = ["Preparing context", "Drafting suggestion", "Preview ready"];
     setLoading(true);
     setProgress(steps, steps[0]);
@@ -516,8 +573,8 @@ export default function Home() {
           annotations: activeDoc.annotations,
           patches: activeDoc.patches,
           sources: activeDoc.sources,
-          selectedRange: hasSelection ? selectedRange : undefined,
-          selectedText: hasSelection ? selectedText : undefined,
+          selectedRange: submittedRange,
+          selectedText: submittedText,
           action,
           history: activeProject.assistantHistory
         })
@@ -580,7 +637,7 @@ export default function Home() {
       }
       return {
         ...snapDoc,
-        annotations: normalizeAnnotations(snapDoc.text, assistantSuggestion.annotations),
+        annotations: mergeAnnotationSuggestions(snapDoc.text, snapDoc.annotations, assistantSuggestion.annotations),
         updatedAt: nowIso()
       };
     });
@@ -687,7 +744,7 @@ export default function Home() {
             onDownloadHtml={handleDownloadHtml}
             onDownloadJson={() => {
               downloadProjectJson(activeProject);
-              setStatus("Project JSON downloaded.");
+              setStatus("Full project JSON downloaded with all six modules.");
             }}
             onImportJson={handleImportJsonClick}
             onResetDemo={handleResetDemo}
@@ -708,8 +765,12 @@ export default function Home() {
                 <PatchPopover
                   range={patchRange}
                   anchorQuote={patchQuote}
+                  initialValue={editingPatchId ? activeDoc.patches.find((patch) => patch.id === editingPatchId)?.text ?? "" : ""}
                   onSubmit={handlePatchSubmit}
-                  onClose={() => setPatchRange(null)}
+                  onClose={() => {
+                    setPatchRange(null);
+                    setEditingPatchId(null);
+                  }}
                 />
               ) : null}
 
@@ -726,23 +787,13 @@ export default function Home() {
                 />
               </div>
 
-              {activeDoc.patches.length ? (
-                <section className="panel max-h-24 shrink-0 overflow-auto py-3">
-                  <h2 className="mb-2 text-sm font-semibold text-slate-800">Patch notes</h2>
-                  <div className="flex flex-wrap gap-2">
-                    {activeDoc.patches.map((patch) => (
-                      <button
-                        key={patch.id}
-                        className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1 text-left text-xs text-blue-800"
-                        onClick={() => setSelectedRange({ start: patch.anchorStart, end: patch.anchorEnd })}
-                        title={patch.anchorQuote}
-                      >
-                        {patch.text}
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
+              <PatchList
+                patches={activeDoc.patches}
+                onJump={jumpToPatch}
+                onEdit={editPatch}
+                onResolve={toggleResolvePatch}
+                onDelete={deletePatch}
+              />
             </div>
 
             <aside data-testid="right-rail" className="min-h-0 overflow-hidden pr-1">
@@ -766,12 +817,15 @@ export default function Home() {
                     <AssistantPanel
                       selectedText={selectedText}
                       selectedRange={selectedRange}
+                      activeAnnotation={activeAnnotation}
+                      activePatch={activePatch}
                       loading={loading}
                       suggestion={assistantSuggestion}
                       onAction={handleAssist}
                       onApply={handleApplyAssistant}
                       onDismiss={() => setAssistantSuggestion(undefined)}
                       onRefresh={handleRefresh}
+                      onAddPatchForRange={handleOpenPatch}
                     />
                   </div>
                   <div id="right-panel-sources" role="tabpanel" aria-label="Sources" hidden={rightTab !== "sources"}>
@@ -800,7 +854,7 @@ export default function Home() {
                       onDownloadHtml={handleDownloadHtml}
                       onDownloadJson={() => {
                         downloadProjectJson(activeProject);
-                        setStatus("Project JSON downloaded.");
+                        setStatus("Full project JSON downloaded with all six modules.");
                       }}
                       onImportJson={handleImportJsonClick}
                       onReferenceTranslation={openTranslate}
@@ -825,7 +879,7 @@ export default function Home() {
         onDownloadJson={() => {
           downloadProjectJson(activeProject);
           setFinishOpen(false);
-          setStatus("Project JSON downloaded.");
+          setStatus("Full project JSON downloaded with all six modules.");
         }}
       />
       <TranslateModal
@@ -894,13 +948,13 @@ function ExportPanel({
       <div className="grid gap-2">
         <button className="btn-primary text-left" onClick={onDownloadHtml}>{moduleSix ? "Finalize / Export HTML" : "Download HTML"}</button>
         <button className="btn-secondary text-left" onClick={onCopyRichText}>Copy Rich Text</button>
-        <button className="btn-secondary text-left" onClick={onDownloadJson}>Download JSON</button>
-        <button className="btn-secondary text-left" onClick={onImportJson}>Import JSON</button>
+        <button className="btn-secondary text-left" onClick={onDownloadJson}>Download full project JSON</button>
+        <button className="btn-secondary text-left" onClick={onImportJson}>Import full project JSON</button>
         <button className="btn-secondary text-left" onClick={onReferenceTranslation}>Reference Translation</button>
       </div>
 
       <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
-        JSON export includes schema version, project title/topic/current module, six module documents, annotations, patches, snapshots, sources, assistant history, and timestamps. It never includes API keys.
+        Full project JSON includes all 6 modules, annotations, patches, snapshots, sources, and assistant history. Import replaces the whole local project after downloading a backup. It never includes API keys.
       </p>
     </section>
   );
@@ -917,6 +971,18 @@ function mergeSources(primary: SourceCard[], secondary: SourceCard[]) {
   }
 
   return result;
+}
+
+function mergeAnnotationSuggestions(text: string, existing: ModuleDocument["annotations"], suggestions: ModuleDocument["annotations"]) {
+  if (!suggestions.length) return normalizeAnnotations(text, existing);
+  const filtered = existing.filter((annotation) =>
+    !suggestions.some((suggestion) => rangesOverlap(annotation.start, annotation.end, suggestion.start, suggestion.end))
+  );
+  return normalizeAnnotations(text, [...filtered, ...suggestions]);
+}
+
+function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {
+  return aStart < bEnd && bStart < aEnd;
 }
 
 function extractModuleOneQuestion(text: string) {

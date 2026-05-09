@@ -105,8 +105,8 @@ export function Toolbar(props: ToolbarProps) {
             <PanelGroup label="Export">
               <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onCopyRichText)} disabled={props.loading}>Copy Rich Text</button>
               <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onDownloadHtml)} disabled={props.loading}>Download HTML</button>
-              <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onDownloadJson)} disabled={props.loading}>Download JSON</button>
-              <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onImportJson)} disabled={props.loading}>Import JSON</button>
+              <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onDownloadJson)} disabled={props.loading}>Download full project JSON</button>
+              <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onImportJson)} disabled={props.loading}>Import full project JSON</button>
             </PanelGroup>
             <PanelGroup label="Tools">
               <button className="btn-secondary w-full py-1.5 text-left" onClick={() => run(props.onTranslate)} disabled={props.loading}>Reference Translation</button>

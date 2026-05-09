@@ -8,10 +8,18 @@ export function repairPatchesForText(text: string, patches: Patch[]) {
 
 export function repairPatchForText(text: string, patch: Patch): Patch | null {
   const quote = patch.anchorQuote.trim();
-  if (!quote) return null;
+  if (!quote) {
+    const caret = Math.max(0, Math.min(text.length, patch.anchorStart));
+    return {
+      ...patch,
+      anchorStart: caret,
+      anchorEnd: caret,
+      stale: false
+    };
+  }
 
   const currentSlice = text.slice(patch.anchorStart, patch.anchorEnd);
-  if (currentSlice === patch.anchorQuote) return patch;
+  if (currentSlice === patch.anchorQuote) return { ...patch, stale: false };
 
   const found = text.indexOf(quote);
   if (found >= 0) {
@@ -19,16 +27,17 @@ export function repairPatchForText(text: string, patch: Patch): Patch | null {
       ...patch,
       anchorStart: found,
       anchorEnd: found + quote.length,
-      anchorQuote: text.slice(found, found + quote.length)
+      anchorQuote: text.slice(found, found + quote.length),
+      stale: false
     };
   }
 
   return {
     ...patch,
-    resolved: true
+    stale: true
   };
 }
 
 export function patchAtOffset(patches: Patch[], offset: number) {
-  return patches.find((patch) => offset >= patch.anchorStart && offset < patch.anchorEnd);
+  return patches.find((patch) => !patch.resolved && offset >= patch.anchorStart && offset <= patch.anchorEnd);
 }

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { RefreshResponse } from "@/types/essaycraft";
+import type { Annotation, Patch, RefreshResponse } from "@/types/essaycraft";
 import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
 import { buildMockAnnotations, exactAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
 import { buildRefreshMessages } from "@/lib/prompts";
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const input = refreshRequestSchema.parse(json);
 
     if (!hasAiKey()) {
-      return NextResponse.json(mockRefresh(input.text, "Mock refresh completed locally because no API key is configured."));
+      return NextResponse.json(mockRefresh(input.text, input.patches, "Mock refresh completed locally because no API key is configured."));
     }
 
     try {
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json(normalized);
     } catch (aiError) {
-      const fallback = mockRefresh(input.text, "Fallback refresh completed locally because the configured AI provider was unavailable.");
+      const fallback = mockRefresh(input.text, input.patches, "Fallback refresh completed locally because the configured AI provider was unavailable.");
       fallback.warnings.push(`DeepSeek refresh unavailable; used mock labels. ${aiError instanceof Error ? aiError.message : ""}`.trim());
       return NextResponse.json(fallback);
     }
@@ -47,12 +47,45 @@ export async function POST(request: Request) {
   }
 }
 
-function mockRefresh(text: string, message: string): RefreshResponse {
-  const annotations = normalizeAnnotations(text, [...buildMockAnnotations(text), ...findIssueRanges(text)]);
+function mockRefresh(text: string, patches: Patch[], message: string): RefreshResponse {
+  const patchAnnotations = annotationsFromPatches(text, patches);
+  const annotations = normalizeAnnotations(text, [...patchAnnotations, ...buildMockAnnotations(text), ...findIssueRanges(text)]);
 
   return {
     annotations,
     globalFeedback: [message],
     warnings: []
   };
+}
+
+function annotationsFromPatches(text: string, patches: Patch[]): Annotation[] {
+  const result: Annotation[] = [];
+  for (const patch of patches) {
+    if (patch.resolved || patch.stale || patch.anchorEnd <= patch.anchorStart || patch.anchorEnd > text.length) continue;
+    const lower = patch.text.toLowerCase();
+    if (lower.includes("analysis") && lower.includes("not evidence")) {
+      result.push({
+        id: `patch-analysis-${patch.id}`,
+        start: patch.anchorStart,
+        end: patch.anchorEnd,
+        text: text.slice(patch.anchorStart, patch.anchorEnd),
+        label: "analysis",
+        confidence: 0.82,
+        comment: `Patch request: ${patch.text}`
+      });
+      continue;
+    }
+    if (lower.includes("source") || lower.includes("citation")) {
+      result.push({
+        id: `patch-source-${patch.id}`,
+        start: patch.anchorStart,
+        end: patch.anchorEnd,
+        text: text.slice(patch.anchorStart, patch.anchorEnd),
+        label: "issue",
+        confidence: 0.82,
+        comment: "Patch asks for stronger source support. Add a real source card; EssayCraft will not invent one."
+      });
+    }
+  }
+  return result;
 }
