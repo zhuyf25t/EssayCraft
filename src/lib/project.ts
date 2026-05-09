@@ -36,19 +36,19 @@ const SAMPLE_MODULE_2 = `Research plan for: How can we strike a healthier social
 Working thesis: A healthier social media balance is possible when users build intentional habits, platforms redesign engagement systems, and schools teach stronger digital literacy.
 
 Argument branch 1: Intentional user habits can reduce passive scrolling, distraction, and comparison.
-Evidence needed: Scholarly or professional source about anxiety, attention, or sleep [citation needed].
+Evidence needed: Scholarly or professional source about anxiety, attention, or sleep [source needed: passive scrolling, attention, sleep, or youth wellbeing].
 Possible source type: scholarly article / professional report
 Search keywords: social media habits; adolescent attention; sleep; anxiety
 Source status: source needed
 
 Argument branch 2: Platform design choices shape what users see and how long they stay engaged.
-Evidence needed: Source on algorithms, notifications, or engagement design [citation needed].
+Evidence needed: Source on algorithms, notifications, or engagement design [source needed: algorithms, notifications, or engagement design].
 Possible source type: professional technology report / scholarly article
 Search keywords: social media algorithms; engagement design; notifications
 Source status: source needed
 
 Argument branch 3: Digital literacy can help students use social media critically rather than passively.
-Evidence needed: Education-focused source about digital literacy programs [citation needed].
+Evidence needed: Education-focused source about digital literacy programs [source needed: digital literacy or media education].
 Possible source type: government report / scholarly article
 Search keywords: digital literacy; media education; social media wellbeing
 Source status: source needed
@@ -65,12 +65,12 @@ const SAMPLE_MODULE_3 = `Introduction
 
 Body paragraph 1
 - Topic sentence: Individual habits can reduce the most harmful patterns of use.
-- Evidence: Screen-time research or mental health study [citation needed].
+- Evidence: Screen-time research or mental health study [source needed: screen-time or mental health study].
 - Analysis: Explain how habits such as no-phone study time or app limits reduce passive scrolling.
 
 Body paragraph 2
 - Topic sentence: Platforms also have responsibility because their designs shape user behaviour.
-- Evidence: Source on algorithms, engagement design, or notifications [citation needed].
+- Evidence: Source on algorithms, engagement design, or notifications [source needed: platform design source].
 - Analysis: Explain why design changes are needed beyond individual self-control.
 
 Counterargument

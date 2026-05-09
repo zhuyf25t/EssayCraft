@@ -163,7 +163,9 @@ export function SourceWorkbench({
 
       <div className="mt-4 space-y-2">
         {sources.length === 0 ? (
-          <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">No source cards yet. Create a source need from an evidence claim, or add a real source you found.</p>
+          <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
+            No source cards yet. Add a real source you found, such as a scholarly article title, author, year, and a note about which claim it supports. Source needs are planning reminders, not references.
+          </p>
         ) : (
           sources.map((source) => {
             const inText = inTextCitationPreview(source);
@@ -177,14 +179,14 @@ export function SourceWorkbench({
                 </div>
                 <div className="mt-1 text-slate-500">{source.authors?.join(", ") || "No authors"} {source.year ? `(${source.year})` : ""}</div>
                 <div className="mt-2 rounded-md bg-white p-2 text-slate-600">
-                  <div>In-text preview: {inText || "[missing author/year]"}</div>
-                  <div>Reference preview: {referencePreview(source)}</div>
+                  <div>In-text preview: {source.placeholder ? "Not available until this is a real source card." : inText || "[missing author/year]"}</div>
+                  <div>Reference preview: {source.placeholder ? "No reference entry. Replace this source need with student-supplied metadata first." : referencePreview(source)}</div>
                   <div>CARS: {carsSummary(source)}</div>
-                  <div className="mt-1 text-amber-700">Draft from your source card, not verified by EssayCraft.</div>
+                  <div className="mt-1 text-amber-700">Built only from student-supplied metadata. Not verified by EssayCraft.</div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button className="rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-600 disabled:opacity-50" onClick={() => onToggleVerified(source.id)} disabled={source.placeholder || !source.title || !source.authors?.length || !source.year}>
-                    {source.verified ? "Student checked metadata" : "I checked source details"}
+                    {source.verified ? "Student reviewed metadata" : "I reviewed this metadata"}
                   </button>
                   <button data-testid="source-insert-citation" className="rounded-md border border-blue-100 bg-white px-2 py-1 text-blue-700 disabled:opacity-50" onClick={() => onInsertCitation(source)} disabled={!inText || source.placeholder}>
                     Insert citation
