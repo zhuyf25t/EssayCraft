@@ -89,15 +89,18 @@ test("toolbar hierarchy stays visible without global page scroll", async ({ page
       const toolbar = document.querySelector('[data-testid="action-toolbar"]') as HTMLElement;
       const generate = document.querySelector('[data-testid="workflow-generate"]') as HTMLElement;
       const key = document.querySelector('[data-testid="highlight-key"]') as HTMLElement;
+      const progress = document.querySelector('[data-testid="module-progress"]') as HTMLElement;
       const toolbarRect = toolbar.getBoundingClientRect();
       const generateRect = generate.getBoundingClientRect();
       const keyRect = key.getBoundingClientRect();
+      const progressRect = progress.getBoundingClientRect();
       return {
         toolbarLeft: toolbarRect.left,
         toolbarRight: toolbarRect.right,
         generateTop: generateRect.top,
         generateRight: generateRect.right,
         keyBottom: keyRect.bottom,
+        progressHeight: progressRect.height,
         documentOverflow: document.documentElement.scrollHeight - window.innerHeight
       };
     });
@@ -106,8 +109,11 @@ test("toolbar hierarchy stays visible without global page scroll", async ({ page
     expect(metrics.generateTop).toBeGreaterThanOrEqual(0);
     expect(metrics.generateRight).toBeLessThanOrEqual(viewport.width + 1);
     expect(metrics.keyBottom).toBeLessThanOrEqual(viewport.height + 1);
+    expect(metrics.progressHeight).toBeLessThanOrEqual(44);
     expect(metrics.documentOverflow).toBeLessThanOrEqual(4);
   }
+  await expect(page.getByTestId("compact-progress-circles")).toBeVisible();
+  await expect(page.getByText("Module progress")).toHaveCount(0);
 });
 
 test("right panel tabs and More tools keep secondary work organized", async ({ page }) => {
@@ -193,7 +199,7 @@ ${Array.from({ length: 28 }, (_, index) => `Planning note ${index + 1}: AI study
   await expect(generateButton(page, 1)).toBeEnabled();
   await generateButton(page, 1).click();
 
-  await expect(page.getByText("Module 2 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Module 2 of 6/)).toBeVisible({ timeout: 20_000 });
   await expectEditorAtTop(page);
   await expect(editor(page)).toHaveValue(/Research plan for: AI study tools[\s\S]*Argument branch 1[\s\S]*\n\nArgument branch 2/);
   await expect(page.getByTestId("last-action")).toContainText("Module 2 generated and opened. Previous Module 2 saved as a snapshot.");
@@ -231,7 +237,7 @@ Counterargument to investigate: Some people argue that technology is becoming le
 
   await generateButton(page, 2).click();
 
-  await expect(page.getByText("Module 3 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Module 3 of 6/)).toBeVisible({ timeout: 20_000 });
   await expectEditorAtTop(page);
   const value = await editor(page).inputValue();
   expect(value.startsWith("Introduction plan")).toBe(true);
@@ -260,12 +266,12 @@ Thesis map:
 - Reason 3: Ethical design is needed to prevent dependency and privacy harms.`);
 
   await generateButton(page, 1).click();
-  await expect(page.getByText("Module 2 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Module 2 of 6/)).toBeVisible({ timeout: 20_000 });
   await expect(editor(page)).toHaveValue(/technology and humanity/i);
   await expect(editor(page)).not.toHaveValue(/social media/i);
 
   await generateButton(page, 2).click();
-  await expect(page.getByText("Module 3 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Module 3 of 6/)).toBeVisible({ timeout: 20_000 });
   await expect(editor(page)).toHaveValue(/technology and humanity|human-centered design/i);
   await expect(editor(page)).not.toHaveValue(/social media/i);
 });
@@ -316,7 +322,7 @@ Conclusion plan
   });
   await generateButton(page, 3).click();
 
-  await expect(page.getByText("Module 4 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Module 4 of 6/)).toBeVisible({ timeout: 20_000 });
   await expectEditorAtTop(page);
   const value = await editor(page).inputValue();
   expect(value.startsWith("Social media")).toBe(true);
@@ -348,7 +354,7 @@ test("empty source module shows a friendly Generate Next error", async ({ page }
   await generateButton(page, 4).click();
 
   await expect(page.getByTestId("last-action")).toContainText("Add content to Module 4 before generating Module 5.");
-  await expect(page.getByText("Module 4 of 6", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Module 4 of 6/)).toBeVisible();
   const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(state.currentModule).toBe(4);
   expect(state.modules["5"].text).toBe("");
@@ -367,7 +373,7 @@ test("refresh highlighting preserves exact editor text", async ({ page }) => {
 });
 
 test("Translate preview shows Chinese mock output without changing the document", async ({ page }) => {
-  const original = "Topic: Campus notification habits.\n\nQuestion: How can schools reduce distraction while keeping students connected?";
+  const original = "Topic: Campus notification habits.\n\nQuestion: How can schools reduce distraction while keeping students connected?\n\nEvidence note: This claim needs support [citation needed].\n\nResearch plan marker: Add a study [source needed].";
   await editor(page).fill(original);
   const beforeState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   const beforeSnapshots = beforeState.modules["1"].snapshots.length;
@@ -376,11 +382,18 @@ test("Translate preview shows Chinese mock output without changing the document"
   const dialog = page.getByTestId("translate-dialog");
   await expect(dialog.getByRole("heading", { name: "Reference Translation" })).toBeVisible();
   await dialog.locator("select").selectOption("auto-to-zh");
-  await page.getByRole("button", { name: "Create Preview" }).click();
+  await page.getByRole("button", { name: "Create preview" }).click();
   const translation = dialog.locator("pre").last();
   await expect(translation).toContainText(/[\u4e00-\u9fff]/);
   await expect(translation).not.toContainText("Campus notification habits");
   await expect(translation).not.toContainText("How can schools reduce distraction");
+  await expect(translation).toContainText("[citation needed]");
+  await expect(translation).toContainText("[source needed]");
+  for (const banned of ["中文参考翻译", "这句话讨论了", "这句话强调", "核心论点是", "本地参考翻译", "译文:"]) {
+    await expect(translation).not.toContainText(banned);
+  }
+  const translatedText = await translation.textContent();
+  expect((translatedText?.match(/\n\s*\n/g) ?? []).length).toBeGreaterThanOrEqual(2);
   await expect(page.getByRole("button", { name: "Apply translation" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Copy translation" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Send to Assistant" })).toBeVisible();
@@ -422,14 +435,33 @@ test("Translate modal does not corrupt editor scroll position", async ({ page })
 test("assistant uses selection context and dismisses preview without changing text", async ({ page }) => {
   const original = "Working thesis: Social media balance requires intentional habits and platform responsibility.";
   await editor(page).fill(original);
+  await expect(page.getByRole("button", { name: "Translate selected text" })).toBeDisabled();
   await editor(page).selectText();
 
   await expect(page.getByText(new RegExp(`Range 0-${original.length}`))).toBeVisible();
   await expect(page.getByRole("button", { name: "Ask" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Translate selected text" })).toBeEnabled();
   await page.getByRole("button", { name: "Rewrite selected passage" }).click();
   await expect(page.getByText("Preview ready")).toBeVisible({ timeout: 20_000 });
   await page.getByRole("button", { name: "Dismiss" }).click();
   await expect(editor(page)).toHaveValue(original);
+});
+
+test("selected text translation stays in Assistant until preview apply", async ({ page }) => {
+  const original = "Social media balance requires intentional habits.";
+  await editor(page).fill(original);
+  await selectEditorRange(page, 0, "Social media balance".length);
+
+  await page.getByRole("button", { name: "Translate selected text" }).click();
+  await expect(page.getByText("Preview ready", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator("pre").filter({ hasText: /[\u4e00-\u9fff]/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Apply to selection" })).toBeVisible();
+  await expect(editor(page)).toHaveValue(original);
+
+  await page.getByRole("button", { name: "Apply to selection" }).click();
+  await expect(editor(page)).toHaveValue(/[\u4e00-\u9fff]/);
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(state.modules["1"].snapshots[0].text).toBe(original);
 });
 
 test("assistant apply snapshots selected replacement and blocks stale ranges", async ({ page }) => {
@@ -458,13 +490,13 @@ test("Module 5 citation check and Module 6 final export workflow are clear", asy
   await moduleButton(page, 4, "Drafting").click();
   await editor(page).fill("This draft makes a factual research claim about attention and wellbeing [citation needed].\n\nThe conclusion returns to the thesis.");
   await generateButton(page, 4).click();
-  await expect(page.getByText("Module 5 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Module 5 of 6/)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("tab", { name: /Sources/i })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("module5-citation-checklist")).toContainText("Referencing / Citation Check checklist");
   await expect(page.getByTestId("module5-citation-checklist")).toContainText("Any [citation needed] markers?");
 
   await generateButton(page, 5).click();
-  await expect(page.getByText("Module 6 of 6", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(/Module 6 of 6/)).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("tab", { name: /Export/i })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByTestId("module6-final-checklist")).toContainText("Final review checklist");
   await expect(page.getByText("Generate Module 7 from Module 6")).toHaveCount(0);
