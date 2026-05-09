@@ -7,6 +7,8 @@ type ToolbarProps = {
   currentModule: ModuleNumber;
   loading: boolean;
   status: string;
+  toastVisible: boolean;
+  canUndo: boolean;
   hasOpenPatches: boolean;
   lastAction: {
     tone: "info" | "success" | "error" | "warning";
@@ -19,6 +21,7 @@ type ToolbarProps = {
   onFinalizeExport: () => void;
   onRetryGenerate: () => void;
   onRefresh: () => void;
+  onUndo: () => void;
 };
 
 export function Toolbar(props: ToolbarProps) {
@@ -52,14 +55,6 @@ export function Toolbar(props: ToolbarProps) {
         </button>
 
         <div className="ml-auto flex min-w-0 items-center gap-2">
-          <div
-            data-testid="toolbar-status"
-            className={`max-w-[22rem] truncate rounded-full border px-3 py-1 text-right text-xs ${statusClasses(props.lastAction.tone)}`}
-            title={statusText}
-            aria-live="polite"
-          >
-            {statusText}
-          </div>
           {hasDetails ? (
             <button
               type="button"
@@ -73,6 +68,22 @@ export function Toolbar(props: ToolbarProps) {
           ) : null}
         </div>
       </div>
+
+      {props.toastVisible && statusText !== "Saved" ? (
+        <div
+          data-testid="toolbar-status"
+          className={`absolute right-3 top-[calc(100%+0.25rem)] z-30 flex max-w-[26rem] items-center gap-2 truncate rounded-full border px-3 py-1 text-xs shadow-sm ${statusClasses(props.lastAction.tone)}`}
+          title={statusText}
+          aria-live="polite"
+        >
+          <span className="truncate">{statusText}</span>
+          {props.canUndo ? (
+            <button type="button" className="rounded-full bg-white/80 px-2 py-0.5 font-semibold text-slate-700 hover:bg-white" onClick={props.onUndo}>
+              Undo
+            </button>
+          ) : null}
+        </div>
+      ) : null}
 
       {detailsOpen && hasDetails ? (
         <div data-testid="status-details-popover" className="absolute right-3 top-[calc(100%+0.35rem)] w-[min(26rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-lg">

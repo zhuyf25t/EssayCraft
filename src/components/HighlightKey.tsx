@@ -12,18 +12,23 @@ const CHIP_COLORS: Partial<Record<SegmentLabel, string>> = {
   issue: "#fca5a5"
 };
 
-export function HighlightKey() {
+export function HighlightKey({ activeLabel }: { activeLabel?: SegmentLabel }) {
   return (
-    <footer data-testid="highlight-key" className="shrink-0 overflow-x-auto border-t border-slate-200 bg-[#fffefb]/95 px-4 py-1.5">
-      <div className="flex min-h-7 w-max items-center gap-2 whitespace-nowrap text-[11px] text-slate-700">
-        <span className="mr-1 font-semibold text-slate-800">Highlight Key</span>
+    <section data-testid="highlight-key" className="shrink-0 rounded-lg border border-slate-200 bg-[#fffefb]/95 p-1">
+      <div className="mb-0.5 text-[10px] font-bold text-slate-800">Highlight Key</div>
+      <div className="grid grid-cols-1 gap-px text-[9px] text-slate-700">
         {LABEL_ORDER.filter((label) => label !== "plain").map((label) => (
-          <span key={label} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2 py-1 shadow-sm" title={LABELS[label].description}>
-            <span className="h-3 w-7 rounded-full border border-slate-300" style={{ backgroundColor: CHIP_COLORS[label] }} />
+          <span
+            key={label}
+            data-testid={`highlight-key-${label}`}
+            className={`inline-flex items-center gap-1 rounded-full border bg-white px-1.5 py-0 shadow-sm ${activeLabel === label ? "border-black ring-1 ring-black" : "border-slate-200"}`}
+            title={LABELS[label].description}
+          >
+            <span className="h-2 w-5 rounded-full border border-slate-300" style={{ backgroundColor: CHIP_COLORS[label] }} />
             <span>{LABELS[label].name}</span>
           </span>
         ))}
       </div>
-    </footer>
+    </section>
   );
 }
