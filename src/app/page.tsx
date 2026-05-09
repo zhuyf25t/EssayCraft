@@ -22,6 +22,7 @@ import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/sch
 import { loadProject, resetProjectStorage, saveProject } from "@/lib/storage";
 import { clampModule, id, nowIso } from "@/lib/utils";
 import type {
+  AssistantMessage,
   AssistResponse,
   GenerateNextResponse,
   ModuleDocument,
@@ -47,6 +48,8 @@ type LastAction = {
   retryGenerate?: boolean;
 };
 
+type AssistIntent = "chat" | "edit" | "inspect";
+
 export default function Home() {
   const [project, setProject] = useState<Project | null>(null);
   const [selectedRange, setSelectedRange] = useState<TextRange>(EMPTY_RANGE);
@@ -65,6 +68,7 @@ export default function Home() {
   const [editorResetKey, setEditorResetKey] = useState(0);
   const [rightTab, setRightTab] = useState<RightTab>("assistant");
   const [editingPatchId, setEditingPatchId] = useState<string | null>(null);
+  const [assistantModeRequest, setAssistantModeRequest] = useState<{ mode: "chat" | "selection" | "inspect"; id: number }>({ mode: "chat", id: 0 });
   const importInputRef = useRef<HTMLInputElement>(null);
   const currentModuleNumber = project?.currentModule;
 
@@ -93,8 +97,10 @@ export default function Home() {
   const translateSourceText = currentDoc ? selectedText || currentDoc.text : "";
   const activeSentenceText = currentDoc && activeSentenceRange ? currentDoc.text.slice(activeSentenceRange.start, activeSentenceRange.end) : "";
   const editRange = selectedRange.end > selectedRange.start ? selectedRange : activeSentenceRange;
-  const activeAnnotation = currentDoc ? annotationAtOffset(currentDoc.annotations, selectedRange.start) : undefined;
-  const activePatch = currentDoc ? patchAtOffset(currentDoc.patches, selectedRange.start) : undefined;
+  const activeOffset = selectedRange.end > selectedRange.start ? selectedRange.start : activeSentenceRange?.start ?? selectedRange.start;
+  const hasEditorContext = selectedRange.end > selectedRange.start || Boolean(activeSentenceRange) || selectedRange.start > 0;
+  const activeAnnotation = currentDoc && hasEditorContext ? annotationAtOffset(currentDoc.annotations, activeOffset) : undefined;
+  const activePatch = currentDoc && hasEditorContext ? patchAtOffset(currentDoc.patches, activeOffset) : undefined;
   const activePatchCount = currentDoc && editRange
     ? currentDoc.patches.filter((patch) => !patch.resolved && rangesOverlap(patch.anchorStart, patch.anchorEnd, editRange.start, editRange.end)).length
     : 0;
@@ -129,6 +135,20 @@ export default function Home() {
     });
   }
 
+  function appendAssistantHistory(messages: Array<Omit<AssistantMessage, "id" | "createdAt">>) {
+    updateProject((prev) => ({
+      ...prev,
+      assistantHistory: [
+        ...prev.assistantHistory,
+        ...messages.map((message) => ({
+          ...message,
+          id: id("msg"),
+          createdAt: nowIso()
+        }))
+      ].slice(-40)
+    }));
+  }
+
   function setProgress(steps: string[], step: string) {
     setActionSteps(steps);
     setActiveStep(step);
@@ -141,6 +161,10 @@ export default function Home() {
 
   function resetEditorViewport() {
     setEditorResetKey((value) => value + 1);
+  }
+
+  function requestAssistantMode(mode: "chat" | "selection" | "inspect") {
+    setAssistantModeRequest((request) => ({ mode, id: request.id + 1 }));
   }
 
   function handleTextChange(value: string) {
@@ -564,22 +588,37 @@ export default function Home() {
     setStatus("Marked the selected passage as needing a citation.");
   }
 
-  async function handleAssist(action: string) {
+  async function handleAssist(action: string, intent: AssistIntent) {
     const hasSelection = selectedRange.end > selectedRange.start;
-    const useActiveAnnotation = !hasSelection && activeAnnotation && /highlight|relabel/i.test(action);
-    const useActiveSentence = !hasSelection && !useActiveAnnotation && activeSentenceRange && /rewrite|academic|analysis|translate|revise|sentence|passage/i.test(action);
-    const submittedRange = hasSelection
-      ? selectedRange
-      : useActiveAnnotation
+    const requestAction = intent === "edit" && !/(rewrite|academic|analysis|translate|revise|sentence|passage)/i.test(action)
+      ? `Revise selected passage: ${action}`
+      : action;
+    const submittedRange = intent === "chat"
+      ? undefined
+      : intent === "inspect" && activeAnnotation
         ? { start: activeAnnotation.start, end: activeAnnotation.end }
-        : useActiveSentence
-          ? activeSentenceRange
-        : undefined;
+        : hasSelection
+          ? selectedRange
+          : activeSentenceRange;
     const submittedText = submittedRange ? activeDoc.text.slice(submittedRange.start, submittedRange.end) : undefined;
-    const steps = ["Preparing context", "Drafting suggestion", "Preview ready"];
+    const steps = ["Preparing context", intent === "chat" ? "Writing reply" : "Drafting preview", "Ready"];
+    const userMessage: Omit<AssistantMessage, "id" | "createdAt"> = { role: "user", text: action };
+
+    if (intent === "edit" && (!submittedRange || submittedRange.end <= submittedRange.start)) {
+      setStatus("Click a sentence or select text before asking for an edit preview.");
+      return;
+    }
+
+    if (intent === "chat") {
+      appendAssistantHistory([userMessage]);
+      requestAssistantMode("chat");
+    } else {
+      setAssistantSuggestion(undefined);
+      requestAssistantMode(intent === "inspect" ? "inspect" : "selection");
+    }
+
     setLoading(true);
     setProgress(steps, steps[0]);
-    setAssistantSuggestion(undefined);
     try {
       setProgress(steps, steps[1]);
       const response = await fetch("/api/assist", {
@@ -595,29 +634,44 @@ export default function Home() {
           sources: activeDoc.sources,
           selectedRange: submittedRange,
           selectedText: submittedText,
-          action,
-          history: activeProject.assistantHistory
+          action: requestAction,
+          history: intent === "chat"
+            ? [...activeProject.assistantHistory, { ...userMessage, id: id("pending"), createdAt: nowIso() }]
+            : activeProject.assistantHistory
         })
       });
       const data = (await response.json()) as AssistResponse & { error?: string };
-      if (!response.ok) throw new Error(data.error ?? "Assistant failed.");
+      if (!response.ok) throw new Error(data.error ?? "Copilot could not complete that request.");
       const anchoredData = data.replaceRange
         ? { ...data, originalText: activeDoc.text.slice(data.replaceRange.start, data.replaceRange.end) }
         : data;
       setProgress(steps, steps[2]);
-      setAssistantSuggestion(anchoredData);
       setRightTab("assistant");
-      updateProject((prev) => ({
-        ...prev,
-        assistantHistory: [
-          { id: id("msg"), role: "user" as const, text: action, createdAt: nowIso() },
-          { id: id("msg"), role: "assistant" as const, text: anchoredData.reply, createdAt: nowIso() },
-          ...prev.assistantHistory
-        ].slice(0, 30)
-      }));
-      setStatus("Assistant preview ready.");
+
+      if (intent === "chat" || anchoredData.kind === "chat") {
+        appendAssistantHistory([{
+          role: "assistant",
+          text: anchoredData.reply,
+          providerMode: anchoredData.providerMode,
+          warnings: anchoredData.warnings
+        }]);
+        setAssistantSuggestion(undefined);
+        setStatus("Copilot replied.");
+      } else {
+        setAssistantSuggestion(anchoredData);
+        setStatus(anchoredData.kind === "inspect" ? "Highlight explanation ready." : "Edit preview ready.");
+      }
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "Assistant failed.");
+      const message = "Copilot could not complete that request.";
+      if (intent === "chat") {
+        appendAssistantHistory([{
+          role: "assistant",
+          text: `${message} Try again or use local module feedback after refreshing the page.`,
+          providerMode: "fallback",
+          warnings: [error instanceof Error ? error.message : "Unknown assistant error."]
+        }]);
+      }
+      setStatus(message);
     } finally {
       setLoading(false);
       clearProgress();
@@ -626,38 +680,28 @@ export default function Home() {
 
   function handleApplyAssistant() {
     if (!assistantSuggestion) return;
-    if (assistantSuggestion.proposedText && !assistantSuggestion.replaceRange) {
-      setStatus("Assistant preview is reference-only. Copy it or select text before requesting an applyable rewrite.");
+    if (assistantSuggestion.kind !== "edit") {
+      setStatus("This Copilot response is reference-only. Use Selection mode for applyable edits.");
       return;
     }
-    if (assistantSuggestion.proposedText && assistantSuggestion.replaceRange) {
-      const range = assistantSuggestion.replaceRange;
-      if (range.start < 0 || range.end <= range.start || range.end > activeDoc.text.length) {
-        setStatus("Assistant replacement was blocked because the target selection is no longer valid.");
-        return;
-      }
-      if (assistantSuggestion.originalText !== undefined && activeDoc.text.slice(range.start, range.end) !== assistantSuggestion.originalText) {
-        setStatus("Assistant replacement was blocked because the selected text changed after the preview was created.");
-        return;
-      }
+    const range = assistantSuggestion.replaceRange;
+    if (range.start < 0 || range.end <= range.start || range.end > activeDoc.text.length) {
+      setStatus("Assistant replacement was blocked because the target selection is no longer valid.");
+      return;
+    }
+    if (assistantSuggestion.originalText !== undefined && activeDoc.text.slice(range.start, range.end) !== assistantSuggestion.originalText) {
+      setStatus("Assistant replacement was blocked because the selected text changed after the preview was created.");
+      return;
     }
     updateCurrentModule((doc) => {
       const snapDoc = addSnapshot(doc, "Before applying assistant suggestion");
-      if (assistantSuggestion.proposedText && assistantSuggestion.replaceRange) {
-        const range = assistantSuggestion.replaceRange;
-        const text = `${snapDoc.text.slice(0, range.start)}${assistantSuggestion.proposedText}${snapDoc.text.slice(range.end)}`;
-        const annotations = assistantSuggestion.annotations.length ? assistantSuggestion.annotations : snapDoc.annotations;
-        return {
-          ...snapDoc,
-          text,
-          annotations: normalizeAnnotations(text, annotations),
-          patches: repairPatchesForText(text, snapDoc.patches),
-          updatedAt: nowIso()
-        };
-      }
+      const text = `${snapDoc.text.slice(0, range.start)}${assistantSuggestion.proposedText}${snapDoc.text.slice(range.end)}`;
+      const annotations = assistantSuggestion.annotations.length ? assistantSuggestion.annotations : snapDoc.annotations;
       return {
         ...snapDoc,
-        annotations: mergeAnnotationSuggestions(snapDoc.text, snapDoc.annotations, assistantSuggestion.annotations),
+        text,
+        annotations: normalizeAnnotations(text, annotations),
+        patches: repairPatchesForText(text, snapDoc.patches),
         updatedAt: nowIso()
       };
     });
@@ -770,15 +814,24 @@ export default function Home() {
 
   function sendTranslateToAssistant() {
     if (!translatePreview) return;
-    setAssistantSuggestion({
-      reply: "Reference translation sent to Assistant as a copy-only preview. Select text and ask for a translation rewrite if you want an applyable replacement.",
-      proposedText: translatePreview.translatedText,
-      annotations: [],
-      warnings: ["Reference Translation never edits the document. Use Assistant on a selected range for preview/apply insertion."]
-    });
+    appendAssistantHistory([{
+      role: "assistant",
+      text: `Reference translation\n\n${translatePreview.translatedText}\n\nThis is a reading aid only. Select text and use Selection mode if you want a preview/apply replacement.`,
+      providerMode: translatePreview.providerMode,
+      warnings: translatePreview.warnings
+    }]);
+    setAssistantSuggestion(undefined);
+    setSelectedRange(EMPTY_RANGE);
+    setActiveSentenceRange(undefined);
     setRightTab("assistant");
+    requestAssistantMode("chat");
     setTranslateOpen(false);
-    setStatus("Reference translation sent to Assistant preview.");
+    window.setTimeout(() => {
+      setSelectedRange(EMPTY_RANGE);
+      setActiveSentenceRange(undefined);
+      requestAssistantMode("chat");
+    }, 0);
+    setStatus("Reference translation sent to Copilot chat.");
   }
 
   return (
@@ -881,9 +934,11 @@ export default function Home() {
                     </button>
                   ))}
                 </div>
-                <div className="min-h-0 flex-1 overflow-auto p-3">
-                  <div id="right-panel-assistant" role="tabpanel" aria-label="Assistant" hidden={rightTab !== "assistant"}>
+                <div className="min-h-0 flex-1 overflow-hidden p-3">
+                  <div id="right-panel-assistant" role="tabpanel" aria-label="Assistant" className={rightTab === "assistant" ? "h-full min-h-0 overflow-hidden" : "hidden"}>
                     <AssistantPanel
+                      modeRequest={assistantModeRequest}
+                      chatMessages={activeProject.assistantHistory}
                       selectedText={selectedText}
                       selectedRange={selectedRange}
                       activeSentenceText={activeSentenceText}
@@ -892,16 +947,17 @@ export default function Home() {
                       activePatchCount={activePatch ? Math.max(1, activePatchCount) : activePatchCount}
                       loading={loading}
                       suggestion={assistantSuggestion}
-                      onAction={handleAssist}
+                      onChat={(message) => void handleAssist(message, "chat")}
+                      onSelectionAction={(action) => void handleAssist(action, "edit")}
+                      onInspectAction={(action) => void handleAssist(action, "inspect")}
                       onApply={handleApplyAssistant}
                       onDismiss={() => setAssistantSuggestion(undefined)}
-                      onRefresh={handleRefresh}
                       onAddPatchForRange={handleOpenPatch}
                       onSaveSuggestionAsPatch={handleSaveSuggestionAsPatch}
                       onRelabel={handleRelabel}
                     />
                   </div>
-                  <div id="right-panel-sources" role="tabpanel" aria-label="Sources" hidden={rightTab !== "sources"}>
+                  <div id="right-panel-sources" role="tabpanel" aria-label="Sources" className={rightTab === "sources" ? "h-full min-h-0 overflow-auto" : "hidden"}>
                     <SourceWorkbench
                       moduleNumber={activeProject.currentModule}
                       text={activeDoc.text}
@@ -915,10 +971,10 @@ export default function Home() {
                       onMarkSelectionNeedsCitation={markSelectionNeedsCitation}
                     />
                   </div>
-                  <div id="right-panel-snapshots" role="tabpanel" aria-label="Snapshots" hidden={rightTab !== "snapshots"}>
+                  <div id="right-panel-snapshots" role="tabpanel" aria-label="Snapshots" className={rightTab === "snapshots" ? "h-full min-h-0 overflow-auto" : "hidden"}>
                     <SnapshotPanel snapshots={activeDoc.snapshots} onRestore={handleRestoreSnapshot} onSaveSnapshot={handleSaveSnapshot} onClearModule={handleClearModule} />
                   </div>
-                  <div id="right-panel-export" role="tabpanel" aria-label="Export" hidden={rightTab !== "export"}>
+                  <div id="right-panel-export" role="tabpanel" aria-label="Export" className={rightTab === "export" ? "h-full min-h-0 overflow-auto" : "hidden"}>
                     <ExportPanel
                       moduleNumber={activeProject.currentModule}
                       hasText={Boolean(activeDoc.text.trim())}

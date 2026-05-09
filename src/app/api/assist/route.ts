@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { AssistRequest, AssistResponse } from "@/types/essaycraft";
+import type { AssistRequest, AssistResponse, AssistResponseLegacy } from "@/types/essaycraft";
 import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
 import { buildMockAnnotations, exactAnnotations, normalizeAnnotations } from "@/lib/annotations";
 import { buildAssistMessages } from "@/lib/prompts";
@@ -27,26 +27,27 @@ export async function POST(request: Request) {
       const raw = completion.choices[0]?.message?.content;
       if (!raw) throw new Error("AI returned empty content.");
 
-      const parsed = assistResponseSchema.parse(JSON.parse(raw));
+      const parsed = coerceAssistResponse(input, JSON.parse(raw), "deepseek");
       const exact = exactAnnotations(input.text, parsed.annotations ?? []);
       const rangeWarning = validateAssistReplaceRange(input, parsed);
       const normalized: AssistResponse = {
         ...parsed,
         providerMode: "deepseek",
-        reply: rangeWarning ? `${parsed.reply} ${rangeWarning}` : parsed.reply,
+        reply: rangeWarning ? parsed.reply : parsed.reply,
         annotations: exact.annotations,
-        warnings: rangeWarning ? [...(parsed.warnings ?? []), ...exact.warnings, rangeWarning] : [...(parsed.warnings ?? []), ...exact.warnings]
+        warnings: rangeWarning ? [...(parsed.warnings ?? []), ...exact.warnings, "Selection changed; preview apply was disabled."] : [...(parsed.warnings ?? []), ...exact.warnings]
       };
 
       return NextResponse.json(normalized);
     } catch (aiError) {
       const fallback = mockAssist(input);
-      fallback.warnings.push(`DeepSeek assistant unavailable; used mock suggestion. ${aiError instanceof Error ? aiError.message : ""}`.trim());
+      console.warn("DeepSeek assistant fallback:", aiError);
+      fallback.warnings.push("Provider unavailable; using local fallback.");
       return NextResponse.json(fallback);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    return NextResponse.json({ error: message }, { status: 400 });
+    console.warn("Invalid assistant request:", error);
+    return NextResponse.json({ error: "Assistant could not use that request." }, { status: 400 });
   }
 }
 
@@ -73,6 +74,54 @@ function validateAssistReplaceRange(input: AssistRequest, response: AssistRespon
   return "";
 }
 
+function coerceAssistResponse(input: AssistRequest, raw: unknown, providerMode: "deepseek" | "mock" | "fallback"): AssistResponse {
+  const parsed = assistResponseSchema.parse(raw) as AssistResponseLegacy;
+  const kind = parsed.kind ?? expectedAssistKind(input);
+  const base = {
+    reply: parsed.reply,
+    title: parsed.title,
+    actionType: parsed.actionType,
+    explanation: parsed.explanation,
+    providerMode,
+    annotations: parsed.annotations ?? [],
+    warnings: parsed.warnings ?? []
+  };
+
+  if (kind === "edit") {
+    if (!parsed.proposedText?.trim() || !parsed.replaceRange) {
+      throw new Error("Provider returned an unusable edit preview.");
+    }
+    return {
+      ...base,
+      kind: "edit",
+      proposedText: parsed.proposedText,
+      replaceRange: parsed.replaceRange,
+      originalText: parsed.originalText,
+      originalExcerpt: parsed.originalExcerpt
+    };
+  }
+
+  if (kind === "inspect") {
+    return {
+      ...base,
+      kind: "inspect",
+      originalExcerpt: parsed.originalExcerpt
+    };
+  }
+
+  return {
+    ...base,
+    kind: "chat"
+  };
+}
+
+function expectedAssistKind(input: AssistRequest): AssistResponse["kind"] {
+  const action = input.action.toLowerCase();
+  if (input.selectedRange && /(rewrite|academic|analysis|translate|revise|sentence|passage)/i.test(action)) return "edit";
+  if (/(explain|relabel|highlight|citation)/i.test(action)) return "inspect";
+  return "chat";
+}
+
 function mockAssist(input: AssistRequest): AssistResponse {
   const range = input.selectedRange;
   const selected = input.selectedText || (range ? input.text.slice(range.start, range.end) : input.text);
@@ -82,6 +131,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
   if (action.includes("citation")) {
     return {
       title: "Citation-gap check",
+      kind: "inspect",
       actionType: "citation-check",
       reply: "I found citation-risk areas. Evidence claims should keep [citation needed] until you add real source details in source cards.",
       explanation: "This check only marks possible citation gaps. It does not invent authors, dates, titles, or references.",
@@ -94,6 +144,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
   if (action.includes("explain current module")) {
     return {
       title: "Module highlight explanation",
+      kind: "chat",
       actionType: "highlight-explanation",
       reply: moduleHighlightSummary(input),
       explanation: "Click inside a specific highlighted sentence for a focused explanation of one color label.",
@@ -106,6 +157,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
   if (action.includes("explain")) {
     return {
       title: "Highlight explanation",
+      kind: "inspect",
       actionType: "highlight-explanation",
       originalExcerpt: selected ? excerpt(selected) : undefined,
       reply: selected
@@ -122,6 +174,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
     const label = selected && /because|therefore|this means|supports|shows/i.test(selected) ? "analysis" : "thesis";
     return {
       title: "Relabel preview",
+      kind: "inspect",
       actionType: "relabel",
       originalExcerpt: selected ? excerpt(selected) : undefined,
       reply: range
@@ -148,17 +201,28 @@ function mockAssist(input: AssistRequest): AssistResponse {
 
   if (action.includes("translate")) {
     const translated = mockAssistantChinese(selected || input.text);
+    if (range) {
+      return {
+        title: "Translation preview",
+        kind: "edit",
+        actionType: "translate-selection",
+        originalExcerpt: selected ? excerpt(selected) : undefined,
+        reply: "Translation preview ready for the selected text. Apply only if you want to replace that selection.",
+        proposedText: translated,
+        replaceRange: range,
+        annotations: [],
+        explanation: "This path is the only translation workflow that can replace text, and it still requires Apply.",
+        warnings,
+        providerMode: "mock"
+      };
+    }
     return {
       title: "Translation preview",
+      kind: "chat",
       actionType: "translate-selection",
-      originalExcerpt: selected ? excerpt(selected) : undefined,
-      reply: range
-        ? "Translation preview ready for the selected text. Apply only if you want to replace that selection."
-        : "Translation preview ready. Select a passage first if you want an applyable replacement.",
-      proposedText: translated,
-      replaceRange: range,
+      reply: "Translation preview ready. Select a passage first if you want an applyable replacement.",
       annotations: [],
-      explanation: "This path is the only translation workflow that can replace text, and it still requires Apply.",
+      explanation: "This chat reply is reference-only and cannot overwrite document text.",
       warnings,
       providerMode: "mock"
     };
@@ -172,6 +236,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
 
     return {
       title: action.includes("analysis") ? "Strengthen analysis preview" : "Rewrite preview",
+      kind: "edit",
       actionType: action.includes("analysis") ? "strengthen-analysis" : "rewrite-selection",
       originalExcerpt: excerpt(base),
       reply: "Preview ready. I did not change the document; apply the suggestion only if it matches your intended meaning.",
@@ -186,6 +251,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
 
   return {
     title: `Module ${input.moduleNumber} feedback`,
+    kind: "chat",
     actionType: "module-feedback",
     reply: moduleFeedback(input),
     explanation: "This is module-level feedback because no text is selected. Select a sentence for an applyable rewrite.",

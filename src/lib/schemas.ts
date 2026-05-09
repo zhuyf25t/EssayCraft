@@ -117,7 +117,9 @@ export const assistantMessageSchema = z.object({
   id: z.string(),
   role: z.enum(["user", "assistant"]),
   text: z.string(),
-  createdAt: z.string()
+  createdAt: z.string(),
+  providerMode: z.enum(["deepseek", "mock", "fallback"]).optional(),
+  warnings: z.array(z.string()).optional()
 });
 
 export const assistRequestSchema = z.object({
@@ -134,16 +136,20 @@ export const assistRequestSchema = z.object({
   history: z.array(assistantMessageSchema).default([])
 });
 
+const nullableString = z.preprocess((value) => value === null ? undefined : value, z.string().optional());
+const nullableRange = z.preprocess((value) => value === null ? undefined : value, rangeSchema.optional());
+
 export const assistResponseSchema = z.object({
+  kind: z.enum(["chat", "edit", "inspect"]).optional(),
   reply: z.string(),
-  title: z.string().optional(),
-  actionType: z.string().optional(),
-  originalExcerpt: z.string().optional(),
-  explanation: z.string().optional(),
+  title: nullableString,
+  actionType: nullableString,
+  originalExcerpt: nullableString,
+  explanation: nullableString,
   providerMode: z.enum(["deepseek", "mock", "fallback"]).optional(),
-  proposedText: z.string().optional(),
-  replaceRange: rangeSchema.optional(),
-  originalText: z.string().optional(),
+  proposedText: nullableString,
+  replaceRange: nullableRange,
+  originalText: nullableString,
   annotations: z.array(annotationSchema).default([]),
   warnings: z.array(z.string()).default([])
 });

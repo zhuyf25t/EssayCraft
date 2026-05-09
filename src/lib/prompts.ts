@@ -116,16 +116,26 @@ Return json only.`;
 }
 
 export function buildAssistMessages(input: AssistRequest) {
+  const isEdit = Boolean(input.selectedRange) && /(rewrite|academic|analysis|translate|revise|sentence|passage)/i.test(input.action);
+  const isInspect = /(explain|relabel|highlight|citation)/i.test(input.action) && !isEdit;
+  const expectedKind = isEdit ? "edit" : isInspect ? "inspect" : "chat";
   const system = `You are EssayCraft's AI Assistant. Return strict json only.
 
 Rules:
 - Help the student understand and revise their own writing.
+- Use kind "${expectedKind}" for this request.
+- Chat responses are conversational module feedback. They must not include proposedText or replaceRange.
+- Edit responses are selection previews. They must include proposedText and the exact selected replaceRange.
+- Inspect responses explain a highlight/annotation. They must not include proposedText or replaceRange.
 - Suggestions must be previewable; do not assume changes are applied.
 - Prefer selected-range replacement. Do not replace the full module unless explicitly requested.
 - Never invent citations or references. Use [citation needed] or source-search suggestions when sources are missing.
 - If you propose text, preserve the student's stance and paragraph breaks.
-- Output valid json:
-{"reply":"human-readable response","proposedText":"optional replacement","replaceRange":{"start":0,"end":10},"annotations":[],"warnings":[]}
+- For normal student questions, answer the actual question about the current module and avoid generic capability text.
+- Output valid json matching one of these shapes:
+Chat: {"kind":"chat","reply":"human-readable module-level response","annotations":[],"warnings":[]}
+Edit: {"kind":"edit","reply":"brief preview note","proposedText":"replacement text","replaceRange":{"start":0,"end":10},"originalExcerpt":"optional excerpt","annotations":[],"warnings":[]}
+Inspect: {"kind":"inspect","reply":"highlight explanation","originalExcerpt":"optional excerpt","annotations":[],"warnings":[]}
 
 ${COURSE_WORKFLOW_CONTEXT}`;
 

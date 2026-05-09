@@ -83,6 +83,8 @@ export type AssistantMessage = {
   role: "user" | "assistant";
   text: string;
   createdAt: string;
+  providerMode?: "deepseek" | "mock" | "fallback";
+  warnings?: string[];
 };
 
 export type Project = {
@@ -152,7 +154,45 @@ export type AssistRequest = {
   history?: AssistantMessage[];
 };
 
-export type AssistResponse = {
+type AssistResponseBase = {
+  kind: "chat" | "edit" | "inspect";
+  reply: string;
+  title?: string;
+  actionType?: string;
+  explanation?: string;
+  providerMode?: "deepseek" | "mock" | "fallback";
+  annotations: Annotation[];
+  warnings: string[];
+};
+
+export type ChatAssistResponse = AssistResponseBase & {
+  kind: "chat";
+  proposedText?: undefined;
+  replaceRange?: undefined;
+  originalText?: undefined;
+  originalExcerpt?: undefined;
+};
+
+export type EditAssistResponse = AssistResponseBase & {
+  kind: "edit";
+  proposedText: string;
+  replaceRange: TextRange;
+  originalText?: string;
+  originalExcerpt?: string;
+};
+
+export type InspectAssistResponse = AssistResponseBase & {
+  kind: "inspect";
+  proposedText?: undefined;
+  replaceRange?: undefined;
+  originalText?: undefined;
+  originalExcerpt?: string;
+};
+
+export type AssistResponse = ChatAssistResponse | EditAssistResponse | InspectAssistResponse;
+
+export type AssistResponseLegacy = {
+  kind?: "chat" | "edit" | "inspect";
   reply: string;
   title?: string;
   actionType?: string;
