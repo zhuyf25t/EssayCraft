@@ -160,13 +160,6 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   const label = props.activeAnnotation ? LABELS[props.activeAnnotation.label] : undefined;
   const canEdit = Boolean(contextRange && contextRange.end > contextRange.start);
 
-  function runInstruction() {
-    const text = instruction.trim();
-    if (!text) return;
-    props.onSelectionAction(text);
-    setInstruction("");
-  }
-
   return (
     <div data-testid="assistant-edit-mode" className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div data-testid="assistant-edit-content" className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
@@ -205,55 +198,53 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
         ) : null}
 
         {props.suggestion?.kind === "edit" ? (
-          <EditPreview suggestion={props.suggestion} onApply={props.onApply} onDismiss={props.onDismiss} onSaveAsPatch={props.onSaveSuggestionAsPatch} />
+          <EditPreview suggestion={props.suggestion} onApply={props.onApply} onDismiss={props.onDismiss} />
         ) : null}
 
         {props.suggestion?.kind === "inspect" ? (
           <InspectCard suggestion={props.suggestion} onDismiss={props.onDismiss} />
         ) : null}
 
-        <section className="rounded-lg border border-slate-200 bg-white p-2">
-          <div className="grid grid-cols-2 gap-1.5 text-xs">
-            <button className="btn-secondary px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Rewrite selected passage")}>Rewrite</button>
-            <button className="btn-secondary px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Make more academic")}>Make academic</button>
-            <button className="btn-secondary px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Strengthen analysis")}>Strengthen</button>
-            <button className="btn-secondary px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Translate selected text")}>Translate</button>
-            <button className="btn-secondary px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => contextRange && props.onAddPatchForRange(contextRange)}>Add note</button>
-            <button className="btn-secondary px-2 py-1.5" disabled={!props.activeAnnotation || props.loading} onClick={() => props.onInspectAction("Explain this highlight")}>Explain highlight</button>
-          </div>
-        </section>
       </div>
 
       <div className="mt-2 shrink-0 rounded-lg border border-slate-200 bg-white p-2">
         <textarea
           value={instruction}
           onChange={(event) => setInstruction(event.target.value)}
-          placeholder="Tell EssayCraft how to revise this sentence or passage"
+          placeholder="Tell EssayCraft what you want to change"
           className="min-h-14 w-full resize-none border-0 bg-transparent text-sm outline-none"
           disabled={!canEdit}
         />
-        <div className="flex justify-end">
-          <button className="btn-primary px-3 py-1.5 text-xs" onClick={runInstruction} disabled={!canEdit || !instruction.trim() || props.loading}>Preview</button>
+        <div className="grid grid-cols-2 gap-1.5 text-xs">
+          <button className="btn-primary px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Rewrite selected passage")}>Rewrite</button>
+          <button className="btn-secondary px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>Make academic</button>
+          <button className="btn-secondary px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Translate selected text")}>Translate</button>
+          <button className="btn-secondary px-2 py-1.5" disabled={!props.activeAnnotation || props.loading} onClick={() => props.onInspectAction("Explain this highlight")}>Explain highlight</button>
         </div>
       </div>
     </div>
   );
+
+  function runInstruction(baseAction: string) {
+    const text = instruction.trim();
+    props.onSelectionAction(text ? `${baseAction}: ${text}` : baseAction);
+    setInstruction("");
+  }
 }
 
 function EditPreview({
   suggestion,
   onApply,
-  onDismiss,
-  onSaveAsPatch
+  onDismiss
 }: {
   suggestion: AssistResponse;
   onApply: () => void;
   onDismiss: () => void;
-  onSaveAsPatch: () => void;
 }) {
+  const readOnly = suggestion.actionType?.includes("translate");
   return (
     <article data-testid="assistant-edit-preview" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-950">
-      <div className="mb-2 font-semibold">Revision preview</div>
+      <div className="mb-2 font-semibold">{readOnly ? "Translation preview" : "Revision preview"}</div>
       <div className="space-y-2">
         <div>
           <div className="font-semibold text-blue-900/80">Original</div>
@@ -266,10 +257,9 @@ function EditPreview({
         {suggestion.reply ? <p className="text-blue-900/70">{firstSentence(suggestion.reply)}</p> : null}
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button className="btn-primary px-2 py-1 text-xs" onClick={onApply}>Apply</button>
-        <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(suggestion.proposedText ?? suggestion.reply)}>Copy</button>
-        <button className="btn-secondary px-2 py-1 text-xs" onClick={onSaveAsPatch}>Save as note</button>
+        {!readOnly ? <button className="btn-primary px-2 py-1 text-xs" onClick={onApply}>Accept</button> : null}
         <button className="btn-secondary px-2 py-1 text-xs" onClick={onDismiss}>Reject</button>
+        <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(suggestion.proposedText ?? suggestion.reply)}>Copy</button>
       </div>
       {suggestion.providerMode && suggestion.providerMode !== "deepseek" ? (
         <div className="mt-2 text-[11px] text-blue-900/60">fallback</div>
@@ -295,8 +285,8 @@ function RevisionPreview({
       {preview.rationale ? <p className="mt-2 text-amber-900/80">{firstSentence(preview.rationale)}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
         <button className="btn-primary px-2 py-1 text-xs" onClick={onAccept}>Accept</button>
-        <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(preview.proposedText ?? "")}>Copy</button>
         <button className="btn-secondary px-2 py-1 text-xs" onClick={onReject}>Reject</button>
+        <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(preview.proposedText ?? "")}>Copy</button>
       </div>
       {preview.providerMode && preview.providerMode !== "deepseek" ? (
         <div className="mt-2 text-[11px] text-amber-900/60">fallback</div>
@@ -310,7 +300,10 @@ function InspectCard({ suggestion, onDismiss }: { suggestion: AssistResponse; on
     <article data-testid="assistant-highlight-explanation" className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
       <div className="mb-1 font-semibold text-slate-800">Highlight explanation</div>
       <p className="whitespace-pre-wrap">{suggestion.reply}</p>
-      <button className="btn-secondary mt-2 px-2 py-1 text-xs" onClick={onDismiss}>Dismiss</button>
+      <div className="mt-2 flex gap-2">
+        <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(suggestion.reply)}>Copy</button>
+        <button className="btn-secondary px-2 py-1 text-xs" onClick={onDismiss}>Reject</button>
+      </div>
     </article>
   );
 }
@@ -318,7 +311,7 @@ function InspectCard({ suggestion, onDismiss }: { suggestion: AssistResponse; on
 function compactExcerpt(value: string) {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= 180) return { text: normalized, compacted: false };
-  return { text: `${normalized.slice(0, 90)} ... ${normalized.slice(-60)}`, compacted: true };
+  return { text: `${normalized.slice(0, 80)} ... ${normalized.slice(-50)}`, compacted: true };
 }
 
 function firstSentence(value: string) {

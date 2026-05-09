@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import type { Annotation, Patch, TextRange } from "@/types/essaycraft";
 import { LABELS } from "@/lib/labels";
 import { annotationAtOffset, sentenceRangeAt } from "@/lib/annotations";
-import { patchAtOffset } from "@/lib/patches";
 import { countCharacters, countWords } from "@/lib/sentence";
 
 type EditorProps = {
@@ -40,11 +39,6 @@ export function Editor({
   const activeAnnotation = useMemo(
     () => annotationAtOffset(annotations, selectedRange.start),
     [annotations, selectedRange.start]
-  );
-
-  const activePatch = useMemo(
-    () => patchAtOffset(patches, selectedRange.start),
-    [patches, selectedRange.start]
   );
 
   function syncSelection() {
@@ -163,7 +157,6 @@ export function Editor({
 
       <div className="editor-footer">
         <span>Paragraphs are stored as plain text with blank lines.</span>
-        {activePatch ? <span className="rounded-md bg-blue-50 px-2 py-1 text-blue-700">Patch: {activePatch.text}</span> : null}
       </div>
     </section>
   );
@@ -222,6 +215,7 @@ function HighlightText({
           key={`patch-marker-${endingPatch.id}-${end}`}
           data-testid="patch-marker"
           className="patch-marker"
+          data-note={compactNote(endingPatch.text)}
           title={endingPatch.text}
         >
           note
@@ -231,7 +225,7 @@ function HighlightText({
   }
 
   for (const patch of openPatches.filter((item) => item.anchorStart === item.anchorEnd)) {
-    nodes.push(<span key={`patch-marker-caret-${patch.id}`} data-testid="patch-marker" className="patch-marker" title={patch.text}>note</span>);
+    nodes.push(<span key={`patch-marker-caret-${patch.id}`} data-testid="patch-marker" className="patch-marker" data-note={compactNote(patch.text)} title={patch.text}>note</span>);
   }
 
   if (nodes.length === 0) return <span>{text || " "}</span>;
@@ -253,9 +247,14 @@ function PatchMarginMarkers({ patches, onPatchMarkerClick }: { patches: Patch[];
           title={`Patch ${index + 1}: ${patch.text}`}
           onClick={() => onPatchMarkerClick(patch)}
         >
-          note
+          📝
         </button>
       ))}
     </div>
   );
+}
+
+function compactNote(value: string) {
+  const text = value.replace(/\s+/g, " ").trim();
+  return text.length > 36 ? `${text.slice(0, 34)}...` : text;
 }
