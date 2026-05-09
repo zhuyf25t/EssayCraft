@@ -331,10 +331,22 @@ function explainSelection(value: string) {
   const annotation = buildMockAnnotations(value)[0];
   const label = annotation?.label ?? "plain";
   const trimmed = value.trim();
-  if (/^topic|research question/i.test(trimmed)) return "This highlight gives background/context because it names the topic or question the essay will answer.";
-  if (/thesis|this essay argues/i.test(trimmed)) return "This highlight functions as a thesis because it states the essay's arguable position.";
-  if (/\[citation needed\]|\[source needed/i.test(trimmed)) return "This highlight is an issue because the claim still needs real source support before submission.";
-  return `This selection appears to function as ${label} writing. Check whether that matches your intent, then relabel it if needed.`;
+  if (/^Topic\s*:/i.test(trimmed)) return `This is background because it names the essay's subject: ${shortQuote(trimmed.replace(/^Topic\s*:\s*/i, ""))}.`;
+  if (/^(Research question|Question)\s*:/i.test(trimmed)) return "This is background because it frames the guiding question the essay will answer. A strong question should be specific enough to lead toward an arguable thesis.";
+  if (/^(Working thesis|Thesis)\s*:/i.test(trimmed) || /this essay argues/i.test(trimmed)) return "This is thesis writing because it states the main arguable claim and signals the essay's direction.";
+  if (/^Thesis map\s*:/i.test(trimmed)) return "This maps the thesis because it previews the main reasons the essay will develop.";
+  if (/Reason\s*\d+\s*:/i.test(trimmed)) return "This reason belongs to the thesis map: it should clearly support the working thesis and stay parallel with the other reasons.";
+  if (/Evidence needed|Evidence to use|\[source needed/i.test(trimmed)) return "This marks a source need. It is a planning reminder to find real evidence, not a real citation.";
+  if (/\[citation needed\]/i.test(trimmed)) return "This is an issue because the draft makes a claim that still needs a real source or citation before submission.";
+  if (/counterargument|opposing view|some readers may argue/i.test(trimmed)) return "This is counterargument writing because it introduces a reasonable opposing view before the response.";
+  if (/conclusion|in conclusion|so what|implication/i.test(trimmed)) return "This is conclusion writing because it closes the argument and explains why the point matters.";
+  if (/because|therefore|this shows|this means|supports|matters/i.test(trimmed)) return "This is analysis because it explains how the idea supports the essay's claim rather than simply naming a fact.";
+  return `This sentence is currently treated as ${label}. Check whether it is naming context, making a claim, giving evidence, or explaining why the claim matters.`;
+}
+
+function shortQuote(value: string) {
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  return cleaned.length > 80 ? `${cleaned.slice(0, 77)}...` : cleaned;
 }
 
 function excerpt(value: string) {

@@ -122,6 +122,18 @@ function reviseSegment(original: string, note: string) {
   if (/\u66f4\u957f|\u53d1\u5c55|\u8be6\u7ec6|longer|expand|more detail/i.test(note)) {
     return `${leading}${stripMeta(expandSegment(trimmed))}${trailing}`;
   }
+  if (/\u6807\u9898|title/i.test(note)) {
+    return `${leading}${stripMeta(expandSegment(trimmed))}${trailing}`;
+  }
+  if (/\u95ee\u9898.*\u5446\u677f|\u81ea\u7136|natural/i.test(note)) {
+    return `${leading}${stripMeta(naturalQuestion(trimmed))}${trailing}`;
+  }
+  if (/\u592a\u7b3c\u7edf|too general|specific/i.test(note)) {
+    return `${leading}${stripMeta(makeSpecific(trimmed))}${trailing}`;
+  }
+  if (/\u6539\u6210\u82f1\u6587|\u50cf\u4e2d\u6587|clean english/i.test(note)) {
+    return `${leading}${stripMeta(cleanEnglish(trimmed))}${trailing}`;
+  }
   if (/\u66f4\u77ed|\u7b80\u77ed|\u7cbe\u7b80|shorter|concise/i.test(note)) {
     return `${leading}${stripMeta(shortenSegment(trimmed))}${trailing}`;
   }
@@ -161,6 +173,14 @@ function makeAcademic(value: string) {
 function expandSegment(value: string) {
   const cleaned = makeAcademic(value);
   if (!cleaned) return value;
+  if (/^Topic\s*:/i.test(cleaned)) {
+    const topic = cleaned.replace(/^Topic\s*:\s*/i, "").replace(/[.!?]?$/, "");
+    return `Topic: ${topic}, including its causes, consequences, and practical responses for students and communities.`;
+  }
+  if (/^(Research question|Question)\s*:/i.test(cleaned)) {
+    const question = cleaned.replace(/^(Research question|Question)\s*:\s*/i, "").replace(/[?？.]?$/, "");
+    return `Research question: ${question}, and what shared responsibilities should individuals, institutions, and communities consider?`;
+  }
   if (/because|therefore|this matters|supports/i.test(cleaned)) return cleaned;
   return `${cleaned.replace(/[.!?]?$/, "")}, which should be developed by explaining the cause, effect, and connection to the essay's main claim.`;
 }
@@ -169,6 +189,30 @@ function shortenSegment(value: string) {
   const cleaned = makeAcademic(value);
   const firstClause = cleaned.split(/[,;]|\band\b|\bbecause\b/i)[0]?.trim() || cleaned;
   return firstClause.replace(/[.!?]?$/, ".");
+}
+
+function naturalQuestion(value: string) {
+  const cleaned = makeAcademic(value);
+  if (/^(Research question|Question)\s*:/i.test(cleaned)) {
+    const question = cleaned.replace(/^(Research question|Question)\s*:\s*/i, "").replace(/[?？.]?$/, "");
+    return `Research question: How can ${question.charAt(0).toLowerCase()}${question.slice(1)} in a way that is realistic for students and schools?`;
+  }
+  return makeSpecific(cleaned);
+}
+
+function makeSpecific(value: string) {
+  const cleaned = makeAcademic(value);
+  if (/^Topic\s*:/i.test(cleaned) || /^(Research question|Question)\s*:/i.test(cleaned)) return expandSegment(cleaned);
+  return `${cleaned.replace(/[.!?]?$/, "")}, especially by naming who is affected, what changes are needed, and why the point matters.`;
+}
+
+function cleanEnglish(value: string) {
+  return makeAcademic(value)
+    .replace(/\bComputer become\b/gi, "Computers are becoming")
+    .replace(/\btechnology become\b/gi, "technology is becoming")
+    .replace(/\bmore close to\b/gi, "closer to")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function stripMeta(value: string) {
