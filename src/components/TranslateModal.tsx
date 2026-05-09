@@ -35,7 +35,7 @@ export function TranslateModal({
         <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h2 className="font-crayon text-2xl font-bold text-blue-700">Reference Translation</h2>
-            <p className="text-sm text-slate-500">Preview-only reading aid. This tool never changes the original document or creates snapshots.</p>
+            <p className="text-sm text-slate-500">Preview-only reading aid. It never changes the original document.</p>
           </div>
           <button className="btn-secondary" onClick={onClose}>Close</button>
         </div>
@@ -46,7 +46,7 @@ export function TranslateModal({
             <option value="zh-to-en">Simplified Chinese to English</option>
             <option value="auto-to-zh">Auto-detect to Simplified Chinese</option>
           </select>
-          <button className="btn-primary" onClick={onRequest} disabled={loading}>{loading ? "Translating..." : "Create Preview"}</button>
+          <button className="btn-primary" onClick={onRequest} disabled={loading}>{loading ? "Translating..." : "Create preview"}</button>
           {preview ? <span className="rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">Provider: {preview.providerMode}</span> : null}
         </div>
 
@@ -62,7 +62,7 @@ export function TranslateModal({
         </div>
 
         {preview?.warnings.length ? (
-          <ul className="mt-3 space-y-1 text-xs text-amber-800">
+          <ul data-testid="translate-status" className="mt-3 space-y-1 rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
             {preview.warnings.map((warning, index) => <li key={`${index}-${warning.slice(0, 48)}`}>- {warning}</li>)}
           </ul>
         ) : null}

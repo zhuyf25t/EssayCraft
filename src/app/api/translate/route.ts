@@ -6,9 +6,7 @@ import { buildTranslateMessages } from "@/lib/prompts";
 import { translateRequestSchema, translateResponseSchema } from "@/lib/schemas";
 import { cleanGeneratedText } from "@/lib/textFormat";
 
-const ZH_PREVIEW_TITLE = "\u4e2d\u6587\u53c2\u8003\u7ffb\u8bd1\uff1a";
-const ZH_PREVIEW_NOTE = "\uff08\u672c\u5730\u53c2\u8003\u7ffb\u8bd1\uff1a\u539f\u6587\u4e0d\u4f1a\u88ab\u81ea\u52a8\u4fee\u6539\u3002\u5982\u9700\u63d2\u5165\u8bd1\u6587\uff0c\u8bf7\u5728 Assistant \u4e2d\u9009\u4e2d\u6587\u672c\u540e\u9884\u89c8\u5e76\u5e94\u7528\u3002\uff09";
-const ZH_GENERIC_LINE = "\u672c\u5730\u9884\u89c8\u4fdd\u7559\u8be5\u53e5\u7684\u6bb5\u843d\u4f4d\u7f6e\u548c\u5199\u4f5c\u529f\u80fd\uff0c\u8fde\u63a5\u7ffb\u8bd1\u63d0\u4f9b\u65b9\u540e\u53ef\u8fdb\u4e00\u6b65\u7cbe\u4fee\u3002";
+const ZH_GENERIC_LINE = "\u8fd9\u4e00\u6bb5\u9700\u8981\u8fde\u63a5\u7ffb\u8bd1\u63d0\u4f9b\u65b9\u540e\u8fdb\u884c\u66f4\u7cbe\u786e\u7684\u4e2d\u6587\u7ffb\u8bd1\u3002";
 
 export async function POST(request: Request) {
   try {
@@ -51,6 +49,9 @@ export async function POST(request: Request) {
       if (input.mode !== "zh-to-en" && echoesSourceEnglish(textToTranslate, translatedText)) {
         throw new Error("AI translation echoed too much of the English source.");
       }
+      if (input.mode !== "zh-to-en" && hasBannedTranslationCommentary(translatedText)) {
+        throw new Error("AI translation added commentary instead of a reference translation.");
+      }
       const exact = exactAnnotations(translatedText, parsed.annotations);
       return NextResponse.json({
         ...parsed,
@@ -82,8 +83,8 @@ function selectedText(text: string, range: { start: number; end: number } | unde
 function mockTranslate(input: TranslateRequest): TranslateResponse {
   const translatedText =
     input.mode === "zh-to-en"
-      ? `English translation preview:\n${mockEnglishPreview(input.text)}\n\n(Mock translation: provider translation is unavailable in this session.)`
-      : `${ZH_PREVIEW_TITLE}\n${mockChinesePreview(input.text)}\n\n${ZH_PREVIEW_NOTE}`;
+      ? mockEnglishPreview(input.text)
+      : mockChinesePreview(input.text);
   const text = cleanGeneratedText(translatedText);
 
   return {
@@ -158,12 +159,12 @@ function translateAcademicPhrase(value: string) {
       return `\u8fd9\u4e2a\u95ee\u9898\u5173\u6ce8${joinChinese(concepts)}\u4e4b\u95f4\u5982\u4f55\u5efa\u7acb\u66f4\u5065\u5eb7\u3001\u66f4\u6709\u8d23\u4efb\u7684\u5173\u7cfb\u3002`;
     }
     if (lower.includes("thesis") || lower.includes("argues") || lower.includes("possible")) {
-      return `\u6838\u5fc3\u8bba\u70b9\u662f\uff1a${joinChinese(concepts)}\u9700\u8981\u5171\u540c\u652f\u6301\u4e00\u4e2a\u66f4\u5e73\u8861\u7684\u5199\u4f5c\u7acb\u573a\u3002`;
+      return `${joinChinese(concepts)}\u9700\u8981\u5171\u540c\u652f\u6301\u4e00\u4e2a\u66f4\u5e73\u8861\u7684\u7acb\u573a\u3002`;
     }
     if (lower.includes("evidence") || lower.includes("research") || lower.includes("study") || lower.includes("report")) {
       return `\u8fd9\u91cc\u9700\u8981\u5bfb\u627e\u4e0e${joinChinese(concepts)}\u76f8\u5173\u7684\u7814\u7a76\u6216\u62a5\u544a\u6765\u652f\u6301\u8bba\u8bc1\u3002`;
     }
-    return `\u8fd9\u53e5\u8bdd\u8ba8\u8bba\u4e86${joinChinese(concepts)}\u7684\u5173\u7cfb\uff0c\u5e76\u6307\u5411\u6587\u7ae0\u7684\u8bba\u8bc1\u91cd\u70b9\u3002`;
+    return `${joinChinese(concepts)}\u4e4b\u95f4\u7684\u5173\u7cfb\u9700\u8981\u7ed3\u5408\u4e0a\u4e0b\u6587\u8fdb\u4e00\u6b65\u8bf4\u660e\u3002`;
   }
 
   return ZH_GENERIC_LINE;
@@ -180,9 +181,13 @@ function translateKnownSentence(value: string) {
     [/third, schools can help students develop the digital literacy/, "\u7b2c\u4e09\uff0c\u5b66\u6821\u53ef\u4ee5\u5e2e\u52a9\u5b66\u751f\u53d1\u5c55\u6570\u5b57\u7d20\u517b\uff0c\u4f7f\u4ed6\u4eec\u80fd\u591f\u6279\u5224\u6027\u5730\u4f7f\u7528\u793e\u4ea4\u5a92\u4f53\u3002"],
     [/in conclusion, a healthier social media balance is most realistic/, "\u603b\u4e4b\uff0c\u5f53\u7528\u6237\u3001\u5e73\u53f0\u548c\u5b66\u6821\u5171\u540c\u627f\u62c5\u8d23\u4efb\u65f6\uff0c\u66f4\u5065\u5eb7\u7684\u793e\u4ea4\u5a92\u4f53\u5e73\u8861\u6700\u6709\u53ef\u80fd\u5b9e\u73b0\u3002"],
     [/topic: campus notification habits/, "\u4e3b\u9898\uff1a\u6821\u56ed\u901a\u77e5\u4e60\u60ef"],
+    [/campus notification habits/, "\u6821\u56ed\u901a\u77e5\u4e60\u60ef"],
     [/how can schools reduce distraction while keeping students connected/, "\u5b66\u6821\u5982\u4f55\u5728\u4fdd\u6301\u5b66\u751f\u8054\u7cfb\u7684\u540c\u65f6\u51cf\u5c11\u5206\u5fc3\uff1f"]
   ];
-  return matches.find(([pattern]) => pattern.test(normalized))?.[1] ?? "";
+  const translated = matches
+    .filter(([pattern]) => pattern.test(normalized))
+    .map(([, translation]) => translation);
+  return translated.length ? translated.join("") : "";
 }
 
 function academicConcepts(value: string) {
@@ -219,7 +224,7 @@ function mockEnglishPreview(value: string) {
     .map((line) => {
       if (!line.trim()) return "";
       return /[\u4e00-\u9fff]/.test(line)
-        ? "Translation: This line explains the academic writing point in English for reference."
+        ? "This line needs provider translation for a more precise English version."
         : line;
     })
     .join("\n");
@@ -237,4 +242,8 @@ function echoesSourceEnglish(source: string, translated: string) {
   const output = translated.toLowerCase();
   const echoed = tokens.filter((token) => output.includes(token)).length;
   return echoed / tokens.length > 0.25;
+}
+
+function hasBannedTranslationCommentary(value: string) {
+  return /中文参考翻译|这句话讨论了|这句话强调|核心论点是|本地参考翻译|译文\s*[:：]/.test(value);
 }
