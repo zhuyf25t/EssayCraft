@@ -119,6 +119,13 @@ function reviseSegment(original: string, note: string) {
   const lower = note.toLowerCase();
   let revised = trimmed;
 
+  if (/\u66f4\u957f|\u53d1\u5c55|\u8be6\u7ec6|longer|expand|more detail/i.test(note)) {
+    return `${leading}${stripMeta(expandSegment(trimmed))}${trailing}`;
+  }
+  if (/\u66f4\u77ed|\u7b80\u77ed|\u7cbe\u7b80|shorter|concise/i.test(note)) {
+    return `${leading}${stripMeta(shortenSegment(trimmed))}${trailing}`;
+  }
+
   if (/analysis|分析/i.test(note)) {
     revised = stripMeta(trimmed);
     if (!/[.!?]$/.test(revised)) revised += ".";
@@ -149,6 +156,19 @@ function makeAcademic(value: string) {
     .replace(/\bget\b/gi, "become")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function expandSegment(value: string) {
+  const cleaned = makeAcademic(value);
+  if (!cleaned) return value;
+  if (/because|therefore|this matters|supports/i.test(cleaned)) return cleaned;
+  return `${cleaned.replace(/[.!?]?$/, "")}, which should be developed by explaining the cause, effect, and connection to the essay's main claim.`;
+}
+
+function shortenSegment(value: string) {
+  const cleaned = makeAcademic(value);
+  const firstClause = cleaned.split(/[,;]|\band\b|\bbecause\b/i)[0]?.trim() || cleaned;
+  return firstClause.replace(/[.!?]?$/, ".");
 }
 
 function stripMeta(value: string) {

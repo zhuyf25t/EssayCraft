@@ -80,7 +80,7 @@ function coerceAssistResponse(input: AssistRequest, raw: unknown, providerMode: 
   const base = {
     reply: parsed.reply,
     title: parsed.title,
-    actionType: parsed.actionType,
+    actionType: normalizedActionType(input, parsed.actionType),
     explanation: parsed.explanation,
     providerMode,
     annotations: parsed.annotations ?? [],
@@ -114,6 +114,15 @@ function coerceAssistResponse(input: AssistRequest, raw: unknown, providerMode: 
     ...base,
     kind: "chat"
   };
+}
+
+function normalizedActionType(input: AssistRequest, actionType?: string) {
+  const action = input.action.toLowerCase();
+  if (action.includes("translate")) return "translate-selection";
+  if (action.includes("academic")) return "academic-rewrite";
+  if (action.includes("rewrite")) return "rewrite-selection";
+  if (action.includes("explain")) return "highlight-explanation";
+  return actionType;
 }
 
 function expectedAssistKind(input: AssistRequest): AssistResponse["kind"] {
@@ -233,7 +242,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
     const base = selected.trim() || "This point needs clearer explanation.";
     const proposedText = action.includes("analysis")
       ? strengthenAnalysis(base)
-      : makeAcademicReplacement(base);
+      : rewriteWithInstruction(base, input.action);
 
     return {
       title: action.includes("analysis") ? "Strengthen analysis preview" : "Rewrite preview",
@@ -260,6 +269,14 @@ function mockAssist(input: AssistRequest): AssistResponse {
     warnings,
     providerMode: "mock"
   };
+}
+
+function rewriteWithInstruction(value: string, instruction: string) {
+  const lower = instruction.toLowerCase();
+  if (/更长|longer|develop|expand|more detail|更详细/.test(lower)) return makeLongerReplacement(value);
+  if (/更短|shorter|concise|简短|精简/.test(lower)) return makeShorterReplacement(value);
+  if (/academic|formal|正式|学术/.test(lower)) return makeAcademicReplacement(value);
+  return makeAcademicReplacement(value);
 }
 
 function moduleFeedback(input: AssistRequest) {
@@ -325,6 +342,34 @@ function excerpt(value: string) {
   return cleaned.length > 220 ? `${cleaned.slice(0, 217)}...` : cleaned;
 }
 
+function makeLongerReplacement(value: string) {
+  const cleaned = sanitizeReplacement(value, value).replace(/\s+/g, " ").trim();
+  const base = /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
+  if (/^Research question\s*:/i.test(cleaned) || /^Question\s*:/i.test(cleaned)) {
+    const question = cleaned.replace(/^(Research question|Question)\s*:\s*/i, "").replace(/[?？.]?$/, "");
+    return `Research question: ${question}, and what responsibilities should individuals, institutions, and communities share in creating a more balanced solution?`;
+  }
+  if (/^Topic\s*:/i.test(cleaned)) {
+    const topic = cleaned.replace(/^Topic\s*:\s*/i, "").replace(/[.!?]?$/, "");
+    return `Topic: ${topic}, with attention to causes, consequences, and practical responses that affect students and communities.`;
+  }
+  if (/^(Working thesis|Thesis)\s*:/i.test(cleaned)) {
+    const thesis = cleaned.replace(/^(Working thesis|Thesis)\s*:\s*/i, "");
+    return `Working thesis: ${thesis.replace(/[.!?]?$/, "")}, because the issue requires both individual choices and wider social or institutional support.`;
+  }
+  if (/because|therefore|as a result|this means/i.test(base)) return base;
+  return `${base} This point can be developed further by naming the specific cause, explaining its effect, and connecting it back to the essay's central claim.`;
+}
+
+function makeShorterReplacement(value: string) {
+  const cleaned = sanitizeReplacement(value, value).replace(/\s+/g, " ").trim();
+  const prefix = cleaned.match(/^(Topic|Research question|Question|Working thesis|Thesis)\s*:\s*/i)?.[0] ?? "";
+  const body = prefix ? cleaned.slice(prefix.length) : cleaned;
+  const firstClause = body.split(/[,;]|\band\b|\bbecause\b/i)[0]?.trim() || body.trim();
+  const ending = prefix.toLowerCase().includes("question") && !/[?？]$/.test(firstClause) ? "?" : "";
+  return `${prefix}${firstClause.replace(/[.!?？]?$/, "")}${ending || (/[.!?]$/.test(firstClause) ? "" : ".")}`;
+}
+
 function makeAcademicReplacement(value: string) {
   const cleaned = sanitizeReplacement(value, value);
   if (/^Topic\s*:/i.test(cleaned) || /^Research question\s*:/i.test(cleaned) || /^Working thesis\s*:/i.test(cleaned)) {
@@ -353,9 +398,13 @@ function strengthenAnalysis(value: string) {
 function sanitizeReplacement(value: string, fallback: string) {
   const cleaned = value
     .replace(/^A more academic version could state:\s*/i, "")
+    .replace(/^A more academic version could state\s*/i, "")
+    .replace(/^could state:\s*/i, "")
     .replace(/^Here is a revised version:\s*/i, "")
     .replace(/^I would rewrite it as:\s*/i, "")
     .replace(/^This selected text means\s*/i, "")
+    .replace(/^The following sentence\s*/i, "")
+    .replace(/^In this context, the sentence could be\s*/i, "")
     .replace(/^The student should\s*/i, "")
     .replace(/\s*\[citation needed if this includes factual evidence\]\.?/gi, "")
     .replace(/\s*if this includes factual evidence\.?/gi, "")

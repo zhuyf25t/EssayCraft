@@ -117,9 +117,6 @@ function ChatMode({
         {messages.length ? messages.map((message) => (
           <article key={message.id} className={`max-w-[92%] rounded-xl px-3 py-2 text-sm ${message.role === "user" ? "ml-auto bg-blue-600 text-white" : "bg-white text-slate-700 shadow-sm"}`}>
             <p className="whitespace-pre-wrap">{message.text}</p>
-            {message.providerMode && message.providerMode !== "deepseek" ? (
-              <div className="mt-1 text-[11px] opacity-70">fallback</div>
-            ) : null}
           </article>
         )) : (
           <div className="rounded-lg bg-white p-3 text-sm text-slate-500">
@@ -188,7 +185,7 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
           </div>
           {label ? (
             <p data-testid="assistant-label-explanation" className="mt-2 text-slate-500">
-              {props.activeAnnotation?.comment || label.description}
+              {friendlyAnnotationComment(props.activeAnnotation?.comment, label.description)}
             </p>
           ) : null}
         </section>
@@ -241,7 +238,7 @@ function EditPreview({
   onApply: () => void;
   onDismiss: () => void;
 }) {
-  const readOnly = suggestion.actionType?.includes("translate");
+  const readOnly = /translate/i.test(`${suggestion.actionType ?? ""} ${suggestion.title ?? ""}`);
   return (
     <article data-testid="assistant-edit-preview" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-950">
       <div className="mb-2 font-semibold">{readOnly ? "Translation preview" : "Revision preview"}</div>
@@ -261,9 +258,6 @@ function EditPreview({
         <button className="btn-secondary px-2 py-1 text-xs" onClick={onDismiss}>Reject</button>
         <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(suggestion.proposedText ?? suggestion.reply)}>Copy</button>
       </div>
-      {suggestion.providerMode && suggestion.providerMode !== "deepseek" ? (
-        <div className="mt-2 text-[11px] text-blue-900/60">fallback</div>
-      ) : null}
     </article>
   );
 }
@@ -288,9 +282,6 @@ function RevisionPreview({
         <button className="btn-secondary px-2 py-1 text-xs" onClick={onReject}>Reject</button>
         <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(preview.proposedText ?? "")}>Copy</button>
       </div>
-      {preview.providerMode && preview.providerMode !== "deepseek" ? (
-        <div className="mt-2 text-[11px] text-amber-900/60">fallback</div>
-      ) : null}
     </article>
   );
 }
@@ -312,6 +303,12 @@ function compactExcerpt(value: string) {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= 180) return { text: normalized, compacted: false };
   return { text: `${normalized.slice(0, 80)} ... ${normalized.slice(-50)}`, compacted: true };
+}
+
+function friendlyAnnotationComment(comment: string | undefined, fallback: string) {
+  if (!comment) return fallback;
+  if (/local fallback|provider|confidence/i.test(comment)) return fallback;
+  return comment;
 }
 
 function firstSentence(value: string) {
