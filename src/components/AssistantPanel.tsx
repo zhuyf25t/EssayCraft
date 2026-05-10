@@ -132,7 +132,9 @@ function ChatMode({
           onChange={(event) => setValue(event.target.value)}
           onKeyDown={(event) => {
             if (event.nativeEvent.isComposing) return;
-            if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+            if (event.key !== "Enter") return;
+            if (event.shiftKey && !event.ctrlKey && !event.metaKey) return;
+            if (event.ctrlKey || event.metaKey || (!event.shiftKey && !event.altKey)) {
               event.preventDefault();
               submit();
             }
@@ -183,7 +185,7 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
               </span>
             ) : null}
             {props.activePatchCount ? (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">{props.activePatchCount} note{props.activePatchCount === 1 ? "" : "s"}</span>
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">{props.activePatchCount} note{props.activePatchCount === 1 ? "" : "s"} included</span>
             ) : null}
           </div>
           {label ? (
@@ -220,14 +222,14 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
           className="min-h-14 w-full resize-none border-0 bg-transparent text-sm outline-none"
           disabled={!canEdit}
         />
-        <div className="grid grid-cols-5 gap-1 text-[11px]">
-          <button aria-label="Rewrite" className="btn-primary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Rewrite selected passage")}>Rewrite</button>
-          <button aria-label="Make academic" className="btn-primary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>Academic</button>
-          <button aria-label="Analyze" className="btn-secondary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => runAnalyze()}>Analyze</button>
-          <button aria-label="Translate" className="btn-secondary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Translate selected text")}>Translate</button>
+        <div className="grid grid-cols-2 gap-1.5 text-xs sm:grid-cols-5">
+          <button aria-label="Rewrite" className="btn-primary min-h-8 px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Rewrite selected passage")}>Rewrite</button>
+          <button aria-label="Academic" className="btn-primary min-h-8 px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>Academic</button>
+          <button aria-label="Analyze" className="btn-secondary min-h-8 px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => runAnalyze()}>Analyze</button>
+          <button aria-label="Translate" className="btn-secondary min-h-8 px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Translate selected text")}>Translate</button>
           <button
             aria-label="Explain highlight"
-            className="btn-secondary px-1.5 py-1.5"
+            className="btn-secondary min-h-8 px-2 py-1.5"
             disabled={!canExplain || props.loading}
             title={canExplain ? "Explain the active highlight label." : "Click a highlighted sentence first."}
             onClick={() => props.onInspectAction("Explain this highlight")}

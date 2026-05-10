@@ -6,6 +6,8 @@ import { buildTranslateMessages } from "@/lib/prompts";
 import { translateRequestSchema, translateResponseSchema } from "@/lib/schemas";
 import { cleanGeneratedText } from "@/lib/textFormat";
 
+export const dynamic = "force-dynamic";
+
 const ZH_GENERIC_LINE = "\u8fd9\u6bb5\u5185\u5bb9\u53ef\u4ee5\u4f5c\u4e3a\u4e2d\u6587\u53c2\u8003\u8bd1\u6587\u8fdb\u4e00\u6b65\u6da6\u8272\u3002";
 
 export async function POST(request: Request) {

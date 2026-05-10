@@ -9,6 +9,8 @@ import { buildGenerateNextMessages } from "@/lib/prompts";
 import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
 import { cleanGeneratedText } from "@/lib/textFormat";
 
+export const dynamic = "force-dynamic";
+
 const GENERATE_TIMEOUT_MS = Number(process.env.ESSAYCRAFT_GENERATE_TIMEOUT_MS ?? 12000);
 
 export async function POST(request: Request) {

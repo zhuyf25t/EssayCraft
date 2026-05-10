@@ -14,7 +14,7 @@ import { annotationAtOffset, normalizeAnnotations, normalizeText, sentenceRangeA
 import { inTextCitationPreview } from "@/lib/citationAudit";
 import { copyRichText, downloadCurrentModuleHtml, downloadProjectJson } from "@/lib/export";
 import { protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
-import { patchAtOffset, repairPatchesForText } from "@/lib/patches";
+import { repairPatchesForText } from "@/lib/patches";
 import { MODULE_TITLES, addSnapshot, clearModule, importProject, replaceModuleContent, restoreSnapshot } from "@/lib/project";
 import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
 import { loadProject, resetProjectStorage, saveProject } from "@/lib/storage";
@@ -153,10 +153,10 @@ export default function Home() {
   const activeOffset = selectedRange.end > selectedRange.start ? selectedRange.start : activeSentenceRange?.start ?? selectedRange.start;
   const hasEditorContext = selectedRange.end > selectedRange.start || Boolean(activeSentenceRange) || selectedRange.start > 0;
   const activeAnnotation = currentDoc && hasEditorContext ? annotationAtOffset(currentDoc.annotations, activeOffset) : undefined;
-  const activePatch = currentDoc && hasEditorContext ? patchAtOffset(currentDoc.patches, activeOffset) : undefined;
-  const activePatchCount = currentDoc && editRange
-    ? currentDoc.patches.filter((patch) => !patch.resolved && rangesOverlap(patch.anchorStart, patch.anchorEnd, editRange.start, editRange.end)).length
-    : 0;
+  const activeRangePatches = currentDoc && editRange
+    ? currentDoc.patches.filter((patch) => patchTouchesRange(patch, editRange))
+    : [];
+  const activePatchCount = activeRangePatches.length;
   const openPatches = currentDoc?.patches.filter((patch) => patch.status !== "resolved" && !patch.resolved && !patch.stale && patch.text.trim()) ?? [];
 
   if (!project || !currentDoc) {
@@ -711,14 +711,18 @@ function handleSaveSnapshot() {
     const requestAction = intent === "edit" && !/(rewrite|academic|analysis|translate|revise|sentence|passage)/i.test(action)
       ? `Revise selected passage: ${action}`
       : action;
+    const chatContextRange = hasSelection ? selectedRange : activeSentenceRange;
     const submittedRange = intent === "chat"
-      ? undefined
+      ? chatContextRange
       : intent === "inspect" && activeAnnotation && !analyzeRequest
         ? { start: activeAnnotation.start, end: activeAnnotation.end }
         : hasSelection
           ? selectedRange
           : activeSentenceRange;
     const submittedText = submittedRange ? activeDoc.text.slice(submittedRange.start, submittedRange.end) : undefined;
+    const submittedPatches = submittedRange
+      ? activeDoc.patches.filter((patch) => patchTouchesRange(patch, submittedRange))
+      : [];
     const userMessage: Omit<AssistantMessage, "id" | "createdAt"> = { role: "user", text: action };
 
     if (intent === "edit" && (!submittedRange || submittedRange.end <= submittedRange.start)) {
@@ -751,6 +755,7 @@ function handleSaveSnapshot() {
           sources: activeDoc.sources,
           selectedRange: submittedRange,
           selectedText: submittedText,
+          selectedPatches: submittedPatches,
           action: requestAction,
           history: intent === "chat"
             ? [...activeProject.assistantHistory, { ...userMessage, id: id("pending"), createdAt: nowIso() }]
@@ -857,11 +862,17 @@ function handleSaveSnapshot() {
       const snapDoc = addSnapshot(doc, "Before applying assistant suggestion");
       const text = protectModuleText(`${snapDoc.text.slice(0, range.start)}${assistantSuggestion.proposedText}${snapDoc.text.slice(range.end)}`);
       const annotations = assistantSuggestion.annotations.length ? assistantSuggestion.annotations : snapDoc.annotations;
+      const resolvedPatchIds = new Set(snapDoc.patches
+        .filter((patch) => patchTouchesRange(patch, range))
+        .map((patch) => patch.id));
+      const nextPatches = snapDoc.patches.map((patch) => resolvedPatchIds.has(patch.id)
+        ? { ...patch, resolved: true, status: "resolved" as const, appliedAt: nowIso(), updatedAt: nowIso() }
+        : patch);
       return {
         ...snapDoc,
         text,
         annotations: normalizeAnnotations(text, annotations),
-        patches: repairPatchesForText(text, snapDoc.patches),
+        patches: repairPatchesForText(text, nextPatches),
         updatedAt: nowIso()
       };
     });
@@ -1062,7 +1073,7 @@ function handleSaveSnapshot() {
                       activeSentenceText={activeSentenceText}
                       activeSentenceRange={activeSentenceRange}
                       activeAnnotation={activeAnnotation}
-                      activePatchCount={activePatch ? Math.max(1, activePatchCount) : activePatchCount}
+                      activePatchCount={activePatchCount}
                       loading={loading}
                       suggestion={assistantSuggestion}
                       revisionPreview={revisionPreview}
@@ -1320,8 +1331,12 @@ function mergeSources(primary: SourceCard[], secondary: SourceCard[]) {
   return result;
 }
 
-function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number) {
-  return aStart < bEnd && bStart < aEnd;
+function patchTouchesRange(patch: Patch, range: TextRange) {
+  if (patch.resolved || patch.status === "resolved" || patch.stale || !patch.text.trim()) return false;
+  const start = Math.max(0, Math.min(patch.anchorStart, patch.anchorEnd));
+  const end = Math.max(start, Math.max(patch.anchorStart, patch.anchorEnd));
+  if (end > start) return start < range.end && range.start < end;
+  return start >= range.start && start <= range.end;
 }
 
 function extractModuleOneQuestion(text: string) {
