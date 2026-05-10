@@ -40,7 +40,7 @@ describe("refresh validation", () => {
     expect(result.warnings.join(" ")).toMatch(/Rebalanced overbroad citation/);
   });
 
-  it("falls back when provider annotations do not match the submitted text", () => {
+  it("rejects provider annotations that do not match the submitted text", () => {
     const text = "Topic: Refresh validation\n\nWorking thesis: The route should keep exact text.";
     const result = validateProviderRefreshAnnotations(text, [{
       id: "bad-range",
@@ -52,11 +52,11 @@ describe("refresh validation", () => {
     }], 1);
 
     expect(result.usedFallback).toBe(true);
-    expect(result.annotations.length).toBeGreaterThan(0);
+    expect(result.annotations.length).toBe(0);
     expect(result.warnings.join(" ")).toMatch(/no exact annotation ranges/i);
   });
 
-  it("falls back to mixed local labels for one-note Module 6 provider output", () => {
+  it("marks one-label Module 6 provider output invalid instead of inventing local labels", () => {
     const text = `Technology should serve humanity by protecting human agency.
 
 This essay argues that innovation needs ethical responsibility.
@@ -66,7 +66,7 @@ Overall, the final version should return to the thesis and check references.`;
     const labels = new Set(result.annotations.map((annotation) => annotation.label));
 
     expect(result.usedFallback).toBe(true);
-    expect(labels.size).toBeGreaterThan(1);
+    expect(labels.size).toBe(1);
     expect(result.warnings.join(" ")).toMatch(/label variety/i);
   });
 });

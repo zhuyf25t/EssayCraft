@@ -1,0 +1,142 @@
+import "server-only";
+
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { z } from "zod";
+import {
+  addAiMetadata,
+  aiMetadata,
+  AI_MOCK_MODEL,
+  createAiClient,
+  fallbackReasonFromError,
+  forceMockEnabled,
+  hasAiKey,
+  withAiTimeout
+} from "@/lib/ai-client";
+import { AI_TASKS, type AiTaskType } from "@/lib/ai/tasks";
+
+export type AiTaskResult<T> = T & {
+  providerMode: "deepseek" | "mock" | "unavailable";
+  modelUsed: string;
+  latencyMs: number;
+  fallbackReason?: string;
+};
+
+export class AiUnavailableError extends Error {
+  readonly reason: string;
+
+  constructor(reason: string) {
+    super(reason);
+    this.name = "AiUnavailableError";
+    this.reason = reason;
+  }
+}
+
+type RunJsonAiTaskOptions<TRaw, TOutput extends object> = {
+  taskType: AiTaskType;
+  messages: ChatCompletionMessageParam[];
+  schema: z.ZodType<TRaw>;
+  mock: () => TOutput;
+  unavailable: (reason: string) => TOutput;
+  parseProvider: (raw: TRaw) => TOutput;
+  maxTokens?: number;
+  temperature?: number;
+};
+
+export async function runJsonAiTask<TRaw, TOutput extends object>({
+  taskType,
+  messages,
+  schema,
+  mock,
+  unavailable,
+  parseProvider,
+  maxTokens = 4096,
+  temperature = 0.2
+}: RunJsonAiTaskOptions<TRaw, TOutput>): Promise<AiTaskResult<TOutput>> {
+  const startedAt = performance.now();
+  const task = AI_TASKS[taskType];
+
+  if (forceMockEnabled()) {
+    return addAiMetadata(mock(), aiMetadata(startedAt, "mock", AI_MOCK_MODEL, "forced-mock")) as AiTaskResult<TOutput>;
+  }
+
+  if (!hasAiKey()) {
+    return unavailableResult(unavailable, startedAt, "missing-api-key");
+  }
+
+  try {
+    const client = createAiClient(task.timeoutMs);
+    const raw = await requestJsonText(client, messages, task.model, task.timeoutMs, maxTokens, temperature);
+    try {
+      return addAiMetadata(
+        parseProvider(schema.parse(JSON.parse(raw))),
+        aiMetadata(startedAt, "deepseek", task.model)
+      ) as AiTaskResult<TOutput>;
+    } catch (parseError) {
+      if (!task.retryInvalidJson) throw parseError;
+      const repaired = await requestJsonText(
+        client,
+        buildRepairMessages(raw, parseError),
+        task.model,
+        task.timeoutMs,
+        maxTokens,
+        0
+      );
+      return addAiMetadata(
+        parseProvider(schema.parse(JSON.parse(repaired))),
+        aiMetadata(startedAt, "deepseek", task.model)
+      ) as AiTaskResult<TOutput>;
+    }
+  } catch (error) {
+    console.warn(`AI task ${taskType} unavailable:`, error);
+    return unavailableResult(unavailable, startedAt, fallbackReasonFromError(error, task.model));
+  }
+}
+
+export function unavailableResult<TOutput extends object>(
+  unavailable: (reason: string) => TOutput,
+  startedAt: number,
+  reason: string
+): AiTaskResult<TOutput> {
+  return addAiMetadata(
+    unavailable(reason),
+    aiMetadata(startedAt, "unavailable", "none", reason)
+  ) as AiTaskResult<TOutput>;
+}
+
+async function requestJsonText(
+  client: ReturnType<typeof createAiClient>,
+  messages: ChatCompletionMessageParam[],
+  model: string,
+  timeoutMs: number,
+  maxTokens: number,
+  temperature: number
+) {
+  const completion = await withAiTimeout(
+    client.chat.completions.create({
+      model,
+      messages,
+      response_format: { type: "json_object" },
+      max_tokens: maxTokens,
+      temperature
+    }),
+    timeoutMs
+  );
+  const raw = completion.choices[0]?.message?.content;
+  if (!raw) throw new Error("AI returned empty content.");
+  return raw;
+}
+
+function buildRepairMessages(raw: string, parseError: unknown): ChatCompletionMessageParam[] {
+  const message = parseError instanceof Error ? parseError.message : "Invalid JSON response.";
+  return [
+    {
+      role: "system",
+      content: "Repair the assistant output into valid JSON matching the requested schema. Return JSON only. Do not add prose."
+    },
+    {
+      role: "user",
+      content: `Schema/validation error:\n${message}\n\nOriginal output:\n${raw}`
+    }
+  ];
+}
+

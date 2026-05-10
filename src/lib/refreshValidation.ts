@@ -24,12 +24,22 @@ export function validateProviderRefreshAnnotations(
   });
 
   if (text.trim() && relabeled.length === 0) {
-    return fallbackRefreshAnnotations(text, warnings, "Provider returned no exact annotation ranges.");
+    return {
+      annotations: [],
+      warnings: [...warnings, "Provider returned no exact annotation ranges."],
+      usedFallback: true,
+      reason: "Provider returned no exact annotation ranges."
+    };
   }
 
   const guarded = guardAgainstCitationOverlabeling(text, relabeled);
   if (moduleNumber === 6 && lacksUsefulLabelMix(guarded)) {
-    return fallbackRefreshAnnotations(text, warnings, "Provider returned too little label variety for final review.");
+    return {
+      annotations: guarded,
+      warnings: [...warnings, "Provider returned too little label variety for final review."],
+      usedFallback: true,
+      reason: "Provider returned too little label variety for final review."
+    };
   }
 
   return {

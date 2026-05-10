@@ -2,7 +2,7 @@ import "server-only";
 
 import OpenAI from "openai";
 
-export type AiProviderMode = "deepseek" | "mock" | "fallback";
+export type AiProviderMode = "deepseek" | "mock" | "unavailable";
 
 export type AiResponseMetadata = {
   providerMode: AiProviderMode;
@@ -15,15 +15,17 @@ export const AI_HIGH_QUALITY_MODEL = process.env.DEEPSEEK_HIGH_QUALITY_MODEL || 
 export const AI_MODEL = process.env.DEEPSEEK_MODEL || AI_HIGH_QUALITY_MODEL;
 export const AI_FAST_MODEL = process.env.DEEPSEEK_FAST_MODEL || process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 export const AI_MOCK_MODEL = "deterministic-mock";
-export const ASSIST_TIMEOUT_MS = readTimeout("ESSAYCRAFT_ASSIST_TIMEOUT_MS", 12000);
-export const REFRESH_TIMEOUT_MS = readTimeout("ESSAYCRAFT_REFRESH_TIMEOUT_MS", 10000);
-export const TRANSLATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_TRANSLATE_TIMEOUT_MS", 10000);
-export const GENERATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_GENERATE_TIMEOUT_MS", 30000);
+export const CHAT_TIMEOUT_MS = readTimeout("ESSAYCRAFT_CHAT_TIMEOUT_MS", readTimeout("ESSAYCRAFT_ASSIST_TIMEOUT_MS", 60000));
+export const EDIT_TIMEOUT_MS = readTimeout("ESSAYCRAFT_EDIT_TIMEOUT_MS", readTimeout("ESSAYCRAFT_ASSIST_TIMEOUT_MS", 60000));
+export const REFRESH_TIMEOUT_MS = readTimeout("ESSAYCRAFT_REFRESH_TIMEOUT_MS", 60000);
+export const TRANSLATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_TRANSLATE_TIMEOUT_MS", 60000);
+export const GENERATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_GENERATE_TIMEOUT_MS", 90000);
+export const ASSIST_TIMEOUT_MS = EDIT_TIMEOUT_MS;
 export const FAST_FALLBACK_MS = readTimeout("ESSAYCRAFT_FAST_FALLBACK_MS", process.env.NODE_ENV === "development" ? 2500 : 8000);
-export const interactiveTimeoutMs = ASSIST_TIMEOUT_MS;
+export const interactiveTimeoutMs = EDIT_TIMEOUT_MS;
 
 export function hasAiKey() {
-  return !providerSkipReason();
+  return Boolean(process.env.DEEPSEEK_API_KEY?.trim());
 }
 
 export function providerSkipReason() {
@@ -32,10 +34,18 @@ export function providerSkipReason() {
   return undefined;
 }
 
+export function forceMockEnabled() {
+  return process.env.ESSAYCRAFT_FORCE_MOCK_AI === "1";
+}
+
+export function offlineMockAllowed() {
+  return process.env.ESSAYCRAFT_ALLOW_OFFLINE_MOCK === "1";
+}
+
 export function createAiClient(timeoutMs = ASSIST_TIMEOUT_MS) {
   const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
   if (!apiKey) {
-    throw new Error("DEEPSEEK_API_KEY is not set. Add it to .env.local or use mock fallback.");
+    throw new Error("DEEPSEEK_API_KEY is not set. Add it to .env.local or enable explicit mock mode.");
   }
 
   return new OpenAI({

@@ -87,7 +87,7 @@ export type AssistantMessage = {
   role: "user" | "assistant";
   text: string;
   createdAt: string;
-  providerMode?: "deepseek" | "mock" | "fallback";
+  providerMode?: "deepseek" | "mock" | "unavailable";
   warnings?: string[];
 };
 
@@ -142,7 +142,7 @@ export type RefreshResponse = {
   realSourceCards?: number;
   referenceStatus?: string;
   nextStep?: string;
-  providerMode?: "deepseek" | "mock" | "fallback";
+  providerMode?: "deepseek" | "mock" | "unavailable";
   modelUsed?: string;
   latencyMs?: number;
   fallbackReason?: string;
@@ -166,7 +166,7 @@ export type GenerateNextResponse = {
   sources: SourceCard[];
   globalFeedback: string[];
   warnings: string[];
-  providerMode: "deepseek" | "mock" | "fallback";
+  providerMode: "deepseek" | "mock" | "unavailable";
   modelUsed?: string;
   latencyMs?: number;
   fallbackReason?: string;
@@ -194,7 +194,7 @@ type AssistResponseBase = {
   title?: string;
   actionType?: string;
   explanation?: string;
-  providerMode?: "deepseek" | "mock" | "fallback";
+  providerMode?: "deepseek" | "mock" | "unavailable";
   modelUsed?: string;
   latencyMs?: number;
   fallbackReason?: string;
@@ -235,7 +235,7 @@ export type AssistResponseLegacy = {
   actionType?: string;
   originalExcerpt?: string;
   explanation?: string;
-  providerMode?: "deepseek" | "mock" | "fallback";
+  providerMode?: "deepseek" | "mock" | "unavailable";
   modelUsed?: string;
   latencyMs?: number;
   fallbackReason?: string;
@@ -259,7 +259,7 @@ export type TranslateResponse = {
   mode: "en-to-zh" | "zh-to-en" | "auto-to-zh";
   annotations: Annotation[];
   warnings: string[];
-  providerMode: "deepseek" | "mock" | "fallback";
+  providerMode: "deepseek" | "mock" | "unavailable";
   modelUsed?: string;
   latencyMs?: number;
   fallbackReason?: string;

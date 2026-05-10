@@ -8,17 +8,21 @@ describe("AI provider routing config", () => {
     vi.resetModules();
   });
 
-  it("uses task-specific timeout defaults instead of the old 2500ms chat fallback", async () => {
+  it("uses provider-first task timeout defaults", async () => {
+    vi.stubEnv("ESSAYCRAFT_CHAT_TIMEOUT_MS", "");
+    vi.stubEnv("ESSAYCRAFT_EDIT_TIMEOUT_MS", "");
     vi.stubEnv("ESSAYCRAFT_ASSIST_TIMEOUT_MS", "");
     vi.stubEnv("ESSAYCRAFT_REFRESH_TIMEOUT_MS", "");
     vi.stubEnv("ESSAYCRAFT_TRANSLATE_TIMEOUT_MS", "");
     vi.stubEnv("ESSAYCRAFT_GENERATE_TIMEOUT_MS", "");
     const config = await import("./ai-client");
 
-    expect(config.ASSIST_TIMEOUT_MS).toBe(12000);
-    expect(config.REFRESH_TIMEOUT_MS).toBe(10000);
-    expect(config.TRANSLATE_TIMEOUT_MS).toBe(10000);
-    expect(config.GENERATE_TIMEOUT_MS).toBe(30000);
+    expect(config.CHAT_TIMEOUT_MS).toBe(60000);
+    expect(config.EDIT_TIMEOUT_MS).toBe(60000);
+    expect(config.ASSIST_TIMEOUT_MS).toBe(60000);
+    expect(config.REFRESH_TIMEOUT_MS).toBe(60000);
+    expect(config.TRANSLATE_TIMEOUT_MS).toBe(60000);
+    expect(config.GENERATE_TIMEOUT_MS).toBe(90000);
   });
 
   it("attempts the provider when a key exists and mock is not forced", async () => {
@@ -30,11 +34,11 @@ describe("AI provider routing config", () => {
     expect(config.providerSkipReason()).toBeUndefined();
   });
 
-  it("uses mock when forced or when the provider key is absent", async () => {
+  it("reports forced mock separately from missing provider key", async () => {
     vi.stubEnv("DEEPSEEK_API_KEY", "test-key");
     vi.stubEnv("ESSAYCRAFT_FORCE_MOCK_AI", "1");
     let config = await import("./ai-client");
-    expect(config.hasAiKey()).toBe(false);
+    expect(config.hasAiKey()).toBe(true);
     expect(config.providerSkipReason()).toBe("forced-mock");
 
     vi.resetModules();
