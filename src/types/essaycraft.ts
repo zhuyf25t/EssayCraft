@@ -119,7 +119,7 @@ export type RefreshRequest = {
 };
 
 export type RefreshResponse = {
-  kind?: "annotations" | "revision";
+  kind?: "annotations" | "revision" | "moduleReview";
   annotations: Annotation[];
   globalFeedback: string[];
   warnings: string[];
@@ -129,6 +129,19 @@ export type RefreshResponse = {
   originalSummary?: string;
   rationale?: string;
   patchResolutionPlan?: string[];
+  reviewSummary?: string;
+  reviewChecklist?: Array<{
+    label: string;
+    status: "ready" | "review" | "issue";
+    detail: string;
+  }>;
+  reviewSuggestions?: string[];
+  issueCount?: number;
+  citationGaps?: number;
+  inTextCitations?: number;
+  realSourceCards?: number;
+  referenceStatus?: string;
+  nextStep?: string;
   providerMode?: "deepseek" | "mock" | "fallback";
 };
 

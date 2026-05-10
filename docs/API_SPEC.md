@@ -22,6 +22,7 @@ Request:
 ```ts
 {
   topic: string;
+  projectTitle?: string;
   moduleNumber: 1 | 2 | 3 | 4 | 5 | 6;
   text: string;
   annotations: Annotation[];
@@ -53,12 +54,34 @@ type RefreshResponse =
       globalFeedback: string[];
       warnings: string[];
       providerMode: "deepseek" | "mock" | "fallback";
+    }
+  | {
+      kind: "moduleReview";
+      annotations: Annotation[];
+      reviewSummary: string;
+      reviewChecklist: Array<{
+        label: string;
+        status: "ready" | "review" | "issue";
+        detail: string;
+      }>;
+      reviewSuggestions: string[];
+      issueCount: number;
+      citationGaps?: number;
+      inTextCitations?: number;
+      realSourceCards?: number;
+      referenceStatus?: string;
+      nextStep?: string;
+      globalFeedback: string[];
+      warnings: string[];
+      providerMode: "deepseek" | "mock" | "fallback";
     };
 ```
 
 Constraints:
 
 - With no open notes, refresh is annotation-only and preserves exact text.
+- Modules 5 and 6 may return `kind: "moduleReview"` so the client can show a visible citation/final-review card while still preserving exact text.
+- Module 6 review checks content, structure, clarity, style, proofreading, citations/references, and conclusion readiness.
 - With open notes, refresh returns a preview. The client snapshots and applies only after explicit Accept.
 - Reject leaves both text and notes unchanged.
 - If provider output is unchanged after a note asks for a change, EssayCraft falls back to deterministic mock revision instead of presenting a no-op as success.

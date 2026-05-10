@@ -73,6 +73,8 @@ export default function Home() {
   const [editingPatchId, setEditingPatchId] = useState<string | null>(null);
   const [assistantModeRequest, setAssistantModeRequest] = useState<{ mode: "chat" | "edit"; id: number }>({ mode: "chat", id: 0 });
   const [revisionPreview, setRevisionPreview] = useState<RefreshResponse | undefined>();
+  const [refreshResult, setRefreshResult] = useState<RefreshResponse | undefined>();
+  const [busyAction, setBusyAction] = useState<"generate" | "refresh" | "assist" | "translate" | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [undoStack, setUndoStack] = useState<AiUndoEntry[]>([]);
   const editorAiUndoReadyRef = useRef(false);
@@ -122,6 +124,7 @@ export default function Home() {
       setActiveSentenceRange(undefined);
       setAssistantSuggestion(undefined);
       setRevisionPreview(undefined);
+      setRefreshResult(undefined);
       setEditorResetKey((value) => value + 1);
       setStatus("Undid last AI edit.");
     }
@@ -258,6 +261,7 @@ export default function Home() {
       updatedAt: nowIso()
     }));
     setRevisionPreview(undefined);
+    setRefreshResult(undefined);
     setStatus("Auto-saved. Refresh if highlights need updating.");
   }
 
@@ -341,12 +345,14 @@ export default function Home() {
     }
 
     setLoading(true);
+    setBusyAction("refresh");
+    setRefreshResult(undefined);
     try {
       const response = await fetch("/api/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: activeProject.title,
+          topic: activeProject.topic,
           projectTitle: activeProject.title,
           moduleNumber: activeProject.currentModule,
           text: activeDoc.text,
@@ -362,6 +368,7 @@ export default function Home() {
       if (data.kind === "revision" && data.proposedText) {
         const safePlan = (data.patchResolutionPlan ?? []).filter((patchId) => activeDoc.patches.some((patch) => patch.id === patchId));
         setRevisionPreview({ ...data, patchResolutionPlan: safePlan });
+        setRefreshResult(undefined);
         setAssistantSuggestion(undefined);
         setRightTab("assistant");
         requestAssistantMode("edit");
@@ -375,11 +382,20 @@ export default function Home() {
         globalFeedback: data.globalFeedback,
         updatedAt: nowIso()
       }));
-      setStatus(data.globalFeedback?.[0] ?? "Highlights refreshed without rewriting text.");
+      setRefreshResult({ ...data, kind: data.kind ?? "annotations" });
+      setAssistantSuggestion(undefined);
+      setRightTab("assistant");
+      requestAssistantMode("edit");
+      setStatus(data.kind === "moduleReview" && activeProject.currentModule === 6
+        ? "Final review ready."
+        : data.kind === "moduleReview"
+          ? "Citation review ready."
+          : data.globalFeedback?.[0] ?? "Highlights refreshed.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Refresh failed.");
     } finally {
       setLoading(false);
+      setBusyAction(null);
     }
   }
 
@@ -400,6 +416,7 @@ export default function Home() {
     }
 
     setLoading(true);
+    setBusyAction("generate");
     setStatus(`Generating Module ${target} from Module ${sourceModuleNumber}...`);
     setLastAction({ tone: "info", message: `Generating Module ${target} from Module ${sourceModuleNumber}...` });
     try {
@@ -453,6 +470,7 @@ export default function Home() {
       setPatchRange(null);
       setAssistantSuggestion(undefined);
       setRevisionPreview(undefined);
+      setRefreshResult(undefined);
       resetEditorViewport();
       const message = `Module ${target} generated and opened. Previous Module ${target} saved as a snapshot.`;
       const details = [
@@ -468,6 +486,7 @@ export default function Home() {
       setLastAction({ tone: "error", message, details: ["No module was overwritten."], retryGenerate: true });
     } finally {
       setLoading(false);
+      setBusyAction(null);
     }
 }
 
@@ -504,6 +523,7 @@ function handleSaveSnapshot() {
     setEditingPatchId(null);
     setAssistantSuggestion(undefined);
     setRevisionPreview(undefined);
+    setRefreshResult(undefined);
     resetEditorViewport();
     setLastAction({ tone: "info", message: `Viewing Module ${moduleNumber}: ${MODULE_TITLES[moduleNumber]}.` });
   }
@@ -516,6 +536,7 @@ function handleSaveSnapshot() {
     setPatchRange(null);
     setEditingPatchId(null);
     setRevisionPreview(undefined);
+    setRefreshResult(undefined);
     resetEditorViewport();
     setStatus(`Module ${activeProject.currentModule} cleared. Restore is available from snapshots.`);
   }
@@ -565,6 +586,7 @@ function handleSaveSnapshot() {
       setPatchRange(null);
       setEditingPatchId(null);
       setAssistantSuggestion(undefined);
+      setRefreshResult(undefined);
       resetEditorViewport();
       setStatus("Project JSON imported.");
     } catch (error) {
@@ -685,12 +707,13 @@ function handleSaveSnapshot() {
 
   async function handleAssist(action: string, intent: AssistIntent) {
     const hasSelection = selectedRange.end > selectedRange.start;
+    const analyzeRequest = /(analy[sz]e|\u5206\u6790|\u8bc4\u4ef7|\u70b9\u8bc4|\u7528\u4e2d\u6587)/i.test(action);
     const requestAction = intent === "edit" && !/(rewrite|academic|analysis|translate|revise|sentence|passage)/i.test(action)
       ? `Revise selected passage: ${action}`
       : action;
     const submittedRange = intent === "chat"
       ? undefined
-      : intent === "inspect" && activeAnnotation
+      : intent === "inspect" && activeAnnotation && !analyzeRequest
         ? { start: activeAnnotation.start, end: activeAnnotation.end }
         : hasSelection
           ? selectedRange
@@ -712,12 +735,13 @@ function handleSaveSnapshot() {
     }
 
     setLoading(true);
+    setBusyAction("assist");
     try {
       const response = await fetch("/api/assist", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          topic: activeProject.title,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+          topic: activeProject.topic,
           projectTitle: activeProject.title,
           moduleNumber: activeProject.currentModule,
           moduleTitle: activeDoc.title,
@@ -748,9 +772,11 @@ function handleSaveSnapshot() {
           warnings: anchoredData.warnings
         }]);
         setAssistantSuggestion(undefined);
+        setRefreshResult(undefined);
         setStatus("Copilot replied.");
       } else {
         setAssistantSuggestion(anchoredData);
+        setRefreshResult(undefined);
         setStatus(anchoredData.kind === "inspect" ? "Highlight explanation ready." : "Edit preview ready.");
       }
     } catch (error) {
@@ -766,6 +792,7 @@ function handleSaveSnapshot() {
       setStatus(message);
     } finally {
       setLoading(false);
+      setBusyAction(null);
     }
   }
 
@@ -793,6 +820,15 @@ function handleSaveSnapshot() {
       };
     });
     setRevisionPreview(undefined);
+    setRefreshResult({
+      kind: "annotations",
+      annotations: normalizeAnnotations(protectModuleText(normalizeText(revisionPreview.proposedText ?? activeDoc.text)), revisionPreview.proposedAnnotations ?? revisionPreview.annotations),
+      globalFeedback: ["Notes applied and highlights refreshed."],
+      warnings: [],
+      providerMode: revisionPreview.providerMode
+    });
+    setRightTab("assistant");
+    requestAssistantMode("edit");
     setStatus("Notes applied. Undo is available.");
   }
 
@@ -830,6 +866,7 @@ function handleSaveSnapshot() {
       };
     });
     setAssistantSuggestion(undefined);
+    setRefreshResult(undefined);
     setStatus("AI edit applied. Undo is available.");
     setRevisionPreview(undefined);
   }
@@ -872,6 +909,7 @@ function handleSaveSnapshot() {
 
   async function requestTranslatePreview() {
     setLoading(true);
+    setBusyAction("translate");
     try {
       const useSelection = selectedRange.end > selectedRange.start;
       const response = await fetch("/api/translate", {
@@ -893,6 +931,7 @@ function handleSaveSnapshot() {
       setStatus(error instanceof Error ? error.message : "Translate failed.");
     } finally {
       setLoading(false);
+      setBusyAction(null);
     }
   }
 
@@ -1027,11 +1066,15 @@ function handleSaveSnapshot() {
                       loading={loading}
                       suggestion={assistantSuggestion}
                       revisionPreview={revisionPreview}
+                      refreshResult={refreshResult}
                       onChat={(message) => void handleAssist(message, "chat")}
                       onSelectionAction={(action) => void handleAssist(action, "edit")}
                       onInspectAction={(action) => void handleAssist(action, "inspect")}
                       onApply={handleApplyAssistant}
-                      onDismiss={() => setAssistantSuggestion(undefined)}
+                      onDismiss={() => {
+                        setAssistantSuggestion(undefined);
+                        setRefreshResult(undefined);
+                      }}
                       onAddPatchForRange={handleOpenPatch}
                       onSaveSuggestionAsPatch={handleSaveSuggestionAsPatch}
                       onAcceptRevision={acceptRevisionPreview}
@@ -1079,6 +1122,7 @@ function handleSaveSnapshot() {
           <Toolbar
             currentModule={activeProject.currentModule}
             loading={loading}
+            busyAction={busyAction}
             status={status}
             toastVisible={toastVisible}
             canUndo={undoStack.length > 0 && /Undo is available|AI edit applied|Notes applied/.test(status)}
@@ -1229,6 +1273,12 @@ function ExportPanel({
         {diagnosticsOpen ? (
           <div data-testid="ai-diagnostics" className="mt-2 space-y-1 border-t border-slate-100 pt-2">
             {diagnosticsLoading ? <p>Loading diagnostics...</p> : null}
+            {!diagnostics ? (
+              <>
+                <p>Provider configured: checking...</p>
+                <p>Interactive timeout: checking...</p>
+              </>
+            ) : null}
             {diagnostics ? (
               <>
                 <p>Provider configured: {diagnostics.providerConfigured ? "yes" : "no"}</p>

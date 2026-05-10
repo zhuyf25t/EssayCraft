@@ -6,6 +6,7 @@ import type { ModuleNumber } from "@/types/essaycraft";
 type ToolbarProps = {
   currentModule: ModuleNumber;
   loading: boolean;
+  busyAction?: "generate" | "refresh" | "assist" | "translate" | null;
   status: string;
   toastVisible: boolean;
   canUndo: boolean;
@@ -29,7 +30,7 @@ export function Toolbar(props: ToolbarProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const finalModule = props.currentModule >= 6;
   const hasDetails = Boolean(props.lastAction.details?.length || props.lastAction.retryGenerate);
-  const statusText = props.loading ? "Working..." : compactStatus(props.status, props.lastAction.message);
+  const statusText = props.loading ? busyStatus(props.busyAction) : compactStatus(props.status, props.lastAction.message);
 
   return (
     <div data-testid="action-toolbar" className="relative z-20 shrink-0 border-t border-slate-200 bg-white/95 px-4 py-2">
@@ -45,7 +46,7 @@ export function Toolbar(props: ToolbarProps) {
           onClick={finalModule ? props.onFinalizeExport : props.onGenerateNext}
           disabled={props.loading}
         >
-          {props.loading && !finalModule
+          {props.loading && props.busyAction === "generate" && !finalModule
             ? `Generating Module ${props.currentModule + 1}...`
             : finalModule
               ? "Finalize / Export"
@@ -57,7 +58,7 @@ export function Toolbar(props: ToolbarProps) {
         </button>
 
         <button className="btn-secondary whitespace-nowrap px-3 py-2 text-sm" onClick={props.onRefresh} disabled={props.loading}>
-          {props.hasOpenPatches ? "Apply Notes & Refresh" : "Refresh Highlighting"}
+          {props.loading && props.busyAction === "refresh" ? "Refreshing" : props.hasOpenPatches ? "Apply Notes & Refresh" : "Refresh Highlighting"}
         </button>
 
         <div className="absolute right-4 top-2 flex min-w-0 items-center gap-2">
@@ -111,6 +112,14 @@ export function Toolbar(props: ToolbarProps) {
 function compactStatus(status: string, lastActionMessage: string) {
   const value = status && status !== "Ready" ? status : lastActionMessage;
   return value === "Ready" ? "Saved" : value;
+}
+
+function busyStatus(action: ToolbarProps["busyAction"]) {
+  if (action === "refresh") return "Refreshing";
+  if (action === "generate") return "Generating";
+  if (action === "assist") return "Copilot thinking";
+  if (action === "translate") return "Translating";
+  return "Working...";
 }
 
 function statusClasses(tone: ToolbarProps["lastAction"]["tone"]) {

@@ -92,7 +92,7 @@ export const refreshRequestSchema = z.object({
 });
 
 export const refreshResponseSchema = z.object({
-  kind: z.enum(["annotations", "revision"]).optional(),
+  kind: z.enum(["annotations", "revision", "moduleReview"]).optional(),
   annotations: z.array(annotationSchema),
   proposedText: z.string().optional(),
   sourceText: z.string().optional(),
@@ -100,6 +100,19 @@ export const refreshResponseSchema = z.object({
   originalSummary: z.string().optional(),
   rationale: z.string().optional(),
   patchResolutionPlan: z.array(z.string()).optional(),
+  reviewSummary: z.string().optional(),
+  reviewChecklist: z.array(z.object({
+    label: z.string(),
+    status: z.enum(["ready", "review", "issue"]),
+    detail: z.string()
+  })).optional(),
+  reviewSuggestions: z.array(z.string()).optional(),
+  issueCount: z.number().int().min(0).optional(),
+  citationGaps: z.number().int().min(0).optional(),
+  inTextCitations: z.number().int().min(0).optional(),
+  realSourceCards: z.number().int().min(0).optional(),
+  referenceStatus: z.string().optional(),
+  nextStep: z.string().optional(),
   providerMode: z.enum(["deepseek", "mock", "fallback"]).optional(),
   globalFeedback: z.array(z.string()).default([]),
   warnings: z.array(z.string()).default([])

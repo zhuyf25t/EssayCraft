@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { Annotation, Patch, RefreshResponse } from "@/types/essaycraft";
+import type { Annotation, Patch, RefreshRequest, RefreshResponse, SourceCard } from "@/types/essaycraft";
 import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
 import { buildMockAnnotations, exactAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
 import { normalizedForNoopCompare, protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
@@ -18,7 +18,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         openPatches.length
           ? mockPatchRevision(input.text, openPatches, input.projectTitle || input.topic)
-          : mockRefresh(input.text, input.patches, "Highlights refreshed. Text was not rewritten.")
+          : mockRefresh(input, "Highlights refreshed. Text was not rewritten.")
       );
     }
 
@@ -55,19 +55,19 @@ export async function POST(request: Request) {
       }
 
       const exact = exactAnnotations(input.text, parsed.annotations);
-      const normalized: RefreshResponse = {
+      const normalized: RefreshResponse = addModuleReviewIfNeeded(input, {
         kind: "annotations",
         annotations: exact.annotations,
-        globalFeedback: parsed.globalFeedback ?? [],
+        globalFeedback: parsed.globalFeedback?.length ? parsed.globalFeedback : [moduleRefreshSuggestion(input, exact.annotations)],
         warnings: [...(parsed.warnings ?? []), ...exact.warnings],
         providerMode: "deepseek"
-      };
+      });
 
       return NextResponse.json(normalized);
     } catch {
       const fallback = openPatches.length
         ? mockPatchRevision(input.text, openPatches, input.projectTitle || input.topic)
-        : mockRefresh(input.text, input.patches, "Highlights refreshed. Text was not rewritten.");
+        : mockRefresh(input, "Highlights refreshed. Text was not rewritten.");
       fallback.providerMode = "fallback";
       fallback.warnings.push("Refresh used a local fallback. Text was not rewritten.");
       return NextResponse.json(fallback);
@@ -78,17 +78,17 @@ export async function POST(request: Request) {
   }
 }
 
-function mockRefresh(text: string, patches: Patch[], message: string): RefreshResponse {
-  const patchAnnotations = annotationsFromPatches(text, patches);
-  const annotations = normalizeAnnotations(text, [...patchAnnotations, ...buildMockAnnotations(text), ...findIssueRanges(text)]);
+function mockRefresh(input: RefreshRequest, message: string): RefreshResponse {
+  const patchAnnotations = annotationsFromPatches(input.text, input.patches);
+  const annotations = normalizeAnnotations(input.text, [...patchAnnotations, ...buildMockAnnotations(input.text), ...findIssueRanges(input.text)]);
 
-  return {
+  return addModuleReviewIfNeeded(input, {
     kind: "annotations",
     annotations,
-    globalFeedback: [message],
+    globalFeedback: [message, moduleRefreshSuggestion(input, annotations)].filter(Boolean),
     warnings: [],
     providerMode: "mock"
-  };
+  });
 }
 
 function mockPatchRevision(text: string, patches: Patch[], projectTitle = ""): RefreshResponse {
@@ -350,4 +350,226 @@ function annotationsFromPatches(text: string, patches: Patch[]): Annotation[] {
     }
   }
   return result;
+}
+
+function addModuleReviewIfNeeded(input: RefreshRequest, response: RefreshResponse): RefreshResponse {
+  if (input.moduleNumber === 6) {
+    return {
+      ...response,
+      kind: "moduleReview",
+      ...buildFinalReview(input, response.annotations),
+      globalFeedback: ["Final review ready.", ...response.globalFeedback.filter((message) => message !== "Final review ready.")]
+    };
+  }
+  if (input.moduleNumber === 5) {
+    return {
+      ...response,
+      kind: "moduleReview",
+      ...buildCitationReview(input, response.annotations),
+      globalFeedback: ["Citation review ready.", ...response.globalFeedback.filter((message) => message !== "Citation review ready.")]
+    };
+  }
+  return {
+    ...response,
+    issueCount: response.annotations.filter((annotation) => annotation.label === "issue").length
+  };
+}
+
+function moduleRefreshSuggestion(input: RefreshRequest, annotations: Annotation[]) {
+  const issues = annotations.filter((annotation) => annotation.label === "issue").length;
+  if (input.moduleNumber === 1) return "Check that the topic, research question, thesis, and thesis map still match each other.";
+  if (input.moduleNumber === 2) return "Make each source need searchable by naming the evidence type, keyword, or source category.";
+  if (input.moduleNumber === 3) return "Check that every body paragraph plan includes claim, evidence, analysis, and link back.";
+  if (input.moduleNumber === 4) return issues
+    ? `Draft highlights refreshed. Resolve ${issues} issue marker(s), especially citation-needed claims.`
+    : "Draft highlights refreshed. Next, check transitions and evidence integration.";
+  if (input.moduleNumber === 5) return "Citation review refreshed. Compare in-text citations with the source cards and reference list.";
+  return "Final review refreshed. Use the checklist before export.";
+}
+
+function buildFinalReview(input: RefreshRequest, annotations: Annotation[]) {
+  const text = input.text;
+  const lower = text.toLowerCase();
+  const paragraphCount = text.split(/\n\s*\n/).filter((paragraph) => paragraph.trim()).length;
+  const citationGaps = countCitationGaps(text, annotations);
+  const inTextCitations = countInTextCitations(text);
+  const realSourceCards = countRealSourceCards(input.sources);
+  const hasConclusion = /in conclusion|overall|to conclude|conclusion|why it matters|implication/i.test(text);
+  const hasQuestion = /\?/.test(text) || /research question/i.test(text);
+  const hasThesis = /thesis|argues|should|because/i.test(lower);
+  const longSentences = (text.match(/[^.!?\n]{180,}[.!?]/g) ?? []).length;
+  const issueCount = citationGaps + annotations.filter((annotation) => annotation.label === "issue").length;
+  const citationDetail = citationGaps
+    ? `${citationGaps} citation-needed marker(s) remain.`
+    : inTextCitations && realSourceCards
+      ? "In-text citation signals and source cards are present; compare each pair before submission."
+      : "No obvious citation-needed marker was found, but source cards should still be checked manually.";
+
+  return {
+    reviewSummary: buildFinalSummary({ hasThesis, paragraphCount, citationGaps, longSentences, realSourceCards }),
+    reviewChecklist: [
+      {
+        label: "Content",
+        status: hasThesis ? "ready" as const : "review" as const,
+        detail: hasThesis
+          ? "The essay appears to have a central argument; confirm every paragraph answers the prompt."
+          : "Add or clarify the main argument so the final review has a clear target."
+      },
+      {
+        label: "Structure",
+        status: paragraphCount >= 4 ? "ready" as const : "review" as const,
+        detail: paragraphCount >= 4
+          ? `The draft has ${paragraphCount} visible paragraph block(s); check transitions between major points.`
+          : "The essay may need clearer introduction, body, and conclusion separation."
+      },
+      {
+        label: "Clarity",
+        status: longSentences ? "review" as const : "ready" as const,
+        detail: longSentences
+          ? `${longSentences} long sentence(s) may need splitting for readability.`
+          : "Sentence length looks manageable in the local review."
+      },
+      {
+        label: "Style",
+        status: /\bi think\b|\bkids\b|\bthings\b|\bbad\b/gi.test(text) ? "review" as const : "ready" as const,
+        detail: "Keep the tone academic by using precise nouns, cautious claims, and formal transitions."
+      },
+      {
+        label: "Proofreading",
+        status: / {2,}|[ \t]+\n|[.!?]{2,}/.test(text) ? "review" as const : "ready" as const,
+        detail: "Check grammar, spelling, punctuation, capitalization, and formatting before final export."
+      },
+      {
+        label: "Citations / References",
+        status: citationGaps || !realSourceCards ? "issue" as const : "review" as const,
+        detail: citationDetail
+      },
+      {
+        label: "Conclusion",
+        status: hasConclusion ? "ready" as const : "review" as const,
+        detail: hasConclusion
+          ? "The ending appears to return to the argument; make sure it synthesizes rather than repeats."
+          : "Strengthen the conclusion by returning to the thesis, synthesizing main points, and explaining why the argument matters."
+      }
+    ],
+    reviewSuggestions: finalSuggestions({ hasQuestion, hasThesis, citationGaps, longSentences, realSourceCards, hasConclusion }),
+    issueCount,
+    citationGaps,
+    inTextCitations,
+    realSourceCards,
+    referenceStatus: realSourceCards
+      ? "Reference preview can use the student-supplied source cards only."
+      : "No real source cards are available yet; EssayCraft will not invent references.",
+    nextStep: citationGaps
+      ? "Resolve citation-needed markers and source-card gaps before final submission."
+      : "Read the essay once aloud, then export from Module 6 when the checklist looks ready."
+  };
+}
+
+function buildCitationReview(input: RefreshRequest, annotations: Annotation[]) {
+  const citationGaps = countCitationGaps(input.text, annotations);
+  const inTextCitations = countInTextCitations(input.text);
+  const realSourceCards = countRealSourceCards(input.sources);
+  const issueCount = citationGaps + input.sources.filter((source) => source.placeholder).length;
+  return {
+    reviewSummary: citationGaps
+      ? "Citation check found claims that still need source support."
+      : "Citation check refreshed. Continue matching every in-text citation to a student-supplied source card.",
+    reviewChecklist: [
+      {
+        label: "Citation gaps",
+        status: citationGaps ? "issue" as const : "ready" as const,
+        detail: citationGaps ? `${citationGaps} citation gap(s) remain.` : "No citation-needed markers were found locally."
+      },
+      {
+        label: "In-text citations",
+        status: inTextCitations ? "review" as const : "issue" as const,
+        detail: inTextCitations ? `${inTextCitations} in-text citation pattern(s) found.` : "No in-text citation patterns were found."
+      },
+      {
+        label: "Source cards",
+        status: realSourceCards ? "review" as const : "issue" as const,
+        detail: realSourceCards ? `${realSourceCards} real source card(s) are available.` : "Add real student-supplied source cards before building a reference list."
+      },
+      {
+        label: "Reference list",
+        status: realSourceCards ? "review" as const : "issue" as const,
+        detail: realSourceCards ? "Reference preview uses only source cards you entered." : "EssayCraft will not invent reference entries."
+      }
+    ],
+    reviewSuggestions: [
+      "Check that each in-text citation has a matching source card.",
+      "Replace placeholders with real author, year, title, and container details.",
+      "Keep [citation needed] until real evidence is supplied."
+    ],
+    issueCount,
+    citationGaps,
+    inTextCitations,
+    realSourceCards,
+    referenceStatus: realSourceCards ? "Manual source cards available." : "No real source cards yet.",
+    nextStep: "Open Sources and verify cards before final export."
+  };
+}
+
+function buildFinalSummary({
+  hasThesis,
+  paragraphCount,
+  citationGaps,
+  longSentences,
+  realSourceCards
+}: {
+  hasThesis: boolean;
+  paragraphCount: number;
+  citationGaps: number;
+  longSentences: number;
+  realSourceCards: number;
+}) {
+  const parts = [
+    hasThesis ? "The essay has a visible argumentative direction" : "The essay still needs a clearer central claim",
+    paragraphCount >= 4 ? "the paragraph structure is visible" : "the structure may need clearer paragraph separation",
+    citationGaps ? `${citationGaps} evidence claim(s) still need citation checks` : "no citation-needed marker was found locally",
+    longSentences ? "some long sentences may need proofreading" : "sentence length is mostly manageable",
+    realSourceCards ? "student-supplied source cards are available" : "no real source cards are available yet"
+  ];
+  return `${parts.join("; ")}.`;
+}
+
+function finalSuggestions({
+  hasQuestion,
+  hasThesis,
+  citationGaps,
+  longSentences,
+  realSourceCards,
+  hasConclusion
+}: {
+  hasQuestion: boolean;
+  hasThesis: boolean;
+  citationGaps: number;
+  longSentences: number;
+  realSourceCards: number;
+  hasConclusion: boolean;
+}) {
+  const suggestions: string[] = [];
+  if (!hasQuestion) suggestions.push("Make the final version clearly answer the research question from Module 1.");
+  if (!hasThesis) suggestions.push("Restate the working thesis in a more precise final form.");
+  suggestions.push("Check paragraph order: each body paragraph should move from claim to evidence to analysis.");
+  if (longSentences) suggestions.push("Split the longest sentences so the meaning is easier to follow.");
+  if (citationGaps || !realSourceCards) suggestions.push("Resolve citation-needed claims with real source cards; do not invent references.");
+  if (!hasConclusion) suggestions.push("Add a conclusion that synthesizes the argument and explains why it matters.");
+  if (suggestions.length < 3) suggestions.push("Proofread punctuation, formatting, and repeated phrases before export.");
+  return suggestions.slice(0, 5);
+}
+
+function countCitationGaps(text: string, annotations: Annotation[]) {
+  const markers = (text.match(/\[citation needed\]/gi) ?? []).length;
+  const issueAnnotations = annotations.filter((annotation) => annotation.label === "issue").length;
+  return Math.max(markers, issueAnnotations);
+}
+
+function countInTextCitations(text: string) {
+  return (text.match(/\([A-Z][A-Za-z .&-]+,\s*\d{4}[a-z]?\)/g) ?? []).length;
+}
+
+function countRealSourceCards(sources: SourceCard[]) {
+  return sources.filter((source) => !source.placeholder && Boolean(source.title?.trim()) && Boolean(source.authors?.length) && Boolean(source.year?.trim())).length;
 }

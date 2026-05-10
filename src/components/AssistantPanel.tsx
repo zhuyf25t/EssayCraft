@@ -18,6 +18,7 @@ type AssistantPanelProps = {
   loading: boolean;
   suggestion?: AssistResponse;
   revisionPreview?: RefreshResponse;
+  refreshResult?: RefreshResponse;
   onChat: (message: string) => void;
   onSelectionAction: (action: string) => void;
   onInspectAction: (action: string) => void;
@@ -156,6 +157,7 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   const excerpt = useMemo(() => compactExcerpt(contextText), [contextText]);
   const label = props.activeAnnotation ? LABELS[props.activeAnnotation.label] : undefined;
   const canEdit = Boolean(contextRange && contextRange.end > contextRange.start);
+  const canExplain = Boolean(props.activeAnnotation);
 
   return (
     <div data-testid="assistant-edit-mode" className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -194,6 +196,10 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
           <RevisionPreview preview={props.revisionPreview} onAccept={props.onAcceptRevision} onReject={props.onRejectRevision} />
         ) : null}
 
+        {props.refreshResult && props.refreshResult.kind !== "revision" ? (
+          <RefreshResultCard result={props.refreshResult} onDismiss={props.onDismiss} />
+        ) : null}
+
         {props.suggestion?.kind === "edit" ? (
           <EditPreview suggestion={props.suggestion} onApply={props.onApply} onDismiss={props.onDismiss} />
         ) : null}
@@ -212,11 +218,20 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
           className="min-h-14 w-full resize-none border-0 bg-transparent text-sm outline-none"
           disabled={!canEdit}
         />
-        <div className="grid grid-cols-4 gap-1 text-[12px]">
+        <div className="grid grid-cols-5 gap-1 text-[11px]">
           <button aria-label="Rewrite" className="btn-primary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Rewrite selected passage")}>Rewrite</button>
-          <button aria-label="Make academic" className="rounded-lg border border-blue-500 bg-blue-50 px-1.5 py-1.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>Academic</button>
+          <button aria-label="Make academic" className="btn-primary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>Academic</button>
+          <button aria-label="Analyze" className="btn-secondary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => runAnalyze()}>Analyze</button>
           <button aria-label="Translate" className="btn-secondary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Translate selected text")}>Translate</button>
-          <button aria-label="Explain highlight" className="btn-secondary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onInspectAction(props.activeAnnotation ? "Explain this highlight" : "Explain this sentence")}>Explain</button>
+          <button
+            aria-label="Explain highlight"
+            className="btn-secondary px-1.5 py-1.5"
+            disabled={!canExplain || props.loading}
+            title={canExplain ? "Explain the active highlight label." : "Click a highlighted sentence first."}
+            onClick={() => props.onInspectAction("Explain this highlight")}
+          >
+            Explain
+          </button>
         </div>
       </div>
     </div>
@@ -225,6 +240,12 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   function runInstruction(baseAction: string) {
     const text = instruction.trim();
     props.onSelectionAction(text ? `${baseAction}: ${text}` : baseAction);
+    setInstruction("");
+  }
+
+  function runAnalyze() {
+    const text = instruction.trim();
+    props.onInspectAction(text ? `Analyze selected text: ${text}` : "Analyze selected text");
     setInstruction("");
   }
 }
@@ -286,10 +307,56 @@ function RevisionPreview({
   );
 }
 
-function InspectCard({ suggestion, onDismiss }: { suggestion: AssistResponse; onDismiss: () => void }) {
+function RefreshResultCard({ result, onDismiss }: { result: RefreshResponse; onDismiss: () => void }) {
+  const checklist = result.reviewChecklist ?? [];
+  const isReview = result.kind === "moduleReview";
+  const title = isReview ? (result.globalFeedback[0] ?? "Review ready") : "Refresh result";
   return (
-    <article data-testid="assistant-highlight-explanation" className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
-      <div className="mb-1 font-semibold text-slate-800">Highlight explanation</div>
+    <article data-testid="refresh-result-card" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="font-semibold">{title}</div>
+        <button className="btn-secondary px-2 py-1 text-[11px]" onClick={onDismiss}>Dismiss</button>
+      </div>
+      {result.reviewSummary ? (
+        <p className="whitespace-pre-wrap text-emerald-950/90">{result.reviewSummary}</p>
+      ) : (
+        <p>{result.globalFeedback[0] ?? "Highlights refreshed."}</p>
+      )}
+      {checklist.length ? (
+        <ul data-testid="module-review-checklist" className="mt-2 space-y-1">
+          {checklist.map((item) => (
+            <li key={`${item.label}-${item.detail}`} className="rounded-md bg-white/80 px-2 py-1">
+              <span className="font-semibold">{item.label}: </span>
+              <span>{item.detail}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="mt-2 rounded-md bg-white/80 px-2 py-1">
+          <span className="font-semibold">{result.annotations.length}</span> label{result.annotations.length === 1 ? "" : "s"} refreshed.
+          {typeof result.issueCount === "number" ? <span> {result.issueCount} issue{result.issueCount === 1 ? "" : "s"} found.</span> : null}
+        </div>
+      )}
+      {result.reviewSuggestions?.length ? (
+        <div className="mt-2">
+          <div className="font-semibold">Suggestions</div>
+          <ul className="mt-1 space-y-1">
+            {result.reviewSuggestions.slice(0, 5).map((suggestion) => <li key={suggestion}>- {suggestion}</li>)}
+          </ul>
+        </div>
+      ) : result.globalFeedback.length > 1 ? (
+        <p className="mt-2">{result.globalFeedback.slice(1).join(" ")}</p>
+      ) : null}
+      {result.nextStep ? <p className="mt-2 font-semibold">{result.nextStep}</p> : null}
+    </article>
+  );
+}
+
+function InspectCard({ suggestion, onDismiss }: { suggestion: AssistResponse; onDismiss: () => void }) {
+  const isAnalyze = suggestion.actionType === "analyze-selection" || /analysis/i.test(suggestion.title ?? "");
+  return (
+    <article data-testid={isAnalyze ? "assistant-analysis-result" : "assistant-highlight-explanation"} className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
+      <div className="mb-1 font-semibold text-slate-800">{isAnalyze ? "Analysis" : "Highlight explanation"}</div>
       <p className="whitespace-pre-wrap">{suggestion.reply}</p>
       <div className="mt-2 flex gap-2">
         <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(suggestion.reply)}>Copy</button>
