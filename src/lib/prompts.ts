@@ -30,6 +30,10 @@ Rules:
 - Notes are instructions, not essay prose. Do not copy note text into the revised essay.
 - Resolve only the notes whose instructions are reflected in proposedText.
 - Also return proposedAnnotations over proposedText.
+- proposedAnnotations must be sentence-level or short rhetorical-unit ranges, not whole paragraphs.
+- Prefer one annotation per sentence. Split paragraphs that contain multiple rhetorical roles.
+- Keep ordinary annotation ranges under 250 characters unless the range is a reference-list entry or a short deliberate quote.
+- annotation.text must be an exact substring of proposedText.
 - Output valid json matching this shape:
 {"kind":"revision","annotations":[],"proposedText":"revised text","proposedAnnotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.9,"comment":"brief reason"}],"originalSummary":"one sentence summary","rationale":"one sentence rationale","patchResolutionPlan":["patch-id"],"globalFeedback":["short preview note"],"warnings":[]}
 
@@ -71,6 +75,9 @@ Rules:
 - Do not rewrite the user's text.
 - Return annotations with start/end offsets over the exact input text.
 - annotation.text must equal text.slice(start, end).
+- Annotate sentences or short rhetorical units, not whole paragraphs.
+- Prefer one annotation per sentence. A paragraph can contain background, evidence, citation, analysis, thesis, and conclusion labels.
+- Keep ordinary annotation ranges under 250 characters unless the range is a reference-list entry or a short deliberate quote.
 - Respect user patches when they are reasonable.
 - Use issue when a factual/evidence claim appears to need a source but has no citation, or when the role is unclear.
 - Use evidence for source-based facts, data, examples, findings, or source claims.

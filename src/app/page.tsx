@@ -204,6 +204,15 @@ export default function Home() {
     }));
   }
 
+  function handleClearAssistantHistory() {
+    if (!activeProject.assistantHistory.length) return;
+    if (!window.confirm("Clear chat history?")) return;
+    updateProject((prev) => ({ ...prev, assistantHistory: [] }));
+    setAssistantSuggestion(undefined);
+    setRefreshResult(undefined);
+    setStatus("Chat history cleared.");
+  }
+
   function resetEditorViewport() {
     setEditorResetKey((value) => value + 1);
   }
@@ -1009,7 +1018,7 @@ function handleSaveSnapshot() {
 
           <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void handleImportJson(event.target.files?.[0])} />
 
-          <div data-testid="workspace-body" className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <div data-testid="workspace-body" className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 xl:grid-cols-[minmax(0,1fr)_420px] 2xl:grid-cols-[minmax(0,1fr)_440px]">
             <div data-testid="editor-column" className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
               <div className="shrink-0">
                 <div>
@@ -1050,21 +1059,21 @@ function handleSaveSnapshot() {
 
             <aside data-testid="right-rail" className="min-h-0 overflow-hidden pr-1">
               <section className="panel flex h-full min-h-0 flex-col p-0">
-                <div role="tablist" aria-label="Right workspace" className="grid shrink-0 grid-cols-4 gap-1 border-b border-slate-200 p-2 text-xs">
+                <div role="tablist" aria-label="Right workspace" className="grid shrink-0 grid-cols-4 gap-1 border-b border-slate-200 p-1.5 text-xs">
                   {(["assistant", "sources", "snapshots", "export"] as RightTab[]).map((tab) => (
                     <button
                       key={tab}
                       role="tab"
                       aria-selected={rightTab === tab}
                       aria-controls={`right-panel-${tab}`}
-                      className={`rounded-md px-2 py-2 font-semibold capitalize transition ${rightTab === tab ? "bg-blue-600 text-white" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}
+                      className={`rounded-md px-2 py-1.5 font-semibold capitalize transition ${rightTab === tab ? "bg-blue-600 text-white" : "bg-slate-50 text-slate-600 hover:bg-slate-100"}`}
                       onClick={() => setRightTab(tab)}
                     >
                       {tab === "sources" ? "Sources" : tab}
                     </button>
                   ))}
                 </div>
-                <div className="min-h-0 flex-1 overflow-hidden p-3">
+                <div className="min-h-0 flex-1 overflow-hidden p-2">
                   <div id="right-panel-assistant" role="tabpanel" aria-label="Assistant" className={rightTab === "assistant" ? "h-full min-h-0 overflow-hidden" : "hidden"}>
                     <AssistantPanel
                       modeRequest={assistantModeRequest}
@@ -1080,6 +1089,7 @@ function handleSaveSnapshot() {
                       revisionPreview={revisionPreview}
                       refreshResult={refreshResult}
                       onChat={(message) => void handleAssist(message, "chat")}
+                      onClearChat={handleClearAssistantHistory}
                       onSelectionAction={(action) => void handleAssist(action, "edit")}
                       onInspectAction={(action) => void handleAssist(action, "inspect")}
                       onApply={handleApplyAssistant}

@@ -20,6 +20,7 @@ type AssistantPanelProps = {
   revisionPreview?: RefreshResponse;
   refreshResult?: RefreshResponse;
   onChat: (message: string) => void;
+  onClearChat: () => void;
   onSelectionAction: (action: string) => void;
   onInspectAction: (action: string) => void;
   onApply: () => void;
@@ -56,17 +57,17 @@ export function AssistantPanel(props: AssistantPanelProps) {
 
   return (
     <section data-testid="assistant-panel" className="flex h-full min-h-0 flex-col">
-      <div className="mb-2 grid shrink-0 grid-cols-2 gap-1 rounded-lg bg-slate-100 p-1 text-xs">
+      <div className="mb-1.5 grid shrink-0 grid-cols-2 gap-1 rounded-lg bg-slate-100 p-0.5 text-xs">
         <button
           type="button"
-          className={`rounded-md px-2 py-1.5 font-semibold ${mode === "chat" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:bg-white/70"}`}
+          className={`rounded-md px-2 py-1 font-semibold ${mode === "chat" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:bg-white/70"}`}
           onClick={() => setMode("chat")}
         >
           Chat
         </button>
         <button
           type="button"
-          className={`rounded-md px-2 py-1.5 font-semibold ${mode === "edit" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:bg-white/70"}`}
+          className={`rounded-md px-2 py-1 font-semibold ${mode === "edit" ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:bg-white/70"}`}
           onClick={() => setMode("edit")}
         >
           Edit
@@ -74,7 +75,7 @@ export function AssistantPanel(props: AssistantPanelProps) {
       </div>
 
       {mode === "chat" ? (
-        <ChatMode messages={props.chatMessages} loading={props.loading} onChat={props.onChat} />
+        <ChatMode messages={props.chatMessages} loading={props.loading} onChat={props.onChat} onClearChat={props.onClearChat} />
       ) : (
         <EditMode {...props} hasSelection={hasSelection} />
       )}
@@ -85,11 +86,13 @@ export function AssistantPanel(props: AssistantPanelProps) {
 function ChatMode({
   messages,
   loading,
-  onChat
+  onChat,
+  onClearChat
 }: {
   messages: AssistantMessage[];
   loading: boolean;
   onChat: (message: string) => void;
+  onClearChat: () => void;
 }) {
   const [value, setValue] = useState("");
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -109,7 +112,25 @@ function ChatMode({
 
   return (
     <div data-testid="assistant-chat-mode" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div className="mb-2 shrink-0 text-xs font-semibold text-slate-600">Chat about module</div>
+      <div className="mb-1.5 flex shrink-0 items-center justify-between gap-2 text-xs font-semibold text-slate-600">
+        <span>Chat about module</span>
+        <button
+          type="button"
+          data-testid="assistant-clear-chat"
+          aria-label="Clear chat history"
+          title="Clear chat history"
+          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 shadow-sm transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+          onClick={onClearChat}
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 6h18" />
+            <path d="M8 6V4h8v2" />
+            <path d="M19 6l-1 14H6L5 6" />
+            <path d="M10 11v5" />
+            <path d="M14 11v5" />
+          </svg>
+        </button>
+      </div>
       <div
         ref={messagesRef}
         data-testid="assistant-chat-messages"
@@ -127,7 +148,7 @@ function ChatMode({
         )}
         {loading ? <div className="rounded-lg bg-white p-2 text-xs text-slate-500">Thinking...</div> : null}
       </div>
-      <div data-testid="assistant-chat-composer" className="mt-2 shrink-0 rounded-lg border border-slate-200 bg-white p-2">
+      <div data-testid="assistant-chat-composer" className="mt-1.5 shrink-0 rounded-lg border border-slate-200 bg-white p-1.5">
         <textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
@@ -141,10 +162,10 @@ function ChatMode({
             }
           }}
           placeholder="Ask EssayCraft about this module..."
-          className="min-h-16 w-full resize-none border-0 bg-transparent text-sm outline-none"
+          className="min-h-12 w-full resize-none border-0 bg-transparent text-[13px] leading-snug outline-none"
         />
         <div className="flex justify-end">
-          <button className="btn-primary px-3 py-1.5 text-xs" onClick={submit} disabled={!value.trim() || loading}>Send</button>
+          <button className="btn-primary h-7 px-3 py-0 text-xs shadow-none" onClick={submit} disabled={!value.trim() || loading}>Send</button>
         </div>
       </div>
     </div>
@@ -165,8 +186,8 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
 
   return (
     <div data-testid="assistant-edit-mode" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div data-testid="assistant-edit-content" className="min-h-0 flex-1 space-y-2 overflow-y-auto pr-1">
-        <section data-testid="assistant-edit-context" className="rounded-lg border border-slate-200 bg-white p-3 text-xs">
+      <div data-testid="assistant-edit-content" className="min-h-0 flex-1 space-y-1.5 overflow-y-auto pr-1">
+        <section data-testid="assistant-edit-context" className="rounded-lg border border-slate-200 bg-white p-2 text-xs">
           <div className="mb-1 flex items-center justify-between gap-2">
             <div className="font-semibold text-slate-700">{props.hasSelection ? "Selected range" : canEdit ? "Active sentence" : "Edit context"}</div>
             {contextText ? <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] text-slate-500">{contextText.length} chars</span> : null}
@@ -214,23 +235,23 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
 
       </div>
 
-      <div className="mt-2 shrink-0 rounded-lg border border-slate-200 bg-white p-2">
+      <div className="mt-1.5 shrink-0 rounded-lg border border-slate-200 bg-white p-1.5">
         <textarea
           ref={instructionRef}
           value={instruction}
           onChange={(event) => setInstruction(event.target.value)}
           placeholder="Tell EssayCraft what you want to change"
-          className="min-h-14 w-full resize-none border-0 bg-transparent text-sm outline-none"
+          className="min-h-9 w-full resize-none border-0 bg-transparent text-[13px] leading-snug outline-none"
           disabled={!canEdit}
         />
-        <div className="grid grid-cols-2 gap-1.5 text-xs sm:grid-cols-5">
-          <button aria-label="Rewrite" className="btn-primary min-h-8 px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Rewrite selected passage")}>Rewrite</button>
-          <button aria-label="Academic" className="btn-primary min-h-8 px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>Academic</button>
-          <button aria-label="Analyze" className="btn-secondary min-h-8 px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => runAnalyze()}>Analyze</button>
-          <button aria-label="Translate" className="btn-secondary min-h-8 px-2 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Translate selected text")}>Translate</button>
+        <div className="grid grid-cols-5 gap-1 text-[11px]">
+          <button aria-label="Rewrite" className="btn-primary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => runInstruction("Rewrite selected passage")}>Rewrite</button>
+          <button aria-label="Academic" className="btn-primary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>Academic</button>
+          <button aria-label="Analyze" className="btn-secondary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => runAnalyze()}>Analyze</button>
+          <button aria-label="Translate" className="btn-secondary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Translate selected text")}>Translate</button>
           <button
             aria-label="Explain highlight"
-            className="btn-secondary min-h-8 px-2 py-1.5"
+            className="btn-secondary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none"
             disabled={!canExplain || props.loading}
             title={canExplain ? "Explain the active highlight label." : "Click a highlighted sentence first."}
             onClick={() => props.onInspectAction("Explain this highlight")}

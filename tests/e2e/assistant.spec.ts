@@ -48,6 +48,30 @@ test("assistant chat composer sends on Enter or Ctrl Enter and keeps Shift Enter
   await expect(messages).toContainText("Plain Enter sends");
 });
 
+test("assistant chat history can be cleared after confirmation", async ({ page }) => {
+  const composer = page.getByPlaceholder("Ask EssayCraft about this module...");
+  const messages = page.getByTestId("assistant-chat-messages");
+
+  await composer.fill("Clear this chat later");
+  await page.getByRole("button", { name: "Send" }).click();
+
+  await expect(messages).toContainText("Clear this chat later");
+  await expect(messages).toContainText(/Module 1|current module text/i, { timeout: 20_000 });
+
+  page.once("dialog", async (dialog) => {
+    expect(dialog.message()).toMatch(/clear chat history/i);
+    await dialog.accept();
+  });
+
+  await page.getByTestId("assistant-clear-chat").click();
+
+  await expect(messages).not.toContainText("Clear this chat later");
+  await expect(messages).toContainText("Ask about the current module");
+
+  await page.reload();
+  await expect(page.getByTestId("assistant-chat-messages")).toContainText("Ask about the current module");
+});
+
 test("assistant chat answers Chinese contextual questions instead of a template", async ({ page }) => {
   const composer = page.getByPlaceholder("Ask EssayCraft about this module...");
   const messages = page.getByTestId("assistant-chat-messages");

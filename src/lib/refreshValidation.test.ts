@@ -31,6 +31,32 @@ function paragraphAnnotations(text: string, label: Annotation["label"]): Annotat
 }
 
 describe("refresh validation", () => {
+  it("repairs provider ranges by exact annotation text instead of dropping useful labels", () => {
+    const text = "First sentence sets context. Second sentence explains why it matters.";
+    const result = validateProviderRefreshAnnotations(text, [{
+      id: "ann-bad-offset",
+      start: 0,
+      end: 5,
+      text: "Second sentence explains why it matters.",
+      label: "analysis",
+      confidence: 0.8
+    }], 6);
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.annotations[0].start).toBe(text.indexOf("Second sentence"));
+    expect(result.annotations[0].label).toBe("analysis");
+  });
+
+  it("splits overbroad provider paragraph labels into sentence-level ranges", () => {
+    const text = "Technology changes work. This essay argues that human judgment should guide AI. Therefore, humanities education remains important.";
+    const result = validateProviderRefreshAnnotations(text, [exactAnnotation(text, "analysis")], 6);
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.annotations.length).toBeGreaterThan(1);
+    expect(result.annotations.every((annotation) => annotation.end - annotation.start < 350)).toBe(true);
+    expect(result.warnings.join(" ")).toMatch(/Split overbroad/);
+  });
+
   it("relabels provider citation labels when the range is evidence prose", () => {
     const text = "Research shows that structured notification limits can improve student attention (Rivera, 2024).";
     const result = validateProviderRefreshAnnotations(text, [exactAnnotation(text, "citation")], 4);

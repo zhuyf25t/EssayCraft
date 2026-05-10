@@ -32,16 +32,24 @@ export async function POST(request: Request) {
           if (normalizedForNoopCompare(proposedText) === normalizedForNoopCompare(input.text)) {
             throw new Error("Provider returned an unchanged note revision.");
           }
+          const proposedValidation = validateProviderRefreshAnnotations(
+            proposedText,
+            parsed.proposedAnnotations ?? parsed.annotations ?? [],
+            input.moduleNumber
+          );
+          if (proposedValidation.usedFallback) {
+            throw new Error(proposedValidation.reason ?? "Provider returned invalid proposed annotations.");
+          }
           return {
             ...parsed,
             proposedText,
-          providerMode: "deepseek",
-          sourceText: input.text,
-          proposedAnnotations: normalizeAnnotations(proposedText, parsed.proposedAnnotations ?? parsed.annotations ?? []),
-          patchResolutionPlan: (parsed.patchResolutionPlan ?? []).filter((patchId) => openPatches.some((patch) => patch.id === patchId)),
-          globalFeedback: parsed.globalFeedback ?? [],
-          warnings: parsed.warnings ?? []
-        } satisfies RefreshResponse;
+            providerMode: "deepseek",
+            sourceText: input.text,
+            proposedAnnotations: proposedValidation.annotations,
+            patchResolutionPlan: (parsed.patchResolutionPlan ?? []).filter((patchId) => openPatches.some((patch) => patch.id === patchId)),
+            globalFeedback: parsed.globalFeedback ?? [],
+            warnings: [...(parsed.warnings ?? []), ...proposedValidation.warnings]
+          } satisfies RefreshResponse;
         }
         if (openPatches.length) {
           throw new Error("Provider returned non-revision output for open notes.");
