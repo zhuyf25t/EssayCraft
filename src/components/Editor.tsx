@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Annotation, Patch, TextRange } from "@/types/essaycraft";
@@ -302,7 +302,7 @@ function HighlightText({
                 onPatchDelete(patch.id);
               }}
             >
-              ×
+              x
             </span>
           </button>
         </span>
@@ -418,6 +418,11 @@ type DisplayBuffer = {
   canonicalToDisplay: number[];
 };
 
+const NOTE_OPEN = "\u2063";
+const NOTE_CLOSE = "\u2064";
+const NOTE_TOKEN_PATTERN = /\u2063NOTE:([A-Za-z0-9_-]+)\u2064([\s\S]*?)\u2063\/NOTE\u2064/g;
+const NOTE_SENTINEL_PATTERN = /\u2063(?:\/?NOTE(?::[A-Za-z0-9_-]+)?)?\u2064/g;
+
 function buildDisplayBuffer(text: string, patches: Patch[]): DisplayBuffer {
   const openPatches = patches
     .filter((patch) => !patch.resolved && !patch.stale && patch.anchorStart >= 0 && patch.anchorStart <= text.length && patch.anchorEnd >= patch.anchorStart && patch.anchorEnd <= text.length)
@@ -435,7 +440,8 @@ function buildDisplayBuffer(text: string, patches: Patch[]): DisplayBuffer {
     }
   }
 
-  function appendNote(note: string, canonicalOffset: number) {
+  function appendNote(patch: Patch, canonicalOffset: number) {
+    const note = noteDisplayText(patch);
     for (const char of note) {
       displayToCanonical[value.length] = canonicalOffset;
       value += char;
@@ -447,7 +453,7 @@ function buildDisplayBuffer(text: string, patches: Patch[]): DisplayBuffer {
     appendCanonical(text.slice(cursor, offset), cursor);
     cursor = offset;
     canonicalToDisplay[offset] = value.length;
-    appendNote(noteDisplayText(patch.text), offset);
+    appendNote(patch, offset);
   }
   appendCanonical(text.slice(cursor), cursor);
   canonicalToDisplay[text.length] = value.length;
@@ -457,33 +463,36 @@ function buildDisplayBuffer(text: string, patches: Patch[]): DisplayBuffer {
 }
 
 function parseDisplayBuffer(displayValue: string, currentPatches: Patch[]): { text: string; patches: Patch[] } {
-  const visible = currentPatches
-    .filter((patch) => !patch.resolved && !patch.stale)
-    .sort((a, b) => noteOffset(a) - noteOffset(b) || a.createdAt.localeCompare(b.createdAt));
+  const visibleById = new Map(
+    currentPatches
+      .filter((patch) => !patch.resolved && !patch.stale)
+      .map((patch) => [patch.id, patch])
+  );
   const hidden = currentPatches.filter((patch) => patch.resolved || patch.stale);
-  const regex = /\s*\[Note:\s*([\s\S]*?)\]\s*/g;
   let text = "";
   let lastIndex = 0;
-  let noteIndex = 0;
   const nextVisible: Patch[] = [];
 
-  for (const match of displayValue.matchAll(regex)) {
+  for (const match of displayValue.matchAll(NOTE_TOKEN_PATTERN)) {
     const matchIndex = match.index ?? 0;
-    text += displayValue.slice(lastIndex, matchIndex);
-    const noteText = (match[1] ?? "").trim();
+    text += stripNoteSentinels(displayValue.slice(lastIndex, matchIndex));
+    const patchId = match[1] ?? id("patch");
+    const rawNote = match[2] ?? "";
+    const noteText = rawNote.replace(/^\s*\[Note:\s*/i, "").replace(/\]\s*$/, "").trim();
     const offset = text.length;
     if (noteText) {
-      const existing = visible[noteIndex];
+      const existing = visibleById.get(patchId);
+      const anchoredLength = existing ? Math.max(0, existing.anchorEnd - existing.anchorStart) : 0;
       nextVisible.push({
         ...(existing ?? {
-          id: id("patch"),
+          id: patchId,
           anchorQuote: "",
           createdAt: nowIso(),
           status: "open" as const,
           resolved: false,
           stale: false
         }),
-        anchorStart: existing ? Math.min(existing.anchorStart, offset) : offset,
+        anchorStart: Math.max(0, offset - anchoredLength),
         anchorEnd: offset,
         anchorQuote: existing?.anchorQuote ?? "",
         text: noteText,
@@ -493,11 +502,10 @@ function parseDisplayBuffer(displayValue: string, currentPatches: Patch[]): { te
         stale: false
       });
     }
-    noteIndex += 1;
     lastIndex = matchIndex + match[0].length;
   }
 
-  text += displayValue.slice(lastIndex);
+  text += stripNoteSentinels(displayValue.slice(lastIndex));
   return { text, patches: [...nextVisible, ...hidden] };
 }
 
@@ -519,6 +527,10 @@ function noteOffset(patch: Patch) {
   return patch.anchorEnd > patch.anchorStart ? patch.anchorEnd : patch.anchorStart;
 }
 
-function noteDisplayText(value: string) {
-  return ` [Note: ${value.replace(/\s+/g, " ").trim()}] `;
+function noteDisplayText(patch: Patch) {
+  return `${NOTE_OPEN}NOTE:${patch.id}${NOTE_CLOSE}[Note: ${patch.text.replace(/\s+/g, " ").trim()}]${NOTE_OPEN}/NOTE${NOTE_CLOSE}`;
+}
+
+function stripNoteSentinels(value: string) {
+  return value.replace(NOTE_SENTINEL_PATTERN, "");
 }
