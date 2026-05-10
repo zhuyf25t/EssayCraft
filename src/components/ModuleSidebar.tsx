@@ -5,22 +5,30 @@ import { moduleDisplayStatus, moduleStatusTone, type ModuleDisplayStatus } from 
 
 const MODULES: ModuleNumber[] = [1, 2, 3, 4, 5, 6];
 const MODULE_ICONS: Record<ModuleNumber, string> = {
-  1: "💡",
-  2: "🔎",
-  3: "☷",
-  4: "✎",
-  5: "❝",
-  6: "⚑"
+  1: "\u{1F4A1}",
+  2: "\u{1F50D}",
+  3: "\u2630",
+  4: "\u270E",
+  5: "\u201C",
+  6: "\u2691"
 };
 
-export function ModuleSidebar({ project, activeLabel, onSelect }: { project: Project; activeLabel?: SegmentLabel; onSelect: (moduleNumber: ModuleNumber) => void }) {
+export function ModuleSidebar({
+  project,
+  activeLabel,
+  onSelect
+}: {
+  project: Project;
+  activeLabel?: SegmentLabel;
+  onSelect: (moduleNumber: ModuleNumber) => void;
+}) {
   return (
-    <aside data-testid="module-sidebar" className="flex h-full min-h-0 w-56 shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white/90 p-1.5">
+    <aside data-testid="module-sidebar" className="flex h-full min-h-0 w-52 shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white/90 p-2">
       <div className="mb-2 flex shrink-0 items-start gap-2">
         <div className="rounded-lg border-2 border-blue-600 px-1.5 py-0.5 text-sm text-blue-700">EC</div>
         <div>
           <div className="font-crayon text-2xl font-bold leading-6 text-blue-700">EssayCraft</div>
-          <div className="text-[10px] leading-3 text-slate-500">Write better essays.</div>
+          <div className="text-[11px] leading-3 text-slate-500">Write better essays.</div>
         </div>
       </div>
 
@@ -39,7 +47,7 @@ export function ModuleSidebar({ project, activeLabel, onSelect }: { project: Pro
                 active
                   ? "border-blue-500 bg-blue-50 text-blue-800 shadow-sketch"
                   : status === "has issues"
-                    ? "border-red-200 bg-red-50/70 text-slate-700 hover:bg-red-50"
+                    ? "border-red-200 bg-red-50/60 text-slate-700 hover:bg-red-50"
                     : status === "done"
                       ? "border-emerald-200 bg-emerald-50/70 text-slate-700 hover:bg-emerald-50"
                       : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
@@ -47,19 +55,19 @@ export function ModuleSidebar({ project, activeLabel, onSelect }: { project: Pro
               title={`Module ${moduleNumber}: ${MODULE_TITLES[moduleNumber]} - ${status}`}
             >
               <span className={`flex h-7 w-7 items-center justify-center rounded-full border-2 bg-white text-sm font-bold ${active ? "border-blue-600 text-blue-700" : tone === "emerald" ? "border-emerald-600 text-emerald-700" : tone === "red" ? "border-red-400 text-red-600" : "border-slate-300 text-slate-500"}`}>
-                {status === "done" && !active ? "✓" : MODULE_ICONS[moduleNumber]}
+                {status === "done" && !active ? "\u2713" : MODULE_ICONS[moduleNumber]}
               </span>
               <span className="min-w-0">
                 <span className="block text-[9px] font-semibold uppercase tracking-wide text-slate-400">Module {moduleNumber}</span>
-                <span className="line-clamp-2 block text-[11px] font-semibold leading-3">{MODULE_TITLES[moduleNumber]}</span>
-                <span className={`mt-0.5 inline-block rounded-full px-1.5 py-0 text-[9px] ${statusClass(status)}`}>{status}</span>
+                <span className="line-clamp-2 block text-[12px] font-semibold leading-3.5">{MODULE_TITLES[moduleNumber]}</span>
+                <span className={`mt-0.5 inline-block rounded-full px-1.5 py-0.5 text-[9px] leading-none ${statusClass(status)}`}>{status}</span>
               </span>
             </button>
           );
         })}
       </div>
 
-      <div className="mt-1.5 shrink-0 space-y-2">
+      <div className="mt-auto shrink-0 pt-2">
         <HighlightKey activeLabel={activeLabel} />
       </div>
     </aside>
