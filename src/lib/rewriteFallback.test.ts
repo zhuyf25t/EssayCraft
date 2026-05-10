@@ -42,7 +42,7 @@ describe("rewriteFallback", () => {
     };
 
     const proposed = applyNotesFallback(text, [patch], "Technology vs. Humanity.");
-    expect(proposed).toContain("Topic: Technology, humanity");
+    expect(proposed).toContain("Topic: Technology vs. Humanity");
     expect(proposed).not.toContain(patch.text);
     expect(proposed).not.toContain("Social media balance\n\nResearch question");
   });

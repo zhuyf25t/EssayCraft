@@ -98,7 +98,8 @@ function validateAssistReplaceRange(input: AssistRequest, response: AssistRespon
 
 function coerceAssistResponse(input: AssistRequest, raw: unknown, providerMode: "deepseek" | "mock" | "fallback"): AssistResponse {
   const parsed = assistResponseSchema.parse(raw) as AssistResponseLegacy;
-  const kind = parsed.kind ?? expectedAssistKind(input);
+  const expectedKind = expectedAssistKind(input);
+  const kind = expectedKind !== "edit" ? expectedKind : parsed.kind ?? expectedKind;
   const base = {
     reply: parsed.reply,
     title: parsed.title,
@@ -330,6 +331,8 @@ function moduleFeedback(input: AssistRequest) {
   const text = input.text.trim();
   if (!text) return `Module ${input.moduleNumber} is empty. Add draft text first, then I can comment on structure, clarity, and evidence needs.`;
   const lower = text.toLowerCase();
+  const projectTitle = normalizeAssistantTitle(input.projectTitle || input.topic);
+  const titleContext = projectTitle ? ` Keep the project title "${projectTitle}" visible as the controlling focus.` : "";
   if (input.moduleNumber === 1) {
     const hasTopic = /^topic\s*:/im.test(text);
     const hasQuestion = /^(research question|question)\s*:/im.test(text);
@@ -341,25 +344,25 @@ function moduleFeedback(input: AssistRequest) {
       hasThesis ? "working thesis" : "",
       reasons ? `${reasons}-part thesis map` : ""
     ].filter(Boolean).join(", ");
-    return `Your Module 1 has ${strengths || "the beginning of a topic plan"}. The strongest part is that the essay has a focused direction. A useful improvement is to make the thesis map parallel: each reason should use the same grammatical structure and clearly support the thesis.`;
+    return `Your Module 1 has ${strengths || "the beginning of a topic plan"}. The strongest part is that the essay has a focused direction.${titleContext} A useful improvement is to make the thesis map parallel: each reason should use the same grammatical structure and clearly support the thesis.`;
   }
   if (input.moduleNumber === 2) {
-    return "Your research plan is moving in the right direction because it separates argument branches from source needs. The next improvement is to make each evidence need specific enough to search for: name the kind of study, report, data, or policy example that would support each branch.";
+    return `Your research plan is moving in the right direction because it separates argument branches from source needs.${titleContext} The next improvement is to make each evidence need specific enough to search for: name the kind of study, report, data, or policy example that would support each branch.`;
   }
   if (input.moduleNumber === 3) {
-    return "Your outline gives the draft a workable sequence. The next improvement is to check whether every body paragraph has four parts: a topic sentence, evidence to use, analysis purpose, and a link back to the thesis.";
+    return `Your outline gives the draft a workable sequence.${titleContext} The next improvement is to check whether every body paragraph has four parts: a topic sentence, evidence to use, analysis purpose, and a link back to the thesis.`;
   }
   if (input.moduleNumber === 4) {
     const citations = (text.match(/\[citation needed\]/gi) ?? []).length;
-    return `Your draft is readable as essay prose rather than an outline. The main improvement is evidence integration: ${citations ? `${citations} citation-needed marker(s) still need real sources` : "check that factual claims have citations"}. Also make sure each paragraph ends by linking back to the thesis.`;
+    return `Your draft is readable as essay prose rather than an outline.${titleContext} The main improvement is evidence integration: ${citations ? `${citations} citation-needed marker(s) still need real sources` : "check that factual claims have citations"}. Also make sure each paragraph ends by linking back to the thesis.`;
   }
   if (input.moduleNumber === 5) {
-    return "This module should focus on citation integrity. Check that every in-text citation has a matching source card and every source card used in the reference list is actually cited in the draft.";
+    return `This module should focus on citation integrity.${titleContext} Check that every in-text citation has a matching source card and every source card used in the reference list is actually cited in the draft.`;
   }
   if (lower.includes("final review") || input.moduleNumber === 6) {
-    return "Your final review should confirm content, structure, clarity, academic style, proofreading, and citation readiness. If any citation-needed marker remains, the essay is exportable but not submission-ready.";
+    return `Your final review should confirm content, structure, clarity, academic style, proofreading, and citation readiness.${titleContext} If any citation-needed marker remains, the essay is exportable but not submission-ready.`;
   }
-  return `Your Module ${input.moduleNumber} has usable material. The next improvement is to make the paragraph roles explicit: claim, evidence, analysis, and link back to the thesis.`;
+  return `Your Module ${input.moduleNumber} has usable material.${titleContext} The next improvement is to make the paragraph roles explicit: claim, evidence, analysis, and link back to the thesis.`;
 }
 
 function moduleHighlightSummary(input: AssistRequest) {
@@ -387,12 +390,13 @@ function explainSelection(value: string, active?: AssistRequest["annotations"][n
   const trimmed = value.trim();
   const quote = shortQuote(trimmed);
   const labelName = label.charAt(0).toUpperCase() + label.slice(1);
+  const comment = annotation?.comment ? ` Current note: ${annotation.comment}` : "";
   if (/^Topic\s*:/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" sets the essay's topic and scope. If it starts making a debatable claim, it may belong closer to Thesis.`;
   if (/^(Research question|Question)\s*:/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" frames the question the essay must answer, not evidence by itself.`;
   if (/^(Working thesis|Thesis)\s*:/i.test(trimmed) || /this essay argues/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" states or points toward the essay's central arguable claim.`;
   if (/^Thesis map\s*:/i.test(trimmed) || /Reason\s*\d+\s*:/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" previews a main reason that should support the thesis.`;
   if (/Evidence needed|Evidence to use|\[source needed/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" names evidence the student still needs to find; it is a planning cue, not a real citation.`;
-  if (/\[citation needed\]/i.test(trimmed) || label === "citation" || label === "issue") return `This is marked as ${labelName} because "${quote}" contains a source or citation concern. If it is a broad background claim, Refresh may relabel it, but factual claims still need support.`;
+  if (/\[citation needed\]/i.test(trimmed) || label === "citation" || label === "issue") return `This is marked as ${labelName} because "${quote}" contains a source-support concern. If the sentence is doing argumentative work, treat its role separately from the citation marker and keep source details in source cards.${comment}`;
   if (/counterargument|opposing view|some readers may argue/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" introduces or signals an opposing view before the response.`;
   if (/conclusion|in conclusion|so what|implication/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" closes the argument or explains why it matters.`;
   if (/because|therefore|this shows|this means|supports|matters/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" explains why a point matters for the essay's claim.`;
@@ -405,20 +409,49 @@ function analyzeSelection(value: string, action: string, input: AssistRequest) {
   const wantsChinese = /[\u4e00-\u9fff]|用中文|中文/.test(action);
   const active = findSelectedAnnotation(input);
   const label = active?.label;
+  const title = normalizeAssistantTitle(input.projectTitle || input.topic);
+  const titlePhrase = title ? ` Project title: "${title}".` : "";
+  const focus = analysisFocus(trimmed, label, title);
   if (wantsChinese) {
     const role = label ? `它目前更像是“${label}”功能` : "它需要先判断在段落中的功能";
-    const focus = /grammar|语法|proofread|润色/.test(action)
+    const chineseFocus = /grammar|语法|proofread|润色/.test(action)
       ? "语法和表达上，建议检查句子是否过长、主谓是否清楚，以及关键词是否重复。"
-      : "内容上，建议说明它和中心论点的关系，并补足必要的证据或分析。";
-    return `这句话是：“${quote}”。${role}。${focus} 如果你想修改它，可以用 Rewrite 或 Academic；Analyze 只提供评论，不会改正文。`;
+      : `${focus} 建议把它和中心论点的关系说得更明确，并补足必要的证据或分析。`;
+    const chineseTitle = title ? `项目题目是“${title}”。` : "";
+    return `这句话是：“${quote}”。${chineseTitle}${role}。${chineseFocus} 如果你想修改它，可以用 Rewrite 或 Academic；Analyze 只提供评论，不会改正文。`;
   }
   if (/grammar|proofread|punctuation/i.test(action)) {
-    return `This passage says: "${quote}". Grammar check: look for sentence length, clear subject-verb structure, and repeated wording. Analyze is read-only; use Rewrite or Academic for a replacement preview.`;
+    return `This passage says: "${quote}".${titlePhrase} Grammar check: look for sentence length, clear subject-verb structure, and repeated wording. Analyze is read-only; use Rewrite or Academic for a replacement preview.`;
   }
   if (/critique|evaluate|what do you think/i.test(action)) {
-    return `This passage says: "${quote}". It is understandable, but it should more clearly connect its claim to the essay's main argument and name what evidence or reasoning supports it.`;
+    return `This passage says: "${quote}".${titlePhrase} ${focus} It should more clearly connect its claim to the essay's main argument and name what evidence or reasoning supports it.`;
   }
-  return `This passage says: "${quote}". Its likely role is ${label ?? "a draft sentence"}. Check whether it gives context, states a claim, supplies evidence, or explains why the point matters.`;
+  return `This passage says: "${quote}".${titlePhrase} Its likely role is ${label ?? "a draft sentence"}. ${focus} Check whether it gives context, states a claim, supplies evidence, or explains why the point matters.`;
+}
+
+function analysisFocus(value: string, label: string | undefined, projectTitle: string) {
+  const lower = value.toLowerCase();
+  const titleLower = projectTitle.toLowerCase();
+  if (/\[citation needed\]|\([A-Z][A-Za-z' .&-]+,\s*\d{4}[a-z]?\)/.test(value) || label === "citation" || label === "issue") {
+    return "The key issue is source support: keep citation markers until a real source card can support the factual claim.";
+  }
+  if (/technology|human|ai|computer/.test(lower) || /technology|humanity|human|ai/.test(titleLower)) {
+    return "The strongest direction is to connect the sentence to human agency, ethical responsibility, or the social effect of technology.";
+  }
+  if (/because|therefore|this means|this shows|suggests|matters/.test(lower) || label === "analysis") {
+    return "The sentence is trying to explain significance; make the cause-effect link explicit.";
+  }
+  if (/argues|should|must|thesis/.test(lower) || label === "thesis") {
+    return "The sentence is close to a claim; make sure it is debatable and specific enough to guide the paragraph.";
+  }
+  if (/research|study|data|evidence|found/.test(lower) || label === "evidence") {
+    return "The sentence is evidence-oriented; make the source status and connection to the claim clear.";
+  }
+  return "The sentence needs a clearer job in the paragraph.";
+}
+
+function normalizeAssistantTitle(value: string) {
+  return cleanReplacement(value).replace(/[.!?]+$/, "").trim();
 }
 
 function shortQuote(value: string) {

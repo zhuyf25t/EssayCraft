@@ -150,6 +150,7 @@ function ChatMode({
 
 function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   const [instruction, setInstruction] = useState("");
+  const instructionRef = useRef<HTMLTextAreaElement>(null);
   const contextRange = props.hasSelection ? props.selectedRange : props.activeAnnotation
     ? { start: props.activeAnnotation.start, end: props.activeAnnotation.end }
     : props.activeSentenceRange;
@@ -212,6 +213,7 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
 
       <div className="mt-2 shrink-0 rounded-lg border border-slate-200 bg-white p-2">
         <textarea
+          ref={instructionRef}
           value={instruction}
           onChange={(event) => setInstruction(event.target.value)}
           placeholder="Tell EssayCraft what you want to change"
@@ -238,13 +240,13 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   );
 
   function runInstruction(baseAction: string) {
-    const text = instruction.trim();
+    const text = (instructionRef.current?.value ?? instruction).trim();
     props.onSelectionAction(text ? `${baseAction}: ${text}` : baseAction);
     setInstruction("");
   }
 
   function runAnalyze() {
-    const text = instruction.trim();
+    const text = (instructionRef.current?.value ?? instruction).trim();
     props.onInspectAction(text ? `Analyze selected text: ${text}` : "Analyze selected text");
     setInstruction("");
   }

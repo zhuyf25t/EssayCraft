@@ -88,7 +88,7 @@ function rewriteUsingProjectTitle(value: string, projectTitle: string) {
       return "Topic: Social media balance, youth wellbeing, and responsible platform design";
     }
     return isTechnologyHumanity
-      ? "Topic: Technology, humanity, and the ethical balance between innovation and human values"
+      ? `Topic: ${title || "Technology needs the humanities: human guidance in the age of AI"}`
       : `Topic: ${theme}, including its causes, consequences, and practical significance`;
   }
   if (/^(Research question|Question)\s*:/i.test(value)) {
@@ -96,12 +96,12 @@ function rewriteUsingProjectTitle(value: string, projectTitle: string) {
       return "Research question: How can individuals, schools, and social media platforms share responsibility for building a healthier digital environment for young people?";
     }
     return isTechnologyHumanity
-      ? "Research question: How can technological progress be developed in ways that protect human agency, dignity, and social responsibility?"
+      ? "Research question: How can technological progress be guided by the humanities so that AI development protects human judgment, dignity, and social responsibility?"
       : `Research question: How should ${lowerFirst(theme)} be examined through its causes, consequences, and possible responses?`;
   }
   if (/^(Working thesis|Thesis)\s*:/i.test(value)) {
     return isTechnologyHumanity
-      ? "Working thesis: Technology can serve humanity well only when innovation is guided by human agency, ethical responsibility, and attention to social consequences."
+      ? "Working thesis: Technology needs the humanities because AI and digital systems can serve society responsibly only when innovation is guided by human judgment, ethical reasoning, and cultural understanding."
       : `Working thesis: ${theme} requires a clear argument that explains the problem, evaluates its consequences, and proposes a responsible response.`;
   }
   if (value.trim().endsWith("?")) {

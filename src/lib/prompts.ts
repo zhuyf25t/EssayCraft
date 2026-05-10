@@ -161,8 +161,8 @@ Return json only.`;
 }
 
 export function buildAssistMessages(input: AssistRequest) {
-  const isAnalyze = /(analy[sz]e|critique|comment|grammar|\u5206\u6790|\u8bc4\u4ef7|\u70b9\u8bc4|\u7528\u4e2d\u6587)/i.test(input.action);
-  const isEdit = Boolean(input.selectedRange) && !isAnalyze && /(rewrite|academic|analysis|translate|revise|sentence|passage)/i.test(input.action);
+  const isAnalyze = isAnalyzeAssistAction(input.action);
+  const isEdit = Boolean(input.selectedRange) && !isAnalyze && isEditAssistAction(input.action);
   const isInspect = (/(explain|relabel|highlight|citation)/i.test(input.action) || isAnalyze) && !isEdit;
   const expectedKind = isEdit ? "edit" : isInspect ? "inspect" : "chat";
   const system = `You are EssayCraft's AI Assistant. Return strict json only.
@@ -215,6 +215,14 @@ Return json only.`;
     { role: "system" as const, content: system },
     { role: "user" as const, content: user }
   ];
+}
+
+function isAnalyzeAssistAction(action: string) {
+  return /(analy[sz]e|critique|comment|grammar|\u5206\u6790|\u8bc4\u4ef7|\u70b9\u8bc4|\u7528\u4e2d\u6587)/i.test(action);
+}
+
+function isEditAssistAction(action: string) {
+  return /(rewrite|academic|analysis|translate|revise|sentence|passage|formal|longer|shorter|natural|awkward|\u91cd\u5199|\u6539\u5199|\u66f4\u5b66\u672f|\u5b66\u672f|\u6b63\u5f0f|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u81ea\u7136|\u5446\u677f|\u6839\u636e.*title|\u6839\u636e.*\u6807\u9898|project title)/i.test(action);
 }
 
 export function buildTranslateMessages(input: TranslateRequest) {
