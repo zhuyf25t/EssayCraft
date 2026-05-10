@@ -3,7 +3,7 @@ import * as h from "./helpers";
 
 test.beforeEach(h.setupPage);
 
-test("student can edit paragraphs, use local refresh, and insert a manual citation", async ({ page }) => {
+test("student can edit paragraphs and preview locked source controls", async ({ page }) => {
   await expect(page.getByText("EssayCraft").first()).toBeVisible();
 
   const textEditor = h.editor(page);
@@ -23,26 +23,25 @@ test("student can edit paragraphs, use local refresh, and insert a manual citati
   expect(await h.canonicalModuleText(page)).not.toContain("I think this should be background.");
 
   await page.getByRole("tab", { name: /Sources/i }).click();
+  await expect(page.getByTestId("sources-locked-warning")).toContainText("temporarily locked");
   await page.getByPlaceholder("Source title").fill("Student focus survey");
   await page.getByPlaceholder("Authors separated by ;").fill("Rivera");
   await page.getByPlaceholder("Year").fill("2024");
   await page.getByRole("button", { name: "Add real source" }).click();
-  await expect(page.getByText("In-text preview: (Rivera, 2024)")).toBeVisible();
-  await expect(page.getByText("Student supplied")).toBeVisible();
-
-  await textEditor.focus();
-  await page.keyboard.press("End");
-  await page.getByTestId("source-insert-citation").click();
-  await h.expectEditorText(page, /\(Rivera, 2024\)/);
-  await expect(page.getByTestId("toolbar-status")).toContainText("Inserted (Rivera, 2024) from your source card");
+  await expect(page.getByTestId("sources-preview-notice")).toContainText("not saved");
+  await expect(page.getByText("Student supplied")).toHaveCount(0);
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(state.modules["1"].sources).toHaveLength(0);
+  await h.expectEditorText(page, /Campus phone habits/);
 });
 
-test("source needs are not treated as insertable citations", async ({ page }) => {
+test("source needs controls are preview-only while source editing is locked", async ({ page }) => {
   await page.getByRole("tab", { name: /Sources/i }).click();
+  await expect(page.getByTestId("sources-locked-warning")).toBeVisible();
   await page.getByRole("button", { name: "Create source need" }).click();
-  await expect(page.getByText("Source need, not a real source yet")).toBeVisible();
-  await expect(page.getByText("No reference entry. Replace this source need with student-supplied metadata first.")).toBeVisible();
-  await expect(page.getByTestId("source-insert-citation")).toBeDisabled();
+  await expect(page.getByTestId("sources-preview-notice")).toContainText("not saved");
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(state.modules["1"].sources).toHaveLength(0);
 });
 
 test("generate next moves Module 1 to Module 2 with visible success and top scroll", async ({ page }) => {

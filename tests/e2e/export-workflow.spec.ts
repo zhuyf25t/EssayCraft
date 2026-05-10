@@ -36,10 +36,12 @@ test("full project JSON export includes six modules and all metadata groups", as
   await page.getByRole("tabpanel", { name: "Snapshots" }).getByRole("button", { name: "Save Snapshot" }).click();
 
   await page.getByRole("tab", { name: /Sources/i }).click();
+  await expect(page.getByTestId("sources-locked-warning")).toContainText("temporarily locked");
   await page.getByPlaceholder("Source title").fill("Export source");
   await page.getByPlaceholder("Authors separated by ;").fill("Chen");
   await page.getByPlaceholder("Year").fill("2025");
   await page.getByRole("button", { name: "Add real source" }).click();
+  await expect(page.getByTestId("sources-preview-notice")).toContainText("not saved");
 
   await page.getByRole("tab", { name: /Assistant/i }).click();
   await page.getByRole("button", { name: "Chat" }).click();
@@ -65,7 +67,7 @@ test("full project JSON export includes six modules and all metadata groups", as
   expect(Array.isArray(exported.modules["1"].annotations)).toBe(true);
   expect(Array.isArray(exported.modules["1"].patches)).toBe(true);
   expect(exported.modules["1"].snapshots.length).toBeGreaterThan(0);
-  expect(exported.modules["1"].sources[0].title).toBe("Export source");
+  expect(exported.modules["1"].sources).toHaveLength(0);
   expect(exported.assistantHistory.length).toBeGreaterThan(0);
   expect(JSON.stringify(exported)).not.toContain("DEEPSEEK_API_KEY");
 });

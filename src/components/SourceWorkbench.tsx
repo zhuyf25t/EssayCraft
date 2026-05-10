@@ -18,6 +18,19 @@ type DraftSource = {
   userNotes: string;
 };
 
+type SourceWorkbenchProps = {
+  moduleNumber: number;
+  text: string;
+  annotations: Annotation[];
+  sources: SourceCard[];
+  onAdd: (source: Omit<SourceCard, "id" | "createdAt">) => void;
+  onToggleVerified: (sourceId: string) => void;
+  onDelete: (sourceId: string) => void;
+  onAddPlaceholder: () => void;
+  onInsertCitation: (source: SourceCard) => void;
+  onMarkSelectionNeedsCitation: () => void;
+};
+
 const EMPTY_SOURCE: DraftSource = {
   title: "",
   authors: "",
@@ -41,27 +54,11 @@ export function SourceWorkbench({
   moduleNumber,
   text,
   annotations,
-  sources,
-  onAdd,
-  onToggleVerified,
-  onDelete,
-  onAddPlaceholder,
-  onInsertCitation,
-  onMarkSelectionNeedsCitation
-}: {
-  moduleNumber: number;
-  text: string;
-  annotations: Annotation[];
-  sources: SourceCard[];
-  onAdd: (source: Omit<SourceCard, "id" | "createdAt">) => void;
-  onToggleVerified: (sourceId: string) => void;
-  onDelete: (sourceId: string) => void;
-  onAddPlaceholder: () => void;
-  onInsertCitation: (source: SourceCard) => void;
-  onMarkSelectionNeedsCitation: () => void;
-}) {
+  sources
+}: SourceWorkbenchProps) {
   const [draft, setDraft] = useState<DraftSource>(EMPTY_SOURCE);
   const [expanded, setExpanded] = useState(false);
+  const [lockedNotice, setLockedNotice] = useState("");
   const audit = useMemo(() => buildCitationAudit(text, annotations, sources), [annotations, sources, text]);
   const planningModule = moduleNumber <= 3;
   const sourceNeeds = useMemo(
@@ -74,31 +71,27 @@ export function SourceWorkbench({
   );
   const moduleFive = moduleNumber === 5;
 
+  function showLockedNotice(action = "Source editing") {
+    setLockedNotice(`${action} is preview-only for now. Source edits are not saved.`);
+  }
+
   function submit() {
-    if (!draft.title.trim() && !draft.userNotes.trim()) return;
-    onAdd({
-      title: draft.title.trim() || "Untitled source",
-      authors: draft.authors
-        .split(";")
-        .map((author) => author.trim())
-        .filter(Boolean),
-      year: draft.year.trim(),
-      containerTitle: draft.containerTitle.trim(),
-      publisher: draft.publisher.trim(),
-      doi: draft.doi.trim(),
-      url: draft.url.trim(),
-      sourceType: draft.sourceType,
-      cars: draft.cars,
-      credibilityNotes: draft.credibilityNotes.trim(),
-      userNotes: draft.userNotes.trim(),
-      verified: false,
-      placeholder: false
-    });
-    setDraft(EMPTY_SOURCE);
+    showLockedNotice("Add real source");
   }
 
   return (
     <section className="panel">
+      <div data-testid="sources-locked-warning" className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
+        <div className="font-semibold">Source editing is temporarily locked.</div>
+        <p className="mt-1">事实上，由于检查文件来源是否正确太过困难，这一部分暂时不开放编辑。下面的控件可以点击和填写，但不会保存到项目。</p>
+      </div>
+
+      {lockedNotice ? (
+        <div data-testid="sources-preview-notice" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs font-medium text-amber-800">
+          {lockedNotice}
+        </div>
+      ) : null}
+
       <div className="mb-3 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-sm font-semibold text-slate-800">{moduleFive ? "Citation & Reference Check" : "Research Source Cards"}</h2>
@@ -198,13 +191,13 @@ export function SourceWorkbench({
                   <div className="mt-1 text-amber-700">Built only from student-supplied metadata. Not verified by EssayCraft.</div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <button className="rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-600 disabled:opacity-50" onClick={() => onToggleVerified(source.id)} disabled={source.placeholder || !source.title || !source.authors?.length || !source.year}>
+                  <button className="rounded-md border border-slate-200 bg-white px-2 py-1 text-slate-600" onClick={() => showLockedNotice("Review source metadata")}>
                     {source.verified ? "Student reviewed metadata" : "I reviewed this metadata"}
                   </button>
-                  <button data-testid="source-insert-citation" className="rounded-md border border-blue-100 bg-white px-2 py-1 text-blue-700 disabled:opacity-50" onClick={() => onInsertCitation(source)} disabled={!inText || source.placeholder}>
+                  <button data-testid="source-insert-citation" className="rounded-md border border-blue-100 bg-white px-2 py-1 text-blue-700" onClick={() => showLockedNotice("Insert citation")}>
                     Insert citation
                   </button>
-                  <button className="rounded-md border border-red-100 bg-white px-2 py-1 text-red-600" onClick={() => onDelete(source.id)}>Delete</button>
+                  <button className="rounded-md border border-red-100 bg-white px-2 py-1 text-red-600" onClick={() => showLockedNotice("Delete source")}>Delete</button>
                 </div>
               </div>
             );
@@ -222,7 +215,7 @@ export function SourceWorkbench({
           </ul>
         )}
         <div className="mt-2 flex flex-wrap gap-2">
-          <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-amber-800" onClick={onAddPlaceholder}>Create source need</button>
+          <button className="rounded-md border border-amber-200 bg-white px-2 py-1 text-amber-800" onClick={() => showLockedNotice("Create source need")}>Create source need</button>
         </div>
       </div>
 
@@ -244,7 +237,7 @@ export function SourceWorkbench({
         ) : null}
         <div className="mt-2 flex flex-wrap gap-2">
           {!planningModule ? (
-            <button className="rounded-md border border-red-200 bg-white px-2 py-1 text-red-700" onClick={onMarkSelectionNeedsCitation}>Mark selected text as evidence</button>
+            <button className="rounded-md border border-red-200 bg-white px-2 py-1 text-red-700" onClick={() => showLockedNotice("Mark selected text as evidence")}>Mark selected text as evidence</button>
           ) : null}
         </div>
       </div>
