@@ -147,6 +147,7 @@ function normalizedActionType(input: AssistRequest, actionType?: string) {
   if (action.includes("translate")) return "translate-selection";
   if (/academic|\u5b66\u672f|\u6b63\u5f0f/.test(action)) return "academic-rewrite";
   if (/rewrite|revise|\u91cd\u5199|\u6539\u5199|\u66f4\u957f|\u5199\u957f|\u6839\u636e.*title/.test(action)) return "rewrite-selection";
+  if (isAnalyzeAction(input.action)) return "analyze-selection";
   if (action.includes("explain")) return "highlight-explanation";
   return actionType;
 }
@@ -154,12 +155,16 @@ function normalizedActionType(input: AssistRequest, actionType?: string) {
 function expectedAssistKind(input: AssistRequest): AssistResponse["kind"] {
   const action = input.action.toLowerCase();
   if (input.selectedRange && isEditAction(action)) return "edit";
-  if (/(explain|relabel|highlight|citation)/i.test(action)) return "inspect";
+  if (/(explain|relabel|highlight|citation)/i.test(action) || isAnalyzeAction(input.action)) return "inspect";
   return "chat";
 }
 
 function isEditAction(action: string) {
   return /(rewrite|academic|analysis|translate|revise|sentence|passage|formal|longer|shorter|natural|awkward|\u91cd\u5199|\u6539\u5199|\u66f4\u5b66\u672f|\u5b66\u672f|\u6b63\u5f0f|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u81ea\u7136|\u5446\u677f|\u6839\u636e.*title|\u6839\u636e.*\u6807\u9898)/i.test(action);
+}
+
+function isAnalyzeAction(action: string) {
+  return /(analy[sz]e|critique|comment|grammar|rhetorical role|\u5206\u6790|\u8bc4\u4ef7|\u70b9\u8bc4|\u7528\u4e2d\u6587)/i.test(action);
 }
 
 function mockAssist(input: AssistRequest): AssistResponse {
@@ -194,16 +199,33 @@ function mockAssist(input: AssistRequest): AssistResponse {
     };
   }
 
+  if (isAnalyzeAction(input.action)) {
+    return {
+      title: "Analysis",
+      kind: "inspect",
+      actionType: "analyze-selection",
+      originalExcerpt: selected ? excerpt(selected) : undefined,
+      reply: selected
+        ? analyzeSelection(selected, input.action, input)
+        : "Click a sentence or select text first, then ask for analysis.",
+      explanation: "Read-only analysis. It does not change the document.",
+      annotations: [],
+      warnings,
+      providerMode: "mock"
+    };
+  }
+
   if (action.includes("explain")) {
+    const active = findSelectedAnnotation(input);
     return {
       title: "Highlight explanation",
       kind: "inspect",
       actionType: "highlight-explanation",
       originalExcerpt: selected ? excerpt(selected) : undefined,
       reply: selected
-        ? explainSelection(selected)
+        ? explainSelection(selected, active)
         : "Select a sentence or range first, then ask me to explain the highlight.",
-      explanation: selected ? "Use Relabel selected range if the color does not match your intended rhetorical function." : undefined,
+      explanation: selected ? "Read-only explanation. It does not change the document." : undefined,
       annotations: [],
       warnings,
       providerMode: "mock"
@@ -352,21 +374,51 @@ function moduleHighlightSummary(input: AssistRequest) {
     : "No highlightable text was found yet. Add text or refresh highlighting first.";
 }
 
-function explainSelection(value: string) {
-  const annotation = buildMockAnnotations(value)[0];
+function findSelectedAnnotation(input: AssistRequest) {
+  if (!input.selectedRange) return undefined;
+  return input.annotations.find((annotation) =>
+    annotation.start < input.selectedRange!.end && input.selectedRange!.start < annotation.end
+  );
+}
+
+function explainSelection(value: string, active?: AssistRequest["annotations"][number]) {
+  const annotation = active ?? buildMockAnnotations(value)[0];
   const label = annotation?.label ?? "plain";
   const trimmed = value.trim();
-  if (/^Topic\s*:/i.test(trimmed)) return `This is background because it names the essay's subject: ${shortQuote(trimmed.replace(/^Topic\s*:\s*/i, ""))}.`;
-  if (/^(Research question|Question)\s*:/i.test(trimmed)) return "This is background because it frames the guiding question the essay will answer. A strong question should be specific enough to lead toward an arguable thesis.";
-  if (/^(Working thesis|Thesis)\s*:/i.test(trimmed) || /this essay argues/i.test(trimmed)) return "This is thesis writing because it states the main arguable claim and signals the essay's direction.";
-  if (/^Thesis map\s*:/i.test(trimmed)) return "This maps the thesis because it previews the main reasons the essay will develop.";
-  if (/Reason\s*\d+\s*:/i.test(trimmed)) return "This reason belongs to the thesis map: it should clearly support the working thesis and stay parallel with the other reasons.";
-  if (/Evidence needed|Evidence to use|\[source needed/i.test(trimmed)) return "This marks a source need. It is a planning reminder to find real evidence, not a real citation.";
-  if (/\[citation needed\]/i.test(trimmed)) return "This is an issue because the draft makes a claim that still needs a real source or citation before submission.";
-  if (/counterargument|opposing view|some readers may argue/i.test(trimmed)) return "This is counterargument writing because it introduces a reasonable opposing view before the response.";
-  if (/conclusion|in conclusion|so what|implication/i.test(trimmed)) return "This is conclusion writing because it closes the argument and explains why the point matters.";
-  if (/because|therefore|this shows|this means|supports|matters/i.test(trimmed)) return "This is analysis because it explains how the idea supports the essay's claim rather than simply naming a fact.";
-  return `This sentence is currently treated as ${label}. Check whether it is naming context, making a claim, giving evidence, or explaining why the claim matters.`;
+  const quote = shortQuote(trimmed);
+  const labelName = label.charAt(0).toUpperCase() + label.slice(1);
+  if (/^Topic\s*:/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" sets the essay's topic and scope. If it starts making a debatable claim, it may belong closer to Thesis.`;
+  if (/^(Research question|Question)\s*:/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" frames the question the essay must answer, not evidence by itself.`;
+  if (/^(Working thesis|Thesis)\s*:/i.test(trimmed) || /this essay argues/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" states or points toward the essay's central arguable claim.`;
+  if (/^Thesis map\s*:/i.test(trimmed) || /Reason\s*\d+\s*:/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" previews a main reason that should support the thesis.`;
+  if (/Evidence needed|Evidence to use|\[source needed/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" names evidence the student still needs to find; it is a planning cue, not a real citation.`;
+  if (/\[citation needed\]/i.test(trimmed) || label === "citation" || label === "issue") return `This is marked as ${labelName} because "${quote}" contains a source or citation concern. If it is a broad background claim, Refresh may relabel it, but factual claims still need support.`;
+  if (/counterargument|opposing view|some readers may argue/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" introduces or signals an opposing view before the response.`;
+  if (/conclusion|in conclusion|so what|implication/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" closes the argument or explains why it matters.`;
+  if (/because|therefore|this shows|this means|supports|matters/i.test(trimmed)) return `This is marked as ${labelName} because "${quote}" explains why a point matters for the essay's claim.`;
+  return `This is marked as ${labelName} because of the role this sentence appears to play: "${quote}". Check whether it is context, claim, evidence, analysis, or a citation issue.`;
+}
+
+function analyzeSelection(value: string, action: string, input: AssistRequest) {
+  const trimmed = value.trim();
+  const quote = shortQuote(trimmed);
+  const wantsChinese = /[\u4e00-\u9fff]|用中文|中文/.test(action);
+  const active = findSelectedAnnotation(input);
+  const label = active?.label;
+  if (wantsChinese) {
+    const role = label ? `它目前更像是“${label}”功能` : "它需要先判断在段落中的功能";
+    const focus = /grammar|语法|proofread|润色/.test(action)
+      ? "语法和表达上，建议检查句子是否过长、主谓是否清楚，以及关键词是否重复。"
+      : "内容上，建议说明它和中心论点的关系，并补足必要的证据或分析。";
+    return `这句话是：“${quote}”。${role}。${focus} 如果你想修改它，可以用 Rewrite 或 Academic；Analyze 只提供评论，不会改正文。`;
+  }
+  if (/grammar|proofread|punctuation/i.test(action)) {
+    return `This passage says: "${quote}". Grammar check: look for sentence length, clear subject-verb structure, and repeated wording. Analyze is read-only; use Rewrite or Academic for a replacement preview.`;
+  }
+  if (/critique|evaluate|what do you think/i.test(action)) {
+    return `This passage says: "${quote}". It is understandable, but it should more clearly connect its claim to the essay's main argument and name what evidence or reasoning supports it.`;
+  }
+  return `This passage says: "${quote}". Its likely role is ${label ?? "a draft sentence"}. Check whether it gives context, states a claim, supplies evidence, or explains why the point matters.`;
 }
 
 function shortQuote(value: string) {

@@ -161,8 +161,9 @@ Return json only.`;
 }
 
 export function buildAssistMessages(input: AssistRequest) {
-  const isEdit = Boolean(input.selectedRange) && /(rewrite|academic|analysis|translate|revise|sentence|passage)/i.test(input.action);
-  const isInspect = /(explain|relabel|highlight|citation)/i.test(input.action) && !isEdit;
+  const isAnalyze = /(analy[sz]e|critique|comment|grammar|\u5206\u6790|\u8bc4\u4ef7|\u70b9\u8bc4|\u7528\u4e2d\u6587)/i.test(input.action);
+  const isEdit = Boolean(input.selectedRange) && !isAnalyze && /(rewrite|academic|analysis|translate|revise|sentence|passage)/i.test(input.action);
+  const isInspect = (/(explain|relabel|highlight|citation)/i.test(input.action) || isAnalyze) && !isEdit;
   const expectedKind = isEdit ? "edit" : isInspect ? "inspect" : "chat";
   const system = `You are EssayCraft's AI Assistant. Return strict json only.
 
