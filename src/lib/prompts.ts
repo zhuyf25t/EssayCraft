@@ -77,6 +77,8 @@ Rules:
 - annotation.text must equal text.slice(start, end).
 - Annotate sentences or short rhetorical units, not whole paragraphs.
 - Prefer one annotation per sentence. A paragraph can contain background, evidence, citation, analysis, thesis, and conclusion labels.
+- Cover the full substantive essay: most non-empty sentences should receive a label.
+- For a long essay, return many sentence-level annotations. Do not return only a few representative examples.
 - Keep ordinary annotation ranges under 250 characters unless the range is a reference-list entry or a short deliberate quote.
 - Respect user patches when they are reasonable.
 - Use issue when a factual/evidence claim appears to need a source but has no citation, or when the role is unclear.

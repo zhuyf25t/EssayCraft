@@ -342,9 +342,10 @@ function RevisionPreview({
 function RefreshResultCard({ result, onDismiss }: { result: RefreshResponse; onDismiss: () => void }) {
   const checklist = result.reviewChecklist ?? [];
   const isReview = result.kind === "moduleReview";
+  const unavailable = result.providerMode === "unavailable";
   const title = isReview ? (result.globalFeedback[0] ?? "Review ready") : "Refresh result";
   return (
-    <article data-testid="refresh-result-card" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950">
+    <article data-testid="refresh-result-card" className={`rounded-lg border p-3 text-xs ${unavailable ? "border-amber-200 bg-amber-50 text-amber-950" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}>
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="font-semibold">{title}</div>
         <div className="flex items-center gap-2">
@@ -368,7 +369,7 @@ function RefreshResultCard({ result, onDismiss }: { result: RefreshResponse; onD
         </ul>
       ) : (
         <div className="mt-2 rounded-md bg-white/80 px-2 py-1">
-          <span className="font-semibold">{result.annotations.length}</span> label{result.annotations.length === 1 ? "" : "s"} refreshed.
+          <span className="font-semibold">{result.annotations.length}</span> label{result.annotations.length === 1 ? "" : "s"} {unavailable ? "kept from the previous state." : "refreshed."}
           {typeof result.issueCount === "number" ? <span> {result.issueCount} issue{result.issueCount === 1 ? "" : "s"} found.</span> : null}
         </div>
       )}

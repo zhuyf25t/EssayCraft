@@ -69,7 +69,7 @@ export async function POST(request: Request) {
           providerMode: "deepseek"
         }) satisfies RefreshResponse;
       },
-      maxTokens: 4096,
+      maxTokens: 16384,
       temperature: 0.1
     });
     return NextResponse.json(result);

@@ -75,7 +75,7 @@ export async function runJsonAiTask<TRaw, TOutput extends object>({
       if (!task.retryInvalidJson) throw parseError;
       const repaired = await requestJsonText(
         client,
-        buildRepairMessages(raw, parseError),
+        buildRepairMessages(raw, parseError, messages),
         task.model,
         task.timeoutMs,
         maxTokens,
@@ -126,17 +126,26 @@ async function requestJsonText(
   return raw;
 }
 
-function buildRepairMessages(raw: string, parseError: unknown): ChatCompletionMessageParam[] {
+function buildRepairMessages(
+  raw: string,
+  parseError: unknown,
+  originalMessages: ChatCompletionMessageParam[]
+): ChatCompletionMessageParam[] {
   const message = parseError instanceof Error ? parseError.message : "Invalid JSON response.";
   return [
     {
       role: "system",
-      content: "Repair the assistant output into valid JSON matching the requested schema. Return JSON only. Do not add prose."
+      content: "Repair the assistant output into valid JSON matching the requested schema and validation rules. Use the original task context to fix exact text ranges, missing required fields, and invalid labels. Return JSON only. Do not add prose."
     },
     {
       role: "user",
-      content: `Schema/validation error:\n${message}\n\nOriginal output:\n${raw}`
+      content: `Schema/validation error:\n${message}\n\nOriginal task context:\n${serializeMessagesForRepair(originalMessages)}\n\nOriginal output:\n${raw}`
     }
   ];
 }
 
+function serializeMessagesForRepair(messages: ChatCompletionMessageParam[]) {
+  return messages
+    .map((item) => `${item.role.toUpperCase()}:\n${typeof item.content === "string" ? item.content : JSON.stringify(item.content)}`)
+    .join("\n\n---\n\n");
+}
