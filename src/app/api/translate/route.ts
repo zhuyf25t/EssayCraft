@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import type { TranslateRequest, TranslateResponse } from "@/types/essaycraft";
-import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
+import {
+  addAiMetadata,
+  aiMetadata,
+  AI_FAST_MODEL,
+  AI_MOCK_MODEL,
+  createAiClient,
+  fallbackReasonFromError,
+  providerSkipReason,
+  TRANSLATE_TIMEOUT_MS,
+  withAiTimeout
+} from "@/lib/ai-client";
 import { buildMockAnnotations, exactAnnotations, normalizeAnnotations } from "@/lib/annotations";
 import { buildTranslateMessages } from "@/lib/prompts";
 import { translateRequestSchema, translateResponseSchema } from "@/lib/schemas";
@@ -11,6 +21,7 @@ export const dynamic = "force-dynamic";
 const ZH_GENERIC_LINE = "\u8fd9\u6bb5\u5185\u5bb9\u53ef\u4ee5\u4f5c\u4e3a\u4e2d\u6587\u53c2\u8003\u8bd1\u6587\u8fdb\u4e00\u6b65\u6da6\u8272\u3002";
 
 export async function POST(request: Request) {
+  const startedAt = performance.now();
   try {
     const json = await request.json();
     const input = translateRequestSchema.parse(json);
@@ -20,19 +31,23 @@ export async function POST(request: Request) {
     }
     const scopedInput = { ...input, text: textToTranslate, selectedRange: undefined };
 
-    if (!hasAiKey()) {
-      return NextResponse.json(mockTranslate(scopedInput, "mock"));
+    const skipReason = providerSkipReason();
+    if (skipReason) {
+      return NextResponse.json(addAiMetadata(mockTranslate(scopedInput, "mock"), aiMetadata(startedAt, "mock", AI_MOCK_MODEL, skipReason)));
     }
 
     try {
-      const client = createAiClient();
-      const completion = await withAiTimeout(client.chat.completions.create({
-        model: AI_FAST_MODEL,
-        messages: buildTranslateMessages(scopedInput),
-        response_format: { type: "json_object" },
-        max_tokens: 4500,
-        temperature: 0.1
-      }));
+      const client = createAiClient(TRANSLATE_TIMEOUT_MS);
+      const completion = await withAiTimeout(
+        client.chat.completions.create({
+          model: AI_FAST_MODEL,
+          messages: buildTranslateMessages(scopedInput),
+          response_format: { type: "json_object" },
+          max_tokens: 4500,
+          temperature: 0.1
+        }),
+        TRANSLATE_TIMEOUT_MS
+      );
 
       const raw = completion.choices[0]?.message?.content;
       if (!raw) throw new Error("AI returned empty content.");
@@ -55,17 +70,17 @@ export async function POST(request: Request) {
         throw new Error("AI translation added commentary instead of a reference translation.");
       }
       const exact = exactAnnotations(translatedText, parsed.annotations);
-      return NextResponse.json({
+      return NextResponse.json(addAiMetadata({
         ...parsed,
         translatedText,
         annotations: exact.annotations,
         warnings: [...(parsed.warnings ?? []), ...exact.warnings, "Translate is preview-only; the original document was not changed."],
         providerMode: "deepseek"
-      });
-    } catch {
+      }, aiMetadata(startedAt, "deepseek", AI_FAST_MODEL)));
+    } catch (aiError) {
       const fallback = mockTranslate(scopedInput, "fallback");
       fallback.warnings = ["Reference translation preview. No document text was changed automatically."];
-      return NextResponse.json(fallback);
+      return NextResponse.json(addAiMetadata(fallback, aiMetadata(startedAt, "fallback", AI_MOCK_MODEL, fallbackReasonFromError(aiError, AI_FAST_MODEL))));
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";

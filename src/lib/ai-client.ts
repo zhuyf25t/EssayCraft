@@ -2,11 +2,37 @@ import "server-only";
 
 import OpenAI from "openai";
 
+export type AiProviderMode = "deepseek" | "mock" | "fallback";
+
+export type AiResponseMetadata = {
+  providerMode: AiProviderMode;
+  modelUsed: string;
+  latencyMs: number;
+  fallbackReason?: string;
+};
+
+export const AI_HIGH_QUALITY_MODEL = process.env.DEEPSEEK_HIGH_QUALITY_MODEL || "deepseek-v4-pro";
+export const AI_MODEL = process.env.DEEPSEEK_MODEL || AI_HIGH_QUALITY_MODEL;
+export const AI_FAST_MODEL = process.env.DEEPSEEK_FAST_MODEL || process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
+export const AI_MOCK_MODEL = "deterministic-mock";
+export const ASSIST_TIMEOUT_MS = readTimeout("ESSAYCRAFT_ASSIST_TIMEOUT_MS", 12000);
+export const REFRESH_TIMEOUT_MS = readTimeout("ESSAYCRAFT_REFRESH_TIMEOUT_MS", 10000);
+export const TRANSLATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_TRANSLATE_TIMEOUT_MS", 10000);
+export const GENERATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_GENERATE_TIMEOUT_MS", 30000);
+export const FAST_FALLBACK_MS = readTimeout("ESSAYCRAFT_FAST_FALLBACK_MS", process.env.NODE_ENV === "development" ? 2500 : 8000);
+export const interactiveTimeoutMs = ASSIST_TIMEOUT_MS;
+
 export function hasAiKey() {
-  return Boolean(process.env.DEEPSEEK_API_KEY?.trim()) && process.env.ESSAYCRAFT_FORCE_MOCK_AI !== "1";
+  return !providerSkipReason();
 }
 
-export function createAiClient() {
+export function providerSkipReason() {
+  if (process.env.ESSAYCRAFT_FORCE_MOCK_AI === "1") return "forced-mock";
+  if (!process.env.DEEPSEEK_API_KEY?.trim()) return "missing-api-key";
+  return undefined;
+}
+
+export function createAiClient(timeoutMs = ASSIST_TIMEOUT_MS) {
   const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("DEEPSEEK_API_KEY is not set. Add it to .env.local or use mock fallback.");
@@ -16,14 +42,9 @@ export function createAiClient() {
     apiKey,
     baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
     maxRetries: 1,
-    timeout: 12000
+    timeout: timeoutMs
   });
 }
-
-export const AI_HIGH_QUALITY_MODEL = process.env.DEEPSEEK_HIGH_QUALITY_MODEL || "deepseek-v4-pro";
-export const AI_MODEL = process.env.DEEPSEEK_MODEL || AI_HIGH_QUALITY_MODEL;
-export const AI_FAST_MODEL = process.env.DEEPSEEK_FAST_MODEL || process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
-export const interactiveTimeoutMs = Number(process.env.ESSAYCRAFT_FAST_FALLBACK_MS ?? (process.env.NODE_ENV === "development" ? 2500 : 8000));
 
 export async function withAiTimeout<T>(promise: Promise<T>, timeoutMs = interactiveTimeoutMs): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -36,4 +57,34 @@ export async function withAiTimeout<T>(promise: Promise<T>, timeoutMs = interact
   } finally {
     if (timeout) clearTimeout(timeout);
   }
+}
+
+export function elapsedMs(startedAt: number) {
+  return Math.max(0, Math.round(performance.now() - startedAt));
+}
+
+export function aiMetadata(startedAt: number, providerMode: AiProviderMode, modelUsed: string, fallbackReason?: string): AiResponseMetadata {
+  const metadata: AiResponseMetadata = {
+    providerMode,
+    modelUsed,
+    latencyMs: elapsedMs(startedAt)
+  };
+  if (fallbackReason) metadata.fallbackReason = fallbackReason;
+  return metadata;
+}
+
+export function addAiMetadata<T extends object>(payload: T, metadata: AiResponseMetadata): T & AiResponseMetadata {
+  return { ...payload, ...metadata };
+}
+
+export function fallbackReasonFromError(error: unknown, model: string) {
+  const message = error instanceof Error ? error.message : "AI provider failed.";
+  const apiKey = process.env.DEEPSEEK_API_KEY?.trim();
+  const safeMessage = apiKey ? message.split(apiKey).join("[redacted-api-key]") : message;
+  return `provider-error:${model}:${safeMessage.slice(0, 240)}`;
+}
+
+function readTimeout(name: string, fallback: number) {
+  const value = Number(process.env[name]?.trim());
+  return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
 }

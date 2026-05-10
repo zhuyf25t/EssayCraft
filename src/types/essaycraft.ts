@@ -143,6 +143,9 @@ export type RefreshResponse = {
   referenceStatus?: string;
   nextStep?: string;
   providerMode?: "deepseek" | "mock" | "fallback";
+  modelUsed?: string;
+  latencyMs?: number;
+  fallbackReason?: string;
 };
 
 export type GenerateNextRequest = {
@@ -164,6 +167,9 @@ export type GenerateNextResponse = {
   globalFeedback: string[];
   warnings: string[];
   providerMode: "deepseek" | "mock" | "fallback";
+  modelUsed?: string;
+  latencyMs?: number;
+  fallbackReason?: string;
 };
 
 export type AssistRequest = {
@@ -189,6 +195,9 @@ type AssistResponseBase = {
   actionType?: string;
   explanation?: string;
   providerMode?: "deepseek" | "mock" | "fallback";
+  modelUsed?: string;
+  latencyMs?: number;
+  fallbackReason?: string;
   annotations: Annotation[];
   warnings: string[];
 };
@@ -227,6 +236,9 @@ export type AssistResponseLegacy = {
   originalExcerpt?: string;
   explanation?: string;
   providerMode?: "deepseek" | "mock" | "fallback";
+  modelUsed?: string;
+  latencyMs?: number;
+  fallbackReason?: string;
   proposedText?: string;
   replaceRange?: TextRange;
   originalText?: string;
@@ -248,4 +260,7 @@ export type TranslateResponse = {
   annotations: Annotation[];
   warnings: string[];
   providerMode: "deepseek" | "mock" | "fallback";
+  modelUsed?: string;
+  latencyMs?: number;
+  fallbackReason?: string;
 };

@@ -114,6 +114,9 @@ export const refreshResponseSchema = z.object({
   referenceStatus: z.string().optional(),
   nextStep: z.string().optional(),
   providerMode: z.enum(["deepseek", "mock", "fallback"]).optional(),
+  modelUsed: z.string().optional(),
+  latencyMs: z.number().int().min(0).optional(),
+  fallbackReason: z.string().optional(),
   globalFeedback: z.array(z.string()).default([]),
   warnings: z.array(z.string()).default([])
 });
@@ -136,7 +139,10 @@ export const generateNextResponseSchema = z.object({
   sources: z.array(sourceCardSchema).default([]),
   globalFeedback: z.array(z.string()).default([]),
   warnings: z.array(z.string()).default([]),
-  providerMode: z.enum(["deepseek", "mock", "fallback"]).default("deepseek")
+  providerMode: z.enum(["deepseek", "mock", "fallback"]).default("deepseek"),
+  modelUsed: z.string().optional(),
+  latencyMs: z.number().int().min(0).optional(),
+  fallbackReason: z.string().optional()
 });
 
 export const assistantMessageSchema = z.object({
@@ -175,6 +181,9 @@ export const assistResponseSchema = z.object({
   originalExcerpt: nullableString,
   explanation: nullableString,
   providerMode: z.enum(["deepseek", "mock", "fallback"]).optional(),
+  modelUsed: z.string().optional(),
+  latencyMs: z.number().int().min(0).optional(),
+  fallbackReason: z.string().optional(),
   proposedText: nullableString,
   replaceRange: nullableRange,
   originalText: nullableString,
@@ -195,5 +204,8 @@ export const translateResponseSchema = z.object({
   mode: z.enum(["en-to-zh", "zh-to-en", "auto-to-zh"]),
   annotations: z.array(annotationSchema).default([]),
   warnings: z.array(z.string()).default([]),
-  providerMode: z.enum(["deepseek", "mock", "fallback"]).default("deepseek")
+  providerMode: z.enum(["deepseek", "mock", "fallback"]).default("deepseek"),
+  modelUsed: z.string().optional(),
+  latencyMs: z.number().int().min(0).optional(),
+  fallbackReason: z.string().optional()
 });

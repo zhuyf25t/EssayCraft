@@ -1,6 +1,16 @@
 import { NextResponse } from "next/server";
 import type { Annotation, GenerateNextResponse, ModuleNumber, SourceCard } from "@/types/essaycraft";
-import { createAiClient, AI_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
+import {
+  addAiMetadata,
+  aiMetadata,
+  AI_MODEL,
+  AI_MOCK_MODEL,
+  createAiClient,
+  fallbackReasonFromError,
+  GENERATE_TIMEOUT_MS,
+  providerSkipReason,
+  withAiTimeout
+} from "@/lib/ai-client";
 import { buildMockAnnotations, exactAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
 import { buildCitationAudit } from "@/lib/citationAudit";
 import { getTransitionPrompt } from "@/lib/moduleTransitionPrompts";
@@ -11,9 +21,8 @@ import { cleanGeneratedText } from "@/lib/textFormat";
 
 export const dynamic = "force-dynamic";
 
-const GENERATE_TIMEOUT_MS = Number(process.env.ESSAYCRAFT_GENERATE_TIMEOUT_MS ?? 12000);
-
 export async function POST(request: Request) {
+  const startedAt = performance.now();
   try {
     const json = await request.json();
     const parsedInput = generateNextRequestSchema.parse(json);
@@ -27,12 +36,16 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!hasAiKey()) {
-      return NextResponse.json(mockGenerate(input.topic, input.sourceModuleNumber, input.sourceText, input.sourceSources, input.sourceAnnotations));
+    const skipReason = providerSkipReason();
+    if (skipReason) {
+      return NextResponse.json(addAiMetadata(
+        mockGenerate(input.topic, input.sourceModuleNumber, input.sourceText, input.sourceSources, input.sourceAnnotations),
+        aiMetadata(startedAt, "mock", AI_MOCK_MODEL, skipReason)
+      ));
     }
 
     try {
-      const client = createAiClient();
+      const client = createAiClient(GENERATE_TIMEOUT_MS);
       const completion = await withAiTimeout(
         client.chat.completions.create({
           model: AI_MODEL,
@@ -74,13 +87,13 @@ export async function POST(request: Request) {
         providerMode: "deepseek"
       };
 
-      return NextResponse.json(normalized);
+      return NextResponse.json(addAiMetadata(normalized, aiMetadata(startedAt, "deepseek", AI_MODEL)));
     } catch (aiError) {
       console.warn("Generate Next AI fallback:", aiError);
       const fallback = mockGenerate(input.topic, input.sourceModuleNumber, input.sourceText, input.sourceSources, input.sourceAnnotations);
       fallback.providerMode = "fallback";
       fallback.warnings.push(`Live AI was unavailable, so EssayCraft used local deterministic guidance for Module ${expectedTarget}. Review source and citation markers before submission.`);
-      return NextResponse.json(fallback);
+      return NextResponse.json(addAiMetadata(fallback, aiMetadata(startedAt, "fallback", AI_MOCK_MODEL, fallbackReasonFromError(aiError, AI_MODEL))));
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
