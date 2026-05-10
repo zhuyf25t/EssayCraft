@@ -1,7 +1,8 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import type { AssistRequest, AssistResponse, AssistResponseLegacy } from "@/types/essaycraft";
 import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
 import { buildMockAnnotations, exactAnnotations, normalizeAnnotations } from "@/lib/annotations";
+import { normalizedForNoopCompare, protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { buildAssistMessages } from "@/lib/prompts";
 import { assistRequestSchema, assistResponseSchema } from "@/lib/schemas";
 
@@ -65,13 +66,20 @@ export async function POST(request: Request) {
 }
 
 function normalizeAssistInput(input: AssistRequest): AssistRequest {
+  const text = protectModuleText(input.text);
   const range = input.selectedRange;
   if (!range || range.end <= range.start) {
-    return { ...input, selectedRange: undefined, selectedText: undefined };
+    return { ...input, text, selectedRange: undefined, selectedText: undefined };
   }
+  const safeRange = {
+    start: Math.max(0, Math.min(text.length, range.start)),
+    end: Math.max(0, Math.min(text.length, range.end))
+  };
   return {
     ...input,
-    selectedText: input.selectedText ?? input.text.slice(range.start, range.end)
+    text,
+    selectedRange: safeRange.end > safeRange.start ? safeRange : undefined,
+    selectedText: safeRange.end > safeRange.start ? text.slice(safeRange.start, safeRange.end) : undefined
   };
 }
 
@@ -104,7 +112,11 @@ function coerceAssistResponse(input: AssistRequest, raw: unknown, providerMode: 
     if (!parsed.proposedText?.trim() || !parsed.replaceRange) {
       throw new Error("Provider returned an unusable edit preview.");
     }
-    const proposedText = sanitizeReplacement(parsed.proposedText, input.selectedText ?? input.text.slice(parsed.replaceRange.start, parsed.replaceRange.end));
+    const original = input.selectedText ?? input.text.slice(parsed.replaceRange.start, parsed.replaceRange.end);
+    const proposedText = sanitizeReplacement(stripEditorKernelMarkers(parsed.proposedText), original);
+    if (changeRequested(input.action) && normalizedForNoopCompare(proposedText) === normalizedForNoopCompare(original)) {
+      throw new Error("Provider returned an unchanged edit preview.");
+    }
     return {
       ...base,
       kind: "edit",
@@ -286,9 +298,10 @@ function mockAssist(input: AssistRequest): AssistResponse {
 
 function rewriteWithInstruction(value: string, instruction: string) {
   const lower = instruction.toLowerCase();
-  if (/更长|写长|longer|develop|expand|more detail|更详细/.test(lower)) return makeLongerReplacement(value);
-  if (/更短|shorter|concise|简短|精简/.test(lower)) return makeShorterReplacement(value);
-  if (/academic|formal|正式|学术/.test(lower)) return makeAcademicReplacement(value);
+  if (/(?:\u66f4\u957f|\u5199\u957f|longer|develop|expand|more detail|\u66f4\u8be6\u7ec6)/i.test(lower)) return makeLongerReplacement(value);
+  if (/(?:\u66f4\u77ed|\u7b80\u77ed|\u7cbe\u7b80|shorter|concise)/i.test(lower)) return makeShorterReplacement(value);
+  if (/(?:\u66f4\u81ea\u7136|\u81ea\u7136|\u5446\u677f|\u666e\u901a|natural|awkward|less generic)/i.test(lower)) return makeNaturalReplacement(value);
+  if (/(?:academic|formal|\u6b63\u5f0f|\u5b66\u672f|\u66f4\u5b66\u672f)/i.test(lower)) return makeAcademicReplacement(value);
   return makeAcademicReplacement(value);
 }
 
@@ -371,7 +384,7 @@ function makeLongerReplacement(value: string) {
   const cleaned = sanitizeReplacement(value, value).replace(/\s+/g, " ").trim();
   const base = /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
   if (/^Research question\s*:/i.test(cleaned) || /^Question\s*:/i.test(cleaned)) {
-    const question = cleaned.replace(/^(Research question|Question)\s*:\s*/i, "").replace(/[?？.]?$/, "");
+    const question = cleaned.replace(/^(Research question|Question)\s*:\s*/i, "").replace(/[?？]?$/, "");
     return `Research question: ${question}, and what responsibilities should individuals, institutions, and communities share in creating a more balanced solution?`;
   }
   if (/^Topic\s*:/i.test(cleaned)) {
@@ -413,6 +426,22 @@ function makeAcademicReplacement(value: string) {
     .trim();
 }
 
+function makeNaturalReplacement(value: string) {
+  const cleaned = makeAcademicReplacement(value).replace(/\s+/g, " ").trim();
+  if (/^Research question\s*:/i.test(cleaned) || /^Question\s*:/i.test(cleaned)) {
+    return "Research question: How can individuals, schools, and technology platforms share responsibility for creating healthier digital environments for students?";
+  }
+  if (/^Topic\s*:/i.test(cleaned)) {
+    const topic = cleaned.replace(/^Topic\s*:\s*/i, "").replace(/[.!?]?$/, "");
+    return `Topic: ${topic}, with a clearer focus on causes, effects, and practical responses.`;
+  }
+  if (/^(Working thesis|Thesis)\s*:/i.test(cleaned)) return makeLongerReplacement(cleaned);
+  if (cleaned.length < 90) {
+    return `${cleaned.replace(/[.!?]?$/, "")}, with clearer wording that names the issue, the people affected, and why the point matters.`;
+  }
+  return cleaned.replace(/\bimportant\b/gi, "significant").replace(/\bvery\b/gi, "particularly");
+}
+
 function strengthenAnalysis(value: string) {
   const cleaned = sanitizeReplacement(value, value).replace(/\s+/g, " ").trim();
   const sentence = /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
@@ -421,7 +450,7 @@ function strengthenAnalysis(value: string) {
 }
 
 function sanitizeReplacement(value: string, fallback: string) {
-  const cleaned = value
+  const cleaned = stripEditorKernelMarkers(value)
     .replace(/^A more academic version could state:\s*/i, "")
     .replace(/^A more academic version could state\s*/i, "")
     .replace(/^could state:\s*/i, "")
@@ -436,6 +465,10 @@ function sanitizeReplacement(value: string, fallback: string) {
     .replace(/This rewrite improves.*$/i, "")
     .trim();
   return cleaned || fallback.trim();
+}
+
+function changeRequested(action: string) {
+  return /rewrite|revise|academic|formal|longer|shorter|natural|awkward|expand|develop|\u53ef\u4ee5|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u66f4\u5b66\u672f|\u81ea\u7136|\u5446\u677f|\u91cd\u5199|\u6539\u5199|\u6839\u636e/i.test(action);
 }
 
 function mockAssistantChinese(value: string) {
