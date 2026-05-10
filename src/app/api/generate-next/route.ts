@@ -8,6 +8,8 @@ import { buildGenerateNextMessages } from "@/lib/prompts";
 import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
 import { cleanGeneratedText } from "@/lib/textFormat";
 
+const GENERATE_TIMEOUT_MS = Number(process.env.ESSAYCRAFT_GENERATE_TIMEOUT_MS ?? 12000);
+
 export async function POST(request: Request) {
   try {
     const json = await request.json();
@@ -27,13 +29,16 @@ export async function POST(request: Request) {
 
     try {
       const client = createAiClient();
-      const completion = await withAiTimeout(client.chat.completions.create({
-        model: AI_MODEL,
-        messages: buildGenerateNextMessages(input),
-        response_format: { type: "json_object" },
-        max_tokens: 7000,
-        temperature: 0.25
-      }));
+      const completion = await withAiTimeout(
+        client.chat.completions.create({
+          model: AI_MODEL,
+          messages: buildGenerateNextMessages(input),
+          response_format: { type: "json_object" },
+          max_tokens: 7000,
+          temperature: 0.25
+        }),
+        GENERATE_TIMEOUT_MS
+      );
 
       const raw = completion.choices[0]?.message?.content;
       if (!raw) throw new Error("AI returned empty content.");
@@ -67,9 +72,10 @@ export async function POST(request: Request) {
 
       return NextResponse.json(normalized);
     } catch (aiError) {
+      console.warn("Generate Next AI fallback:", aiError);
       const fallback = mockGenerate(input.topic, input.sourceModuleNumber, input.sourceText, input.sourceSources, input.sourceAnnotations);
       fallback.providerMode = "fallback";
-      fallback.warnings.push(`DeepSeek generation unavailable; used mock output. ${aiError instanceof Error ? aiError.message : ""}`.trim());
+      fallback.warnings.push(`Live AI was unavailable, so EssayCraft used local deterministic guidance for Module ${expectedTarget}. Review source and citation markers before submission.`);
       return NextResponse.json(fallback);
     }
   } catch (error) {

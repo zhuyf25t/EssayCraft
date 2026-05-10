@@ -41,6 +41,7 @@ DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_FAST_MODEL=deepseek-v4-flash
 DEEPSEEK_HIGH_QUALITY_MODEL=deepseek-v4-pro
 ESSAYCRAFT_FAST_FALLBACK_MS=2500
+ESSAYCRAFT_GENERATE_TIMEOUT_MS=12000
 ESSAYCRAFT_FORCE_MOCK_AI=0
 ```
 
@@ -48,7 +49,9 @@ Do not commit `.env.local`.
 
 For deterministic demos and tests, set `ESSAYCRAFT_FORCE_MOCK_AI=1`. The app then uses the server-side mock provider even if `.env.local` contains a DeepSeek key.
 
-For MVP interaction testing, Assistant, Refresh Highlighting, and Reference Translation use `DEEPSEEK_FAST_MODEL` by default. `ESSAYCRAFT_FAST_FALLBACK_MS` can shorten the interactive wait before local fallback. Keep `DEEPSEEK_HIGH_QUALITY_MODEL` available for slower quality passes, but do not expose any key through `NEXT_PUBLIC_`.
+For MVP interaction testing, Assistant, Refresh Highlighting, and Reference Translation use `DEEPSEEK_FAST_MODEL` by default. `ESSAYCRAFT_FAST_FALLBACK_MS` can shorten the interactive wait before local fallback, while `ESSAYCRAFT_GENERATE_TIMEOUT_MS` lets full module generation wait longer. Keep `DEEPSEEK_HIGH_QUALITY_MODEL` available for slower quality passes, but do not expose any key through `NEXT_PUBLIC_`.
+
+Next.js dev-server messages such as `Compiled /api/refresh` are normal local compile logs, not EssayCraft product errors. If DeepSeek is unreachable because of proxy/network latency, the server falls back to deterministic local mock behavior after the configured timeout.
 
 ## Validation
 

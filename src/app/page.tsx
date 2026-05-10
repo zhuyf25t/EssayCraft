@@ -442,7 +442,7 @@ export default function Home() {
       resetEditorViewport();
       const message = `Module ${target} generated and opened. Previous Module ${target} saved as a snapshot.`;
       const details = [
-        `Provider mode: ${data.providerMode}.`,
+        aiModeDetail(data.providerMode),
         ...data.warnings,
         ...(data.globalFeedback ?? [])
       ].filter(Boolean);
@@ -455,9 +455,15 @@ export default function Home() {
     } finally {
       setLoading(false);
     }
-  }
+}
 
-  function handleSaveSnapshot() {
+function aiModeDetail(mode: GenerateNextResponse["providerMode"]) {
+  if (mode === "deepseek") return "AI completed with the live server model.";
+  if (mode === "mock") return "AI completed with local demo logic.";
+  return "Live AI was unavailable; local demo logic completed the request.";
+}
+
+function handleSaveSnapshot() {
     updateCurrentModule((doc) => addSnapshot(doc, "Manual snapshot"));
     setStatus("Snapshot saved.");
   }
@@ -1128,6 +1134,35 @@ function ExportPanel({
   onResetDemo: () => void;
 }) {
   const moduleSix = moduleNumber === 6;
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<AiDiagnostics | null>(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+
+  async function toggleDiagnostics() {
+    const nextOpen = !diagnosticsOpen;
+    setDiagnosticsOpen(nextOpen);
+    if (!nextOpen || diagnostics || diagnosticsLoading) return;
+    setDiagnosticsLoading(true);
+    try {
+      const response = await fetch("/api/diagnostics");
+      if (!response.ok) throw new Error("Diagnostics unavailable.");
+      setDiagnostics(await response.json());
+    } catch {
+      setDiagnostics({
+        providerConfigured: false,
+        forceMock: false,
+        model: "unknown",
+        fastModel: "unknown",
+        highQualityModel: "unknown",
+        interactiveTimeoutMs: 0,
+        baseUrlConfigured: false,
+        note: "Diagnostics unavailable."
+      });
+    } finally {
+      setDiagnosticsLoading(false);
+    }
+  }
+
   return (
     <section className="space-y-3">
       <div>
@@ -1167,9 +1202,47 @@ function ExportPanel({
       <p className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">
         Full project JSON includes all 6 modules, annotations, patches, snapshots, sources, and assistant history. Import replaces the whole local project after downloading a backup. It never includes API keys.
       </p>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-2 text-xs text-slate-500">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between text-left font-semibold text-slate-600"
+          onClick={toggleDiagnostics}
+          aria-expanded={diagnosticsOpen}
+        >
+          <span>AI diagnostics</span>
+          <span>{diagnosticsOpen ? "Hide" : "Show"}</span>
+        </button>
+        {diagnosticsOpen ? (
+          <div data-testid="ai-diagnostics" className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+            {diagnosticsLoading ? <p>Loading diagnostics...</p> : null}
+            {diagnostics ? (
+              <>
+                <p>Provider configured: {diagnostics.providerConfigured ? "yes" : "no"}</p>
+                <p>Force mock: {diagnostics.forceMock ? "on" : "off"}</p>
+                <p>Fast model: {diagnostics.fastModel}</p>
+                <p>Default model: {diagnostics.model}</p>
+                <p>Interactive timeout: {diagnostics.interactiveTimeoutMs}ms</p>
+                <p>{diagnostics.note}</p>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
     </section>
   );
 }
+
+type AiDiagnostics = {
+  providerConfigured: boolean;
+  forceMock: boolean;
+  model: string;
+  fastModel: string;
+  highQualityModel: string;
+  interactiveTimeoutMs: number;
+  baseUrlConfigured: boolean;
+  note: string;
+};
 
 function mergeSources(primary: SourceCard[], secondary: SourceCard[]) {
   const seen = new Set<string>();
