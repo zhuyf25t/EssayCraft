@@ -33,6 +33,13 @@ async function expectEditorAtTop(page: Page) {
   await expect.poll(async () => page.getByTestId("editor-backdrop").evaluate((node) => Math.round((node as HTMLElement).scrollTop))).toBeLessThanOrEqual(2);
 }
 
+async function canonicalModuleText(page: Page, moduleNumber = 1) {
+  return page.evaluate((mod) => {
+    const state = JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}");
+    return state.modules[String(mod)].text as string;
+  }, moduleNumber);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => window.localStorage.clear());
   await page.goto("/");
@@ -217,7 +224,7 @@ test("student can edit paragraphs, add a patch, and insert a manual citation", a
   await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
   await expect(page.getByTestId("patch-margin-marker")).toHaveAttribute("title", /Make the question more specific/);
   await expect(page.getByTestId("patch-list")).toHaveCount(0);
-  await expect(textEditor).not.toHaveValue(/Make the question more specific/);
+  expect(await canonicalModuleText(page)).not.toContain("Make the question more specific");
 
   await page.getByRole("tab", { name: /Sources/i }).click();
   await page.getByPlaceholder("Source title").fill("Student focus survey");
@@ -564,6 +571,11 @@ test("assistant uses selection context and dismisses preview without changing te
   await expect(page.getByRole("button", { name: "Make academic" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Translate" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Explain highlight" })).toBeVisible();
+  const academicButtonStyle = await page.getByRole("button", { name: "Make academic" }).evaluate((node) => {
+    const style = getComputedStyle(node as HTMLElement);
+    return { background: style.backgroundColor, color: style.color };
+  });
+  expect(academicButtonStyle.background).not.toBe("rgb(255, 255, 255)");
   await expect(page.getByRole("button", { name: "Strengthen" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Add note" })).toHaveCount(0);
   await page.getByRole("button", { name: "Rewrite", exact: true }).click();
@@ -636,24 +648,36 @@ test("inline notes drive apply notes preview and preserve text until accepted", 
 
   await expect(page.getByTestId("patch-marker")).toBeVisible();
   await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
+  await expect(page.getByTestId("patch-margin-marker")).toHaveCSS("position", "static");
+  const noteRect = await page.getByTestId("patch-margin-marker").boundingBox();
+  expect(noteRect?.width).toBeGreaterThan(20);
+  expect(noteRect?.height).toBeGreaterThan(10);
   const backdropText = await page.getByTestId("editor-backdrop").textContent();
   expect(backdropText?.indexOf("Research shows")).toBeLessThan(backdropText?.indexOf("Note: This is analysis") ?? -1);
   expect(backdropText?.indexOf("Note: This is analysis")).toBeLessThan(backdropText?.indexOf(" that better phone") ?? -1);
   const noteOverflow = await page.getByTestId("editor-backdrop").evaluate((node) => node.scrollWidth - node.clientWidth);
   expect(noteOverflow).toBeLessThanOrEqual(4);
-  await expect(editor(page)).toHaveValue(original);
+  expect(await canonicalModuleText(page)).toBe(original);
   await expect(page.getByTestId("patch-list")).toHaveCount(0);
   await page.getByTestId("patch-margin-marker").click();
   await expect(patchBox).toHaveValue("This is analysis, not evidence.");
   await patchBox.fill("This is analysis, not evidence. Find a stronger source.");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("patch-margin-marker")).toHaveAttribute("title", /Find a stronger source/);
+  await page.getByTestId("patch-margin-marker").getByRole("button", { name: "Delete note" }).click();
+  await expect(page.getByTestId("patch-margin-marker")).toHaveCount(0);
+  expect(await canonicalModuleText(page)).toBe(original);
+  await selectEditorRange(page, 0, "Research shows".length);
+  await page.keyboard.press("Control+Enter");
+  await page.getByPlaceholder("Add a note for EssayCraft").fill("This is analysis, not evidence. Find a stronger source.");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
 
   await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
   await expect(page.getByTestId("apply-notes-preview")).toContainText("Apply notes preview", { timeout: 20_000 });
-  await expect(editor(page)).toHaveValue(original);
+  expect(await canonicalModuleText(page)).toBe(original);
   await page.getByRole("button", { name: "Reject" }).click();
-  await expect(editor(page)).toHaveValue(original);
+  expect(await canonicalModuleText(page)).toBe(original);
   let stateAfterPreview = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(stateAfterPreview.modules["1"].patches[0].resolved).toBe(false);
   await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
@@ -661,7 +685,7 @@ test("inline notes drive apply notes preview and preserve text until accepted", 
   await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
   await expect(page.getByTestId("apply-notes-preview")).toContainText("Apply notes preview", { timeout: 20_000 });
   await page.getByRole("button", { name: "Accept" }).click();
-  await expect(editor(page)).not.toHaveValue(original);
+  await expect.poll(async () => canonicalModuleText(page)).not.toBe(original);
   stateAfterPreview = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(stateAfterPreview.modules["1"].snapshots[0].text).toBe(original);
   await expect.poll(async () => {
@@ -671,7 +695,7 @@ test("inline notes drive apply notes preview and preserve text until accepted", 
   await expect(page.getByTestId("patch-margin-marker")).toHaveCount(0);
 
   await page.getByTestId("toolbar-status").getByRole("button", { name: "Undo" }).click();
-  await expect(editor(page)).toHaveValue(original);
+  await expect.poll(async () => canonicalModuleText(page)).toBe(original);
   const undoState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(undoState.modules["1"].patches[0].resolved).toBe(false);
 });
@@ -686,16 +710,16 @@ test("Chinese title note visibly revises topic only after Accept", async ({ page
 
   await expect(page.getByTestId("patch-marker")).toBeVisible();
   await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
-  await expect(editor(page)).toHaveValue(original);
-  await expect(editor(page)).not.toHaveValue(/标题可以更长一点/);
+  expect(await canonicalModuleText(page)).toBe(original);
+  expect(await canonicalModuleText(page)).not.toContain("标题可以更长一点");
 
   await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
   await expect(page.getByTestId("apply-notes-preview")).toContainText("Apply notes preview", { timeout: 20_000 });
   await expect(page.getByTestId("apply-notes-preview")).toContainText(/responsible platform design/i);
-  await expect(editor(page)).toHaveValue(original);
+  expect(await canonicalModuleText(page)).toBe(original);
   await page.getByRole("button", { name: "Accept" }).click();
-  await expect(editor(page)).not.toHaveValue(original);
-  await expect(editor(page)).toHaveValue(/Topic: Social media balance, youth wellbeing, and responsible platform design/);
+  await expect.poll(async () => canonicalModuleText(page)).not.toBe(original);
+  await expect.poll(async () => canonicalModuleText(page)).toContain("Topic: Social media balance, youth wellbeing, and responsible platform design");
   await expect(page.getByTestId("patch-margin-marker")).toHaveCount(0);
 });
 
@@ -711,9 +735,9 @@ test("Chinese question note revises research question in preview", async ({ page
 
   await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
   await expect(page.getByTestId("apply-notes-preview")).toContainText("individuals, schools, and social media platforms", { timeout: 20_000 });
-  await expect(editor(page)).toHaveValue(original);
+  expect(await canonicalModuleText(page)).toBe(original);
   await page.getByRole("button", { name: "Reject" }).click();
-  await expect(editor(page)).toHaveValue(original);
+  expect(await canonicalModuleText(page)).toBe(original);
   await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
 });
 
@@ -735,7 +759,7 @@ test("Apply Notes blocks stale preview after manual text edits", async ({ page }
   await expect(page.getByTestId("apply-notes-preview")).toHaveCount(0);
   const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(state.modules["1"].text).toBe(edited);
-  expect(state.modules["1"].patches[0].resolved).toBe(false);
+  expect(state.modules["1"].patches).toHaveLength(0);
 });
 
 test("assistant apply snapshots selected replacement and blocks stale ranges", async ({ page }) => {
@@ -880,4 +904,37 @@ Evidence needed: academic integrity source`,
     expect(annotation.end).toBeLessThanOrEqual(body.text.length);
     expect(body.text.slice(annotation.start, annotation.end)).toBe(annotation.text);
   }
+});
+
+test("refresh API mock visibly revises naturalness notes", async ({ request }) => {
+  const sourceText = "Research question: How can we strike a healthier social media balance?";
+  const response = await request.post("/api/refresh", {
+    data: {
+      topic: "Social media balance",
+      moduleNumber: 1,
+      text: sourceText,
+      annotations: [],
+      patches: [{
+        id: "patch-natural",
+        moduleNumber: 1,
+        anchorStart: 0,
+        anchorEnd: sourceText.length,
+        anchorQuote: sourceText,
+        text: "让它更自然一点，也更有研究感。",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        status: "open",
+        resolved: false,
+        stale: false
+      }],
+      sources: []
+    }
+  });
+
+  expect(response.status()).toBe(200);
+  const body = await response.json();
+  expect(body.kind).toBe("revision");
+  expect(body.proposedText).not.toBe(sourceText);
+  expect(body.proposedText).toContain("individuals, schools, and social media platforms");
+  expect(JSON.stringify(body)).not.toMatch(/DeepSeek|debug|AI returned|no API key/i);
 });
