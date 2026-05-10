@@ -146,18 +146,13 @@ export function sentenceRangeAt(text: string, start: number, end = start): Range
 export function sentenceRanges(text: string): Range[] {
   const normalized = normalizeText(text);
   const ranges: Range[] = [];
-  const pattern = /[^\n.!?]+(?:[.!?]+|$)/g;
-  let match: RegExpExecArray | null;
+  let offset = 0;
 
-  while ((match = pattern.exec(normalized)) !== null) {
-    const raw = match[0];
-    const leading = raw.match(/^\s*/)?.[0].length ?? 0;
-    const trailing = raw.match(/\s*$/)?.[0].length ?? 0;
-    const start = match.index + leading;
-    const end = match.index + raw.length - trailing;
-    if (end > start) {
-      ranges.push({ start, end, text: normalized.slice(start, end) });
+  for (const line of normalized.split("\n")) {
+    if (line.trim()) {
+      ranges.push(...smartSentenceLikeRanges(normalized, offset, offset + line.length, ".!?"));
     }
+    offset += line.length + 1;
   }
 
   if (ranges.length === 0 && normalized.trim()) {
@@ -203,24 +198,127 @@ function keepLineAsUnit(line: string) {
 }
 
 function splitSentenceUnits(text: string, start: number, end: number): Range[] {
-  const segment = text.slice(start, end);
-  const ranges: Range[] = [];
-  const pattern = /[^.!?;]+(?:[.!?;]+|$)/g;
-  let match: RegExpExecArray | null;
+  const ranges = smartSentenceLikeRanges(text, start, end, ".!?;").flatMap((range) => splitLongRange(text, range.start, range.end));
 
-  while ((match = pattern.exec(segment)) !== null) {
-    const raw = match[0];
+  if (!ranges.length && text.slice(start, end).trim()) return splitLongRange(text, start, end);
+  return ranges;
+}
+
+function smartSentenceLikeRanges(text: string, start: number, end: number, delimiters: string): Range[] {
+  if (delimiters === ".!?") {
+    const intl = intlSentenceRanges(text, start, end);
+    if (intl.length && !hasUnsafeSentenceBoundary(text, intl, start, end)) return intl;
+  }
+  return sentenceLikeRanges(text, start, end, delimiters);
+}
+
+function intlSentenceRanges(text: string, start: number, end: number): Range[] {
+  if (typeof Intl === "undefined" || typeof Intl.Segmenter !== "function") return [];
+  const segmenter = new Intl.Segmenter("en", { granularity: "sentence" });
+  const ranges: Range[] = [];
+  for (const item of segmenter.segment(text.slice(start, end))) {
+    const raw = item.segment;
     const leading = raw.match(/^\s*/)?.[0].length ?? 0;
     const trailing = raw.match(/\s*$/)?.[0].length ?? 0;
-    const unitStart = start + match.index + leading;
-    const unitEnd = start + match.index + raw.length - trailing;
-    if (unitEnd > unitStart) {
-      ranges.push(...splitLongRange(text, unitStart, unitEnd));
+    const rangeStart = start + item.index + leading;
+    const rangeEnd = start + item.index + raw.length - trailing;
+    if (rangeEnd > rangeStart) ranges.push({ start: rangeStart, end: rangeEnd, text: text.slice(rangeStart, rangeEnd) });
+  }
+  return ranges;
+}
+
+function sentenceLikeRanges(text: string, start: number, end: number, delimiters: string): Range[] {
+  const ranges: Range[] = [];
+  let cursor = start;
+  let parenDepth = 0;
+  let bracketDepth = 0;
+
+  for (let index = start; index < end; index += 1) {
+    const char = text[index] ?? "";
+    if (char === "(") parenDepth += 1;
+    if (char === "[") bracketDepth += 1;
+    if ((char === ")" || char === "]") && (parenDepth || bracketDepth)) {
+      if (char === ")") parenDepth = Math.max(0, parenDepth - 1);
+      if (char === "]") bracketDepth = Math.max(0, bracketDepth - 1);
     }
+
+    if (!delimiters.includes(char)) continue;
+    if ((parenDepth > 0 || bracketDepth > 0) && char !== ";") continue;
+    if (char === "." && (isDecimalPoint(text, index) || isAbbreviationPoint(text, index) || isUrlOrDoiPoint(text, index))) continue;
+    if (char === ";" && !shouldSplitSemicolon(text, cursor, index, end)) continue;
+    if (char !== ";" && !isLikelySentenceBoundary(text, index, end)) continue;
+
+    let boundaryEnd = index + 1;
+    while (boundaryEnd < end && delimiters.includes(text[boundaryEnd] ?? "")) boundaryEnd += 1;
+    while (boundaryEnd < end && /["')\]]/.test(text[boundaryEnd] ?? "")) boundaryEnd += 1;
+
+    const range = trimAbsoluteRange(text, cursor, boundaryEnd);
+    if (range.end > range.start) ranges.push({ start: range.start, end: range.end, text: text.slice(range.start, range.end) });
+    cursor = boundaryEnd;
+    index = boundaryEnd - 1;
   }
 
-  if (!ranges.length && segment.trim()) return splitLongRange(text, start, end);
+  const finalRange = trimAbsoluteRange(text, cursor, end);
+  if (finalRange.end > finalRange.start) {
+    ranges.push({ start: finalRange.start, end: finalRange.end, text: text.slice(finalRange.start, finalRange.end) });
+  }
+
   return ranges;
+}
+
+function isDecimalPoint(text: string, index: number) {
+  return /\d/.test(text[index - 1] ?? "") && /\d/.test(text[index + 1] ?? "");
+}
+
+function isAbbreviationPoint(text: string, index: number) {
+  const before = text.slice(Math.max(0, index - 24), index + 1).toLowerCase();
+  if (/\b(?:e\.g|i\.e|u\.s|u\.k|et al|etc|vs|mr|mrs|ms|dr|prof|sr|jr|st|fig|no|vol|pp|p)\.$/.test(before)) return true;
+  if (/(^|[\s([])[A-Z]\.$/.test(text.slice(Math.max(0, index - 4), index + 1)) && /^[\s\u00a0]*[A-Z]/.test(text.slice(index + 1, index + 8))) return true;
+  return /\b(?:e|i|u)\.$/.test(before) && /[a-z]/i.test(text[index + 1] ?? "");
+}
+
+function isUrlOrDoiPoint(text: string, index: number) {
+  const token = text.slice(0, index + 1).match(/[^\s<>"')\]]+$/)?.[0] ?? "";
+  const after = text.slice(index + 1).match(/^[^\s<>"'([]+/)?.[0] ?? "";
+  return Boolean(after) && /^(?:https?:\/\/|www\.|doi:|10\.)/i.test(`${token}${after}`);
+}
+
+function shouldSplitSemicolon(text: string, unitStart: number, index: number, end: number) {
+  const next = nextNonSpaceIndex(text, index + 1, end);
+  return index - unitStart > 120 && next < end && end - next > 80;
+}
+
+function isLikelySentenceBoundary(text: string, index: number, end: number) {
+  let cursor = index + 1;
+  while (cursor < end && /["')\]]/.test(text[cursor] ?? "")) cursor += 1;
+  const whitespaceStart = cursor;
+  while (cursor < end && /\s/.test(text[cursor] ?? "")) cursor += 1;
+  const whitespace = text.slice(whitespaceStart, cursor);
+  if (cursor >= end) return true;
+  if (!whitespace) return false;
+  if (whitespace.includes("\n")) return true;
+  return startsSentenceAt(text, cursor);
+}
+
+function nextNonSpaceIndex(text: string, start: number, end: number) {
+  let cursor = start;
+  while (cursor < end && /\s/.test(text[cursor] ?? "")) cursor += 1;
+  return cursor;
+}
+
+function startsSentenceAt(text: string, index: number): boolean {
+  const char = text[index] ?? "";
+  if (/["'(\[]/.test(char)) return startsSentenceAt(text, index + 1);
+  return /[A-Z0-9]/.test(char);
+}
+
+function hasUnsafeSentenceBoundary(text: string, ranges: Range[], start: number, end: number) {
+  return ranges.slice(0, -1).some((range) => range.end <= start || range.end >= end || isUnsafeSentenceBoundary(text, range.end));
+}
+
+function isUnsafeSentenceBoundary(text: string, boundary: number) {
+  const previous = text[boundary - 1] ?? "";
+  return previous === "." && (isDecimalPoint(text, boundary - 1) || isAbbreviationPoint(text, boundary - 1) || isUrlOrDoiPoint(text, boundary - 1));
 }
 
 function splitLongRange(text: string, start: number, end: number): Range[] {
@@ -305,7 +403,8 @@ export function guessLabel(text: string, index = 0): SegmentLabel {
   if (/^[-*]?\s*(counterargument|opposing view)\b/i.test(trimmed) || lower.includes("some readers may argue") || lower.includes("critics argue") || lower.includes("however")) return "counterargument";
   if (/^[-*]?\s*(conclusion|conclusion plan|rephrased thesis|so what|implication)\b/i.test(trimmed) || lower.includes("in conclusion") || lower.includes("overall") || lower.includes("to conclude")) return "conclusion";
   if (lower.includes("this essay argues") || lower.includes("this paper argues")) return "thesis";
-  if (lower.includes("because") || lower.includes("therefore") || lower.includes("this means") || lower.includes("suggests") || lower.includes("as a result")) return "analysis";
+  if (/^(the same report|this report|the report|the same study|this study|the study)\b/i.test(trimmed)) return "evidence";
+  if (lower.includes("because") || lower.includes("therefore") || lower.includes("this means") || lower.includes("this shows") || lower.includes("suggests") || lower.includes("as a result")) return "analysis";
   if (lower.includes("research") || lower.includes("study") || lower.includes("data") || lower.includes("for example") || containsInTextCitation(trimmed)) return "evidence";
   if (index === 0) return "background";
   return LABEL_SEQUENCE[index % LABEL_SEQUENCE.length] ?? "plain";
@@ -348,7 +447,8 @@ function guessLabelWithoutCitation(text: string): SegmentLabel {
   if (/^[-*]?\s*(counterargument|opposing view)\b/i.test(trimmed) || lower.includes("some readers may argue") || lower.includes("critics argue") || lower.includes("however")) return "counterargument";
   if (/^[-*]?\s*(conclusion|conclusion plan|rephrased thesis|so what|implication)\b/i.test(trimmed) || lower.includes("in conclusion") || lower.includes("overall") || lower.includes("to conclude")) return "conclusion";
   if (lower.includes("this essay argues") || lower.includes("this paper argues")) return "thesis";
-  if (lower.includes("because") || lower.includes("therefore") || lower.includes("this means") || lower.includes("suggests") || lower.includes("as a result")) return "analysis";
+  if (/^(the same report|this report|the report|the same study|this study|the study)\b/i.test(trimmed)) return "evidence";
+  if (lower.includes("because") || lower.includes("therefore") || lower.includes("this means") || lower.includes("this shows") || lower.includes("suggests") || lower.includes("as a result")) return "analysis";
   if (lower.includes("research") || lower.includes("study") || lower.includes("data") || lower.includes("for example") || containsInTextCitation(trimmed)) return "evidence";
   return "plain";
 }
@@ -369,10 +469,11 @@ function citationOverlabelDetected(text: string, annotations: Annotation[]) {
   const citationChars = annotations
     .filter((annotation) => annotation.label === "citation")
     .reduce((sum, annotation) => sum + annotation.text.replace(/\s/g, "").length, 0);
-  if (citationChars / meaningfulLength <= 0.6) return false;
+  if (citationChars / meaningfulLength <= 0.4) return false;
 
   const primaryCitationChars = annotations
     .filter((annotation) => annotation.label === "citation" && (isPrimaryCitationSignal(annotation.text) || isSourceSignalSentence(annotation.text)))
     .reduce((sum, annotation) => sum + annotation.text.replace(/\s/g, "").length, 0);
-  return primaryCitationChars / meaningfulLength <= 0.6;
+  return primaryCitationChars / meaningfulLength <= 0.4;
 }
+

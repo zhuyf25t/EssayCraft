@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMockAnnotations, normalizeAnnotations, rhetoricalUnitRanges } from "./annotations";
+import { buildMockAnnotations, normalizeAnnotations, rhetoricalUnitRanges, sentenceRanges } from "./annotations";
 
 function labelFor(text: string, needle: string) {
   const annotation = buildMockAnnotations(text).find((item) => item.text.includes(needle));
@@ -95,6 +95,27 @@ Conclusion plan
     ]);
   });
 
+  it("keeps decimals inside sentence ranges", () => {
+    const text = "The survey found a 3.5 point change and a 12.4% drop in passive scrolling. This matters because the essay needs precise evidence.";
+
+    expect(sentenceRanges(text).map((range) => range.text)).toEqual([
+      "The survey found a 3.5 point change and a 12.4% drop in passive scrolling.",
+      "This matters because the essay needs precise evidence."
+    ]);
+  });
+
+  it("keeps parenthetical citation punctuation inside one evidence sentence", () => {
+    const text = "Research shows that structured notification limits can improve student attention by 3.5 points (Rivera et al., 2024). This evidence matters because it connects habits to academic focus.";
+    const annotations = buildMockAnnotations(text);
+
+    expect(annotations.map((annotation) => annotation.text)).toEqual([
+      "Research shows that structured notification limits can improve student attention by 3.5 points (Rivera et al., 2024).",
+      "This evidence matters because it connects habits to academic focus."
+    ]);
+    expect(annotations[0].label).toBe("evidence");
+    expect(annotations[1].label).toBe("analysis");
+  });
+
   it("keeps fallback annotation ranges under the long-range limit", () => {
     const longSentence = `Analysis: ${Array.from({ length: 90 }, (_, index) => `reason${index}`).join(" ")}`;
     const ranges = rhetoricalUnitRanges(longSentence);
@@ -132,6 +153,40 @@ Conclusion plan
 
     expect(labels.size).toBeGreaterThan(2);
     expect(citationChars / text.length).toBeLessThan(0.6);
+  });
+
+  it("does not split decimal values or citation years as sentence boundaries", () => {
+    const text = "AI investment reached 33.9 billion dollars in 2024 (Stanford HAI, 2025). These facts show why students need better evidence checks.";
+    const ranges = rhetoricalUnitRanges(text);
+
+    expect(ranges.map((range) => range.text)).toEqual([
+      "AI investment reached 33.9 billion dollars in 2024 (Stanford HAI, 2025).",
+      "These facts show why students need better evidence checks."
+    ]);
+    expect(ranges[0].text).toContain("33.9 billion");
+    expect(ranges[0].text).toContain("(Stanford HAI, 2025)");
+  });
+
+  it("protects abbreviations, initials, URLs, and DOI strings during segmentation", () => {
+    const text = "Dr. J. K. Smith studies U.S. policy, e.g., school phone rules. The DOI is 10.1234/example.v2 and the source is https://example.org/report. The same report found 55.5% agreement.";
+    const ranges = rhetoricalUnitRanges(text);
+
+    expect(ranges.map((range) => range.text)).toEqual([
+      "Dr. J. K. Smith studies U.S. policy, e.g., school phone rules.",
+      "The DOI is 10.1234/example.v2 and the source is https://example.org/report.",
+      "The same report found 55.5% agreement."
+    ]);
+  });
+
+  it("keeps source-signal citation ranges intact without painting nearby analysis", () => {
+    const text = "According to Stanford's 2025 AI Index Report, 55% of schools are testing AI tools. The same report suggests that students need clearer guidance. This shows why the essay should discuss responsibility.";
+    const annotations = buildMockAnnotations(text);
+
+    expect(annotations).toHaveLength(3);
+    expect(annotations[0].label).toBe("citation");
+    expect(annotations[0].text).toContain("55%");
+    expect(annotations[1].label).toBe("evidence");
+    expect(annotations[2].label).toBe("analysis");
   });
 
   it("drops stale or whitespace-only annotation ranges before rendering", () => {
