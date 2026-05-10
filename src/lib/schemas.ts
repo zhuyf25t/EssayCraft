@@ -83,6 +83,7 @@ export const sourceCardSchema = z.object({
 
 export const refreshRequestSchema = z.object({
   topic: z.string(),
+  projectTitle: z.string().optional(),
   moduleNumber: moduleNumberSchema,
   text: z.string(),
   annotations: z.array(annotationSchema).default([]),
@@ -136,6 +137,7 @@ export const assistantMessageSchema = z.object({
 
 export const assistRequestSchema = z.object({
   topic: z.string(),
+  projectTitle: z.string().optional(),
   moduleNumber: moduleNumberSchema,
   moduleTitle: z.string(),
   text: z.string(),

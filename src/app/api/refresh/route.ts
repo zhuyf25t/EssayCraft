@@ -4,6 +4,7 @@ import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai
 import { buildMockAnnotations, exactAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
 import { normalizedForNoopCompare, protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { buildRefreshMessages } from "@/lib/prompts";
+import { applyNotesFallback } from "@/lib/rewriteFallback";
 import { refreshRequestSchema, refreshResponseSchema } from "@/lib/schemas";
 
 export async function POST(request: Request) {
@@ -16,7 +17,7 @@ export async function POST(request: Request) {
     if (!hasAiKey()) {
       return NextResponse.json(
         openPatches.length
-          ? mockPatchRevision(input.text, openPatches)
+          ? mockPatchRevision(input.text, openPatches, input.projectTitle || input.topic)
           : mockRefresh(input.text, input.patches, "Highlights refreshed. Text was not rewritten.")
       );
     }
@@ -50,7 +51,7 @@ export async function POST(request: Request) {
         });
       }
       if (openPatches.length) {
-        return NextResponse.json(mockPatchRevision(input.text, openPatches));
+        return NextResponse.json(mockPatchRevision(input.text, openPatches, input.projectTitle || input.topic));
       }
 
       const exact = exactAnnotations(input.text, parsed.annotations);
@@ -65,7 +66,7 @@ export async function POST(request: Request) {
       return NextResponse.json(normalized);
     } catch {
       const fallback = openPatches.length
-        ? mockPatchRevision(input.text, openPatches)
+        ? mockPatchRevision(input.text, openPatches, input.projectTitle || input.topic)
         : mockRefresh(input.text, input.patches, "Highlights refreshed. Text was not rewritten.");
       fallback.providerMode = "fallback";
       fallback.warnings.push("Refresh used a local fallback. Text was not rewritten.");
@@ -90,8 +91,8 @@ function mockRefresh(text: string, patches: Patch[], message: string): RefreshRe
   };
 }
 
-function mockPatchRevision(text: string, patches: Patch[]): RefreshResponse {
-  const proposedText = applyPatchNotesToText(text, patches);
+function mockPatchRevision(text: string, patches: Patch[], projectTitle = ""): RefreshResponse {
+  const proposedText = applyNotesFallback(text, patches, projectTitle);
   const annotations = normalizeAnnotations(proposedText, buildMockAnnotations(proposedText));
   return {
     kind: "revision",
@@ -108,6 +109,8 @@ function mockPatchRevision(text: string, patches: Patch[]): RefreshResponse {
   };
 }
 
+// Kept temporarily for comparing old note-revision behavior while the P0 kernel stabilizes.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function applyPatchNotesToText(text: string, patches: Patch[]) {
   let next = text;
   const ordered = [...patches]

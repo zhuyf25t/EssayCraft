@@ -110,6 +110,7 @@ export type TextRange = {
 
 export type RefreshRequest = {
   topic: string;
+  projectTitle?: string;
   moduleNumber: ModuleNumber;
   text: string;
   annotations: Annotation[];
@@ -154,6 +155,7 @@ export type GenerateNextResponse = {
 
 export type AssistRequest = {
   topic: string;
+  projectTitle?: string;
   moduleNumber: ModuleNumber;
   moduleTitle: string;
   text: string;

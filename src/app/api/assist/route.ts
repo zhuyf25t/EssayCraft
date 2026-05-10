@@ -4,6 +4,7 @@ import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai
 import { buildMockAnnotations, exactAnnotations, normalizeAnnotations } from "@/lib/annotations";
 import { normalizedForNoopCompare, protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { buildAssistMessages } from "@/lib/prompts";
+import { changeRequested, cleanReplacement, rewriteWithInstruction } from "@/lib/rewriteFallback";
 import { assistRequestSchema, assistResponseSchema } from "@/lib/schemas";
 
 export async function POST(request: Request) {
@@ -144,17 +145,21 @@ function coerceAssistResponse(input: AssistRequest, raw: unknown, providerMode: 
 function normalizedActionType(input: AssistRequest, actionType?: string) {
   const action = input.action.toLowerCase();
   if (action.includes("translate")) return "translate-selection";
-  if (action.includes("academic")) return "academic-rewrite";
-  if (action.includes("rewrite")) return "rewrite-selection";
+  if (/academic|\u5b66\u672f|\u6b63\u5f0f/.test(action)) return "academic-rewrite";
+  if (/rewrite|revise|\u91cd\u5199|\u6539\u5199|\u66f4\u957f|\u5199\u957f|\u6839\u636e.*title/.test(action)) return "rewrite-selection";
   if (action.includes("explain")) return "highlight-explanation";
   return actionType;
 }
 
 function expectedAssistKind(input: AssistRequest): AssistResponse["kind"] {
   const action = input.action.toLowerCase();
-  if (input.selectedRange && /(rewrite|academic|analysis|translate|revise|sentence|passage)/i.test(action)) return "edit";
+  if (input.selectedRange && isEditAction(action)) return "edit";
   if (/(explain|relabel|highlight|citation)/i.test(action)) return "inspect";
   return "chat";
+}
+
+function isEditAction(action: string) {
+  return /(rewrite|academic|analysis|translate|revise|sentence|passage|formal|longer|shorter|natural|awkward|\u91cd\u5199|\u6539\u5199|\u66f4\u5b66\u672f|\u5b66\u672f|\u6b63\u5f0f|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u81ea\u7136|\u5446\u677f|\u6839\u636e.*title|\u6839\u636e.*\u6807\u9898)/i.test(action);
 }
 
 function mockAssist(input: AssistRequest): AssistResponse {
@@ -263,11 +268,14 @@ function mockAssist(input: AssistRequest): AssistResponse {
     };
   }
 
-  if ((action.includes("rewrite") || action.includes("academic") || action.includes("analysis")) && range) {
+  if (isEditAction(action) && range && !action.includes("translate")) {
     const base = selected.trim() || "This point needs clearer explanation.";
     const proposedText = action.includes("analysis")
       ? strengthenAnalysis(base)
-      : rewriteWithInstruction(base, input.action);
+      : rewriteWithInstruction(base, input.action, input.projectTitle || input.topic);
+    const safeProposed = normalizedForNoopCompare(proposedText) === normalizedForNoopCompare(base) && changeRequested(input.action)
+      ? rewriteWithInstruction(base, `${input.action} longer project title`, input.projectTitle || input.topic)
+      : proposedText;
 
     return {
       title: action.includes("analysis") ? "Strengthen analysis preview" : "Rewrite preview",
@@ -275,7 +283,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
       actionType: action.includes("analysis") ? "strengthen-analysis" : "rewrite-selection",
       originalExcerpt: excerpt(base),
       reply: "Preview ready. I did not change the document; apply the suggestion only if it matches your intended meaning.",
-      proposedText: sanitizeReplacement(proposedText, base),
+      proposedText: sanitizeReplacement(safeProposed, base),
       replaceRange: range,
       annotations: [],
       explanation: "Cleaner replacement; apply only if it preserves your meaning.",
@@ -294,15 +302,6 @@ function mockAssist(input: AssistRequest): AssistResponse {
     warnings,
     providerMode: "mock"
   };
-}
-
-function rewriteWithInstruction(value: string, instruction: string) {
-  const lower = instruction.toLowerCase();
-  if (/(?:\u66f4\u957f|\u5199\u957f|longer|develop|expand|more detail|\u66f4\u8be6\u7ec6)/i.test(lower)) return makeLongerReplacement(value);
-  if (/(?:\u66f4\u77ed|\u7b80\u77ed|\u7cbe\u7b80|shorter|concise)/i.test(lower)) return makeShorterReplacement(value);
-  if (/(?:\u66f4\u81ea\u7136|\u81ea\u7136|\u5446\u677f|\u666e\u901a|natural|awkward|less generic)/i.test(lower)) return makeNaturalReplacement(value);
-  if (/(?:academic|formal|\u6b63\u5f0f|\u5b66\u672f|\u66f4\u5b66\u672f)/i.test(lower)) return makeAcademicReplacement(value);
-  return makeAcademicReplacement(value);
 }
 
 function moduleFeedback(input: AssistRequest) {
@@ -380,68 +379,6 @@ function excerpt(value: string) {
   return cleaned.length > 220 ? `${cleaned.slice(0, 217)}...` : cleaned;
 }
 
-function makeLongerReplacement(value: string) {
-  const cleaned = sanitizeReplacement(value, value).replace(/\s+/g, " ").trim();
-  const base = /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
-  if (/^Research question\s*:/i.test(cleaned) || /^Question\s*:/i.test(cleaned)) {
-    const question = cleaned.replace(/^(Research question|Question)\s*:\s*/i, "").replace(/[?？]?$/, "");
-    return `Research question: ${question}, and what responsibilities should individuals, institutions, and communities share in creating a more balanced solution?`;
-  }
-  if (/^Topic\s*:/i.test(cleaned)) {
-    const topic = cleaned.replace(/^Topic\s*:\s*/i, "").replace(/[.!?]?$/, "");
-    return `Topic: ${topic}, with attention to causes, consequences, and practical responses that affect students and communities.`;
-  }
-  if (/^(Working thesis|Thesis)\s*:/i.test(cleaned)) {
-    const thesis = cleaned.replace(/^(Working thesis|Thesis)\s*:\s*/i, "");
-    return `Working thesis: ${thesis.replace(/[.!?]?$/, "")}, because the issue requires both individual choices and wider social or institutional support.`;
-  }
-  if (/because|therefore|as a result|this means/i.test(base)) return base;
-  return `${base} This point can be developed further by naming the specific cause, explaining its effect, and connecting it back to the essay's central claim.`;
-}
-
-function makeShorterReplacement(value: string) {
-  const cleaned = sanitizeReplacement(value, value).replace(/\s+/g, " ").trim();
-  const prefix = cleaned.match(/^(Topic|Research question|Question|Working thesis|Thesis)\s*:\s*/i)?.[0] ?? "";
-  const body = prefix ? cleaned.slice(prefix.length) : cleaned;
-  const firstClause = body.split(/[,;]|\band\b|\bbecause\b/i)[0]?.trim() || body.trim();
-  const ending = prefix.toLowerCase().includes("question") && !/[?？]$/.test(firstClause) ? "?" : "";
-  return `${prefix}${firstClause.replace(/[.!?？]?$/, "")}${ending || (/[.!?]$/.test(firstClause) ? "" : ".")}`;
-}
-
-function makeAcademicReplacement(value: string) {
-  const cleaned = sanitizeReplacement(value, value);
-  if (/^Topic\s*:/i.test(cleaned) || /^Research question\s*:/i.test(cleaned) || /^Working thesis\s*:/i.test(cleaned)) {
-    return cleaned
-      .replace(/\bkids\b/gi, "young people")
-      .replace(/\bgood\b/gi, "beneficial")
-      .replace(/\bbad\b/gi, "harmful")
-      .replace(/\s+/g, " ");
-  }
-  return cleaned
-    .replace(/\bkids\b/gi, "young people")
-    .replace(/\bgood\b/gi, "beneficial")
-    .replace(/\bbad\b/gi, "harmful")
-    .replace(/\bthings\b/gi, "factors")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function makeNaturalReplacement(value: string) {
-  const cleaned = makeAcademicReplacement(value).replace(/\s+/g, " ").trim();
-  if (/^Research question\s*:/i.test(cleaned) || /^Question\s*:/i.test(cleaned)) {
-    return "Research question: How can individuals, schools, and technology platforms share responsibility for creating healthier digital environments for students?";
-  }
-  if (/^Topic\s*:/i.test(cleaned)) {
-    const topic = cleaned.replace(/^Topic\s*:\s*/i, "").replace(/[.!?]?$/, "");
-    return `Topic: ${topic}, with a clearer focus on causes, effects, and practical responses.`;
-  }
-  if (/^(Working thesis|Thesis)\s*:/i.test(cleaned)) return makeLongerReplacement(cleaned);
-  if (cleaned.length < 90) {
-    return `${cleaned.replace(/[.!?]?$/, "")}, with clearer wording that names the issue, the people affected, and why the point matters.`;
-  }
-  return cleaned.replace(/\bimportant\b/gi, "significant").replace(/\bvery\b/gi, "particularly");
-}
-
 function strengthenAnalysis(value: string) {
   const cleaned = sanitizeReplacement(value, value).replace(/\s+/g, " ").trim();
   const sentence = /[.!?]$/.test(cleaned) ? cleaned : `${cleaned}.`;
@@ -450,25 +387,8 @@ function strengthenAnalysis(value: string) {
 }
 
 function sanitizeReplacement(value: string, fallback: string) {
-  const cleaned = stripEditorKernelMarkers(value)
-    .replace(/^A more academic version could state:\s*/i, "")
-    .replace(/^A more academic version could state\s*/i, "")
-    .replace(/^could state:\s*/i, "")
-    .replace(/^Here is a revised version:\s*/i, "")
-    .replace(/^I would rewrite it as:\s*/i, "")
-    .replace(/^This selected text means\s*/i, "")
-    .replace(/^The following sentence\s*/i, "")
-    .replace(/^In this context, the sentence could be\s*/i, "")
-    .replace(/^The student should\s*/i, "")
-    .replace(/\s*\[citation needed if this includes factual evidence\]\.?/gi, "")
-    .replace(/\s*if this includes factual evidence\.?/gi, "")
-    .replace(/This rewrite improves.*$/i, "")
-    .trim();
+  const cleaned = cleanReplacement(value);
   return cleaned || fallback.trim();
-}
-
-function changeRequested(action: string) {
-  return /rewrite|revise|academic|formal|longer|shorter|natural|awkward|expand|develop|\u53ef\u4ee5|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u66f4\u5b66\u672f|\u81ea\u7136|\u5446\u677f|\u91cd\u5199|\u6539\u5199|\u6839\u636e/i.test(action);
 }
 
 function mockAssistantChinese(value: string) {

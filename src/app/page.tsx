@@ -346,7 +346,8 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: activeProject.topic,
+          topic: activeProject.title,
+          projectTitle: activeProject.title,
           moduleNumber: activeProject.currentModule,
           text: activeDoc.text,
           annotations: activeDoc.annotations,
@@ -716,7 +717,8 @@ function handleSaveSnapshot() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          topic: activeProject.topic,
+          topic: activeProject.title,
+          projectTitle: activeProject.title,
           moduleNumber: activeProject.currentModule,
           moduleTitle: activeDoc.title,
           text: activeDoc.text,

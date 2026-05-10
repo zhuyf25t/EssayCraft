@@ -15,6 +15,7 @@ const LABEL_RULES = "background, thesis, evidence, analysis, counterargument, ci
 
 export function buildRefreshMessages(input: RefreshRequest) {
   const openPatches = input.patches.filter((patch) => !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim());
+  const projectTitle = input.projectTitle || input.topic;
   if (openPatches.length) {
     const system = `You are EssayCraft's revision-note engine. Return strict json only.
 
@@ -33,7 +34,8 @@ Rules:
 
 ${COURSE_WORKFLOW_CONTEXT}`;
 
-    const user = `Topic: ${input.topic}
+    const user = `Project title: ${projectTitle}
+Topic/context: ${input.topic}
 Current module: ${input.moduleNumber}
 
 Current essay text:
@@ -80,7 +82,8 @@ Rules:
 
 ${COURSE_WORKFLOW_CONTEXT}`;
 
-  const user = `Topic: ${input.topic}
+  const user = `Project title: ${projectTitle}
+Topic/context: ${input.topic}
 Current module: ${input.moduleNumber}
 
 Full text:
@@ -181,7 +184,9 @@ Inspect: {"kind":"inspect","reply":"highlight explanation","originalExcerpt":"op
 
 ${COURSE_WORKFLOW_CONTEXT}`;
 
-  const user = `Topic: ${input.topic}
+  const projectTitle = input.projectTitle || input.topic;
+  const user = `Project title: ${projectTitle}
+Topic/context: ${input.topic}
 Module ${input.moduleNumber}: ${input.moduleTitle}
 Requested action: ${input.action}
 
