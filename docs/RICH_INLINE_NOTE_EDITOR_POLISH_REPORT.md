@@ -2,13 +2,13 @@
 
 ## Summary
 
-This pass keeps EssayCraft as a stable textarea-first writing workspace while making notes behave like inline document tokens instead of floating labels. The editor now renders note instructions in the document flow, keeps canonical module text clean, and uses notes only as AI revision instructions for Apply Notes & Refresh.
+This report describes an older iteration. It is superseded by `docs/RICH_INLINE_NOTE_KERNEL.md`, which replaces the textarea display-buffer note approach with an uncontrolled contenteditable token layer.
 
 ## Editor Internals
 
-- Kept the existing textarea/backdrop architecture to preserve normal typing, selection, IME behavior, paragraph breaks, and export semantics.
-- Added a display-buffer layer that interleaves canonical essay text with generated note tokens.
-- Note tokens use hidden patch-id sentinels internally, so ordinary student text such as `[Note: compare sources]` is preserved as essay text and is not treated as metadata.
+- The current editor no longer uses hidden patch-id sentinels or a generated note display buffer.
+- Inline notes are metadata-backed DOM tokens. Internal ids live only in data attributes/JSON metadata, never in visible essay text or `module.text`.
+- Ordinary student text such as `[Note: compare sources]` remains essay text and is not treated as metadata.
 - Note content remains stored in `module.patches`; `module.text` remains essay text only.
 
 ## Inline Notes
@@ -60,7 +60,7 @@ This pass keeps EssayCraft as a stable textarea-first writing workspace while ma
 
 ## Remaining Limitations
 
-- The editor is still a textarea/display-buffer implementation, not a full contenteditable or ProseMirror editor. This keeps typing and export stable, but note tokens are not fully rich-text widgets.
+- For current contenteditable/token limitations, see `docs/RICH_INLINE_NOTE_KERNEL.md`.
 - Long notes can still interrupt line rhythm; future polish should add a compact collapsed/expanded note token.
 - Keyboard behavior directly inside a saved note token is intentionally conservative. Click the note to edit it.
 - Mobile and narrow tablet layouts remain below final-product quality.

@@ -11,11 +11,11 @@ DEEPSEEK_MODEL=deepseek-v4-pro
 DEEPSEEK_FAST_MODEL=deepseek-v4-flash
 ```
 
-If `DEEPSEEK_API_KEY` is missing, each route uses deterministic mock output so the demo remains usable.
+If `DEEPSEEK_API_KEY` is missing, each route uses deterministic mock output so the demo remains usable. Interactive routes use the fast model/timeout path. If DeepSeek times out or returns an invalid/no-op edit preview, the server returns a deterministic fallback preview and the UI keeps the same preview/Accept flow.
 
 ## POST /api/refresh
 
-Purpose: classify existing text ranges without rewriting the user's text.
+Purpose: classify existing text ranges. When unresolved inline notes are present, return a revision preview that uses those notes as instructions. The route never directly mutates project state.
 
 Request:
 
@@ -33,14 +33,36 @@ Request:
 Response:
 
 ```ts
-{
-  annotations: Annotation[];
-  globalFeedback: string[];
-  warnings: string[];
-}
+type RefreshResponse =
+  | {
+      kind: "annotations";
+      annotations: Annotation[];
+      globalFeedback: string[];
+      warnings: string[];
+      providerMode: "deepseek" | "mock" | "fallback";
+    }
+  | {
+      kind: "revision";
+      sourceText: string;
+      proposedText: string;
+      annotations: Annotation[];
+      proposedAnnotations: Annotation[];
+      originalSummary?: string;
+      rationale?: string;
+      patchResolutionPlan: string[];
+      globalFeedback: string[];
+      warnings: string[];
+      providerMode: "deepseek" | "mock" | "fallback";
+    };
 ```
 
-Constraint: `text` is not returned or modified. Annotation offsets are validated against the exact submitted text.
+Constraints:
+
+- With no open notes, refresh is annotation-only and preserves exact text.
+- With open notes, refresh returns a preview. The client snapshots and applies only after explicit Accept.
+- Reject leaves both text and notes unchanged.
+- If provider output is unchanged after a note asks for a change, EssayCraft falls back to deterministic mock revision instead of presenting a no-op as success.
+- All input/output text is cleaned with the note-kernel guard so internal note ids, `NOTE` sentinels, and `[object Object]` cannot enter canonical module text.
 
 ## POST /api/generate-next
 

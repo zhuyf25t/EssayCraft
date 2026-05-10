@@ -29,12 +29,17 @@ type Annotation = {
 
 type Patch = {
   id: string;
+  moduleNumber?: ModuleNumber;
   anchorStart: number;
   anchorEnd: number;
   anchorQuote: string;
   text: string;
   createdAt: string;
+  updatedAt?: string;
+  appliedAt?: string;
+  status?: "open" | "resolved";
   resolved?: boolean;
+  stale?: boolean;
 };
 
 type SourceCard = {
@@ -66,5 +71,7 @@ type ModuleDocument = {
   updatedAt: string;
 };
 ```
+
+Inline notes use the `Patch` shape. They render as editor tokens, but remain metadata. `module.text` must not contain note ids, sentinel strings, `[object Object]`, or note text unless the student typed that prose directly into the essay.
 
 Project JSON includes `schemaVersion: 1`, six independent module documents, assistant history, timestamps, snapshots, patches, annotations, and source cards. It must never include API keys.
