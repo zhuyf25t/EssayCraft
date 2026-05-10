@@ -156,17 +156,21 @@ function normalizedActionType(input: AssistRequest, actionType?: string) {
 
 function expectedAssistKind(input: AssistRequest): AssistResponse["kind"] {
   const action = input.action.toLowerCase();
+  if (isTranslateAction(input.action) || isAnalyzeAction(input.action) || /(explain|relabel|highlight|citation)/i.test(action)) return "inspect";
   if (input.selectedRange && isEditAction(action)) return "edit";
-  if (/(explain|relabel|highlight|citation)/i.test(action) || isAnalyzeAction(input.action)) return "inspect";
   return "chat";
 }
 
 function isEditAction(action: string) {
-  return /(rewrite|academic|analysis|translate|revise|sentence|passage|formal|longer|shorter|natural|awkward|\u91cd\u5199|\u6539\u5199|\u66f4\u5b66\u672f|\u5b66\u672f|\u6b63\u5f0f|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u81ea\u7136|\u5446\u677f|\u6839\u636e.*title|\u6839\u636e.*\u6807\u9898)/i.test(action);
+  return /(rewrite|academic|revise|sentence|passage|formal|longer|shorter|natural|awkward|\u91cd\u5199|\u6539\u5199|\u66f4\u5b66\u672f|\u5b66\u672f|\u6b63\u5f0f|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u81ea\u7136|\u5446\u677f|\u6839\u636e.*title|\u6839\u636e.*\u6807\u9898)/i.test(action);
 }
 
 function isAnalyzeAction(action: string) {
   return /(analy[sz]e|critique|comment|grammar|rhetorical role|\u5206\u6790|\u8bc4\u4ef7|\u70b9\u8bc4|\u7528\u4e2d\u6587)/i.test(action);
+}
+
+function isTranslateAction(action: string) {
+  return /translate|\u7ffb\u8bd1|\u8bd1\u6210/i.test(action);
 }
 
 function assistTaskType(input: AssistRequest): AiTaskType {

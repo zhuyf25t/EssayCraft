@@ -3,6 +3,8 @@ import * as h from "./helpers";
 
 test.beforeEach(h.setupPage);
 
+test.describe.skip("inline note token flow is disabled while local Edit Refresh replaces patch notes", () => {
+
 test("inline notes drive apply notes preview and preserve text until accepted", async ({ page }) => {
   const original = "Research shows that better phone habits improve student attention.";
   await h.setEditorText(page, original);
@@ -319,4 +321,6 @@ test("assistant apply snapshots selected replacement and blocks stale ranges", a
   await page.getByRole("button", { name: "Accept" }).click();
   await expect(page.getByTestId("toolbar-status")).toContainText(/blocked|changed after the preview/i);
   await h.expectEditorText(page, `Inserted prefix. ${staleOriginal}`);
+});
+
 });

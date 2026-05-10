@@ -125,16 +125,20 @@ Return json only.`;
 
 export function buildRefreshUnitMessages(input: RefreshRequest, units: RefreshUnitPromptItem[]) {
   const projectTitle = input.projectTitle || input.topic;
+  const localInstruction = input.instruction?.trim();
   const system = `You are EssayCraft's academic writing annotation engine. Return strict json only.
 
 Task:
 Label every provided sentence/rhetorical unit by academic function. Engineering already provides exact text ranges; you decide the semantic label and concise reason.
+First read the full essay context to understand the thesis, paragraph flow, evidence chain, counterargument, and conclusion. Then label each unit in order using that full-document understanding.
+If the user gives a local instruction or correction, consider it carefully, but still choose the most academically defensible label and explain briefly.
 
 Allowed labels:
 ${LABEL_RULES}
 
 Rules:
 - Return one unitLabels item for every provided unit index unless the unit is pure whitespace.
+- Do not label a unit in isolation. Use the full essay context, the unit's paragraph position, and neighboring units.
 - Do not rewrite the user's text.
 - Do not invent citations, sources, authors, years, titles, URLs, or DOIs.
 - Use evidence for source-based facts, data, examples, findings, or source claims.
@@ -151,6 +155,11 @@ ${COURSE_WORKFLOW_CONTEXT}`;
   const user = `Project title: ${projectTitle}
 Topic/context: ${input.topic}
 Current module: ${input.moduleNumber}
+
+Full essay context:
+${JSON.stringify(input.text)}
+
+${localInstruction ? `User local refresh note/correction:\n${JSON.stringify(localInstruction)}\n` : ""}
 
 Sentence/rhetorical units to label:
 ${JSON.stringify(units, null, 2)}
@@ -219,8 +228,9 @@ Return json only.`;
 
 export function buildAssistMessages(input: AssistRequest) {
   const isAnalyze = isAnalyzeAssistAction(input.action);
-  const isEdit = Boolean(input.selectedRange) && !isAnalyze && isEditAssistAction(input.action);
-  const isInspect = (/(explain|relabel|highlight|citation)/i.test(input.action) || isAnalyze) && !isEdit;
+  const isTranslate = isTranslateAssistAction(input.action);
+  const isEdit = Boolean(input.selectedRange) && !isAnalyze && !isTranslate && isEditAssistAction(input.action);
+  const isInspect = (/(explain|relabel|highlight|citation)/i.test(input.action) || isAnalyze || isTranslate) && !isEdit;
   const expectedKind = isEdit ? "edit" : isInspect ? "inspect" : "chat";
   const relevantNotes = relevantOpenNotesForAssist(input);
   const system = `You are EssayCraft's AI Assistant. Return strict json only.
@@ -230,7 +240,7 @@ Rules:
 - Use kind "${expectedKind}" for this request.
 - Chat responses are conversational module feedback. They must not include proposedText or replaceRange.
 - Edit responses are selection previews. They must include proposedText and the exact selected replaceRange.
-- Inspect responses explain a highlight/annotation. They must not include proposedText or replaceRange.
+- Inspect responses are read-only analysis, translation, or highlight explanation. They must not include proposedText or replaceRange.
 - Suggestions must be previewable; do not assume changes are applied.
 - Prefer selected-range replacement. Do not replace the full module unless explicitly requested.
 - Never invent citations or references. Use [citation needed] or source-search suggestions when sources are missing.
@@ -239,7 +249,12 @@ Rules:
 - Output valid json matching one of these shapes:
 Chat: {"kind":"chat","reply":"human-readable module-level response","annotations":[],"warnings":[]}
 Edit: {"kind":"edit","reply":"brief preview note","proposedText":"replacement text","replaceRange":{"start":0,"end":10},"originalExcerpt":"optional excerpt","annotations":[],"warnings":[]}
-Inspect: {"kind":"inspect","reply":"highlight explanation","originalExcerpt":"optional excerpt","annotations":[],"warnings":[]}
+Inspect: {"kind":"inspect","reply":"read-only answer, translation, or highlight explanation","originalExcerpt":"optional excerpt","annotations":[],"warnings":[]}
+
+Action-specific rules:
+- If the requested action is Translate, translate only the selected text. Use the user's extra instruction to decide the target language. If the instruction says Chinese or 中文, output Chinese in reply. Do not ask for a target language when it is already specified.
+- If the requested action is Analyze, answer the instruction about the selected text and do not rewrite it.
+- If the requested action is Explain, explain the active highlight/range with the actual text and label.
 
 ${COURSE_WORKFLOW_CONTEXT}`;
 
@@ -284,8 +299,12 @@ function isAnalyzeAssistAction(action: string) {
   return /(analy[sz]e|critique|comment|grammar|\u5206\u6790|\u8bc4\u4ef7|\u70b9\u8bc4|\u7528\u4e2d\u6587)/i.test(action);
 }
 
+function isTranslateAssistAction(action: string) {
+  return /translate|\u7ffb\u8bd1|\u8bd1\u6210/i.test(action);
+}
+
 function isEditAssistAction(action: string) {
-  return /(rewrite|academic|analysis|translate|revise|sentence|passage|formal|longer|shorter|natural|awkward|\u91cd\u5199|\u6539\u5199|\u66f4\u5b66\u672f|\u5b66\u672f|\u6b63\u5f0f|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u81ea\u7136|\u5446\u677f|\u6839\u636e.*title|\u6839\u636e.*\u6807\u9898|project title)/i.test(action);
+  return /(rewrite|academic|revise|sentence|passage|formal|longer|shorter|natural|awkward|\u91cd\u5199|\u6539\u5199|\u66f4\u5b66\u672f|\u5b66\u672f|\u6b63\u5f0f|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u81ea\u7136|\u5446\u677f|\u6839\u636e.*title|\u6839\u636e.*\u6807\u9898|project title)/i.test(action);
 }
 
 export function buildTranslateMessages(input: TranslateRequest) {

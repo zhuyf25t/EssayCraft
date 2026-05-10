@@ -29,8 +29,8 @@ test("full project JSON export includes six modules and all metadata groups", as
   await h.setEditorText(page, "Topic: Export test.\n\nWorking thesis: Export should preserve project metadata.");
   await h.selectEditorRange(page, 0, "Topic: Export test.".length);
   await page.keyboard.press("Control+Enter");
-  await h.inlineNoteInput(page).fill("This patch should be exported.");
-  await page.keyboard.press("Enter");
+  await expect(h.inlineNoteInput(page)).toHaveCount(0);
+  await expect(page.getByTestId("assistant-edit-mode")).toBeVisible();
 
   await page.getByRole("tab", { name: /Snapshots/i }).click();
   await page.getByRole("tabpanel", { name: "Snapshots" }).getByRole("button", { name: "Save Snapshot" }).click();
@@ -48,10 +48,6 @@ test("full project JSON export includes six modules and all metadata groups", as
   await expect(page.getByTestId("assistant-chat-messages")).toContainText("What should I improve?");
   await expect(page.getByTestId("assistant-chat-messages")).toContainText(/Module 1|thesis|topic/i, { timeout: 20_000 });
 
-  await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
-  await expect(page.getByTestId("apply-notes-preview")).toContainText("Apply notes preview", { timeout: 20_000 });
-  await page.getByRole("button", { name: "Accept" }).click();
-
   await page.getByRole("tab", { name: /Export/i }).click();
   await expect(page.getByRole("tabpanel", { name: "Export" })).toContainText("Full project JSON includes all 6 modules");
   const [download] = await Promise.all([
@@ -65,10 +61,9 @@ test("full project JSON export includes six modules and all metadata groups", as
   expect(exported.schemaVersion).toBe(1);
   expect(Object.keys(exported.modules).sort()).toEqual(["1", "2", "3", "4", "5", "6"]);
   expect(exported.modules["1"].text).not.toMatch(h.NOTE_LEAK_RE);
-  expect(exported.modules["1"].text).not.toContain("This patch should be exported");
   expect(exported.modules["1"].text).not.toContain("[Note:");
-  expect(exported.modules["1"].annotations.length).toBeGreaterThan(0);
-  expect(exported.modules["1"].patches[0].text).toContain("This patch should be exported");
+  expect(Array.isArray(exported.modules["1"].annotations)).toBe(true);
+  expect(Array.isArray(exported.modules["1"].patches)).toBe(true);
   expect(exported.modules["1"].snapshots.length).toBeGreaterThan(0);
   expect(exported.modules["1"].sources[0].title).toBe("Export source");
   expect(exported.assistantHistory.length).toBeGreaterThan(0);

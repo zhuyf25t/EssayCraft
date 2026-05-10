@@ -143,6 +143,10 @@ test("assistant uses selection context and dismisses preview without changing te
     const style = getComputedStyle(node as HTMLElement);
     return { background: style.backgroundColor, color: style.color };
   });
+  const refreshButtonStyle = await page.getByRole("button", { name: "Refresh selected labels" }).evaluate((node) => {
+    const style = getComputedStyle(node as HTMLElement);
+    return { background: style.backgroundColor, color: style.color };
+  });
   const secondaryButtonStyles = await Promise.all(["Analyze", "Translate", "Explain highlight"].map((name) =>
     page.getByRole("button", { name }).evaluate((node) => {
       const style = getComputedStyle(node as HTMLElement);
@@ -150,6 +154,7 @@ test("assistant uses selection context and dismisses preview without changing te
     })
   ));
   expect(academicButtonStyle).toEqual(rewriteButtonStyle);
+  expect(refreshButtonStyle).toEqual(rewriteButtonStyle);
   for (const style of secondaryButtonStyles) {
     expect(style.background).toBe("rgb(255, 255, 255)");
     expect(style.color).not.toBe(rewriteButtonStyle.color);
@@ -158,13 +163,60 @@ test("assistant uses selection context and dismisses preview without changing te
   await expect(page.getByRole("button", { name: "Add note" })).toHaveCount(0);
   await page.getByRole("button", { name: "Rewrite", exact: true }).click();
   await expect(page.getByTestId("assistant-edit-preview")).toContainText("Revision preview", { timeout: 20_000 });
-  await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Accept" })).toBeVisible();
+  await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Apply" })).toBeVisible();
   await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Copy" })).toBeVisible();
-  await page.getByRole("button", { name: "Reject" }).click();
+  await page.getByRole("button", { name: "Dismiss" }).click();
   await h.expectEditorText(page, original);
 });
 
-test("selection containing notes shows clean text and sends notes as instructions", async ({ page }) => {
+test("local Refresh completes partial selection and returns a read-only result", async ({ page }) => {
+  const original = "First claim needs support. Second sentence stays clean.";
+  let capturedPayload: { selectedRange?: { start: number; end: number }; instruction?: string } | undefined;
+
+  await h.setEditorText(page, original);
+  const partialStart = original.indexOf("sentence");
+  const partialEnd = partialStart + "sentence".length;
+  const fullSecondStart = original.indexOf("Second");
+  await h.selectEditorRange(page, partialStart, partialEnd);
+  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("I think this sentence is evidence, not background.");
+
+  await page.route("**/api/refresh", async (route) => {
+    capturedPayload = JSON.parse(route.request().postData() ?? "{}");
+    const range = capturedPayload?.selectedRange ?? { start: fullSecondStart, end: original.length };
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        kind: "annotations",
+        annotations: [{
+          id: "local-refresh-test",
+          start: range.start,
+          end: range.end,
+          text: original.slice(range.start, range.end),
+          label: "evidence",
+          comment: "The sentence supplies supporting detail for the claim."
+        }],
+        globalFeedback: ["Local label refresh ready."],
+        warnings: [],
+        providerMode: "mock"
+      })
+    });
+  });
+
+  await page.getByRole("button", { name: "Refresh selected labels" }).click();
+  const result = page.getByTestId("assistant-local-refresh-result");
+  await expect(result).toContainText("Local label refresh");
+  await expect(result).toContainText("Second sentence stays clean.");
+  await expect(result).toContainText("Evidence");
+  await expect(result.getByRole("button", { name: "Copy" })).toBeVisible();
+  await expect(result.getByRole("button", { name: "Dismiss" })).toBeVisible();
+  await expect(result.getByRole("button", { name: "Apply" })).toHaveCount(0);
+  expect(capturedPayload?.instruction).toContain("evidence");
+  expect(original.slice(capturedPayload!.selectedRange!.start, capturedPayload!.selectedRange!.end)).toBe("Second sentence stays clean.");
+  await h.expectEditorText(page, original);
+});
+
+test.skip("selection containing notes shows clean text and sends notes as instructions", async ({ page }) => {
   type CapturedAssistPayload = {
     selectedText?: string;
     selectedPatches?: Array<{ text: string }>;
@@ -212,7 +264,7 @@ test("selection containing notes shows clean text and sends notes as instruction
   expect(capturedPayload?.selectedPatches?.[0].text).toBe(noteText);
 });
 
-test("accepted rewrite resolves notes inside the selected range", async ({ page }) => {
+test.skip("accepted rewrite resolves notes inside the selected range", async ({ page }) => {
   const original = "Research question: How can students use AI responsibly?";
   await page.getByLabel("Project Title").fill("Technology vs. Humanity.");
   await h.setEditorText(page, original);
@@ -248,7 +300,7 @@ test("Analyze uses instruction language and is read-only", async ({ page }) => {
   const analysis = page.getByTestId("assistant-analysis-result");
   await expect(analysis).toContainText("Analysis", { timeout: 20_000 });
   await expect(analysis).toContainText(/这句话|建议/);
-  await expect(analysis.getByRole("button", { name: "Accept" })).toHaveCount(0);
+  await expect(analysis.getByRole("button", { name: "Apply" })).toHaveCount(0);
   await expect(analysis.getByRole("button", { name: "Copy" })).toBeVisible();
   await h.expectEditorText(page, original);
 });
@@ -282,24 +334,47 @@ test("rewrite follows English and Chinese length instructions without meta text"
   ]) {
     expect(proposed).not.toContain(banned);
   }
-  await page.getByRole("button", { name: "Accept" }).click();
+  await page.getByRole("button", { name: "Apply" }).click();
   expect(await h.editorText(page)).not.toBe(original);
   await expect.poll(async () => (await h.editorText(page)).length).toBeGreaterThan(original.length);
 });
 
 test("selected text translation is read-only in Edit mode", async ({ page }) => {
   const original = "Social media balance requires intentional habits.";
+  let capturedPayload: { action?: string; selectedText?: string } | undefined;
   await h.setEditorText(page, original);
   await h.selectEditorRange(page, 0, "Social media balance".length);
 
+  await page.route("**/api/assist", async (route) => {
+    capturedPayload = JSON.parse(route.request().postData() ?? "{}");
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        kind: "inspect",
+        title: "Translation preview",
+        actionType: "translate-selection",
+        originalExcerpt: "Social media balance",
+        reply: "社交媒体平衡",
+        annotations: [],
+        warnings: [],
+        providerMode: "mock"
+      })
+    });
+  });
+
+  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("Please translate into Chinese");
   await page.getByRole("button", { name: "Translate" }).click();
-  await expect(page.getByTestId("assistant-edit-preview")).toContainText("Translation preview", { timeout: 20_000 });
-  await expect(page.getByTestId("assistant-edit-preview")).toContainText(/[\u4e00-\u9fff]/);
-  await expect(page.getByTestId("assistant-edit-preview")).not.toContainText(/DeepSeek|debug|AI returned|no API key/i);
-  await expect(page.getByTestId("assistant-edit-preview").getByTestId("provider-mode-badge")).toContainText(/deepseek|mock|unavailable/i);
-  await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Accept" })).toHaveCount(0);
-  await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Copy" })).toBeVisible();
-  await expect(page.getByTestId("assistant-edit-preview")).not.toContainText("requires intentional habits");
+  const translation = page.getByTestId("assistant-translation-result");
+  await expect(translation).toContainText("Translation preview", { timeout: 20_000 });
+  await expect(translation).toContainText("社交媒体平衡");
+  await expect(translation).not.toContainText(/DeepSeek|debug|AI returned|no API key/i);
+  await expect(translation.getByTestId("provider-mode-badge")).toContainText(/deepseek|mock|unavailable/i);
+  await expect(translation.getByRole("button", { name: "Apply" })).toHaveCount(0);
+  await expect(translation.getByRole("button", { name: "Copy" })).toBeVisible();
+  await expect(page.getByTestId("assistant-edit-preview")).toHaveCount(0);
+  expect(capturedPayload?.selectedText).toBe("Social media balance");
+  expect(capturedPayload?.action).toContain("Please translate into Chinese");
   await h.expectEditorText(page, original);
   const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(state.modules["1"].snapshots.length).toBe(0);

@@ -91,6 +91,8 @@ export const refreshRequestSchema = z.object({
   projectTitle: z.string().optional(),
   moduleNumber: moduleNumberSchema,
   text: z.string(),
+  selectedRange: rangeSchema.optional(),
+  instruction: z.string().optional(),
   annotations: z.array(annotationSchema).default([]),
   patches: z.array(patchSchema).default([]),
   sources: z.array(sourceCardSchema).default([])

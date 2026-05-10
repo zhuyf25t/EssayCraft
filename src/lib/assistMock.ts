@@ -5,7 +5,7 @@ import { normalizedForNoopCompare } from "@/lib/noteKernel";
 import { changeRequested, cleanReplacement, rewriteWithInstruction } from "@/lib/rewriteFallback";
 
 function isEditAction(action: string) {
-  return /(rewrite|academic|analysis|translate|revise|sentence|passage|formal|longer|shorter|natural|awkward|\u91cd\u5199|\u6539\u5199|\u66f4\u5b66\u672f|\u5b66\u672f|\u6b63\u5f0f|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u81ea\u7136|\u5446\u677f|\u6839\u636e.*title|\u6839\u636e.*\u6807\u9898)/i.test(action);
+  return /(rewrite|academic|revise|sentence|passage|formal|longer|shorter|natural|awkward|\u91cd\u5199|\u6539\u5199|\u66f4\u5b66\u672f|\u5b66\u672f|\u6b63\u5f0f|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u81ea\u7136|\u5446\u677f|\u6839\u636e.*title|\u6839\u636e.*\u6807\u9898)/i.test(action);
 }
 
 function isAnalyzeAction(action: string) {
@@ -108,28 +108,14 @@ export function mockAssist(input: AssistRequest): AssistResponse {
 
   if (action.includes("translate")) {
     const translated = mockAssistantChinese(selected || input.text);
-    if (range) {
-      return {
-        title: "Translation preview",
-        kind: "edit",
-        actionType: "translate-selection",
-        originalExcerpt: selected ? excerpt(selected) : undefined,
-        reply: "Translation preview ready for the selected text.",
-        proposedText: translated,
-        replaceRange: range,
-        annotations: [],
-        explanation: "Read-only preview. Copy it if useful; EssayCraft will not replace the document from Translate.",
-        warnings,
-        providerMode: "mock"
-      };
-    }
     return {
       title: "Translation preview",
-      kind: "chat",
+      kind: "inspect",
       actionType: "translate-selection",
-      reply: "Translation preview ready. Select a passage first if you want an applyable replacement.",
+      originalExcerpt: selected ? excerpt(selected) : undefined,
+      reply: translated,
       annotations: [],
-      explanation: "This chat reply is reference-only and cannot overwrite document text.",
+      explanation: "Read-only translation. Copy it if useful; EssayCraft will not replace the document from Translate.",
       warnings,
       providerMode: "mock"
     };

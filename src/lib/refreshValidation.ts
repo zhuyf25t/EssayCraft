@@ -11,7 +11,8 @@ export type RefreshAnnotationValidation = {
 export function validateProviderRefreshAnnotations(
   text: string,
   annotations: Annotation[],
-  moduleNumber: ModuleNumber
+  moduleNumber: ModuleNumber,
+  options: { requireCoverage?: boolean } = {}
 ): RefreshAnnotationValidation {
   const repaired = normalizeAnnotations(text, annotations);
   const warnings: string[] = repaired.length < annotations.length
@@ -35,7 +36,7 @@ export function validateProviderRefreshAnnotations(
   }
 
   const granular = splitOverbroadProviderAnnotations(text, relabeled, warnings);
-  const coverageWarning = insufficientLongTextCoverage(text, granular);
+  const coverageWarning = options.requireCoverage === false ? "" : insufficientLongTextCoverage(text, granular);
   if (coverageWarning) {
     return {
       annotations: granular,

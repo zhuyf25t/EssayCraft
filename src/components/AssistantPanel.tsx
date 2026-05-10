@@ -21,6 +21,7 @@ type AssistantPanelProps = {
   refreshResult?: RefreshResponse;
   onChat: (message: string) => void;
   onClearChat: () => void;
+  onLocalRefresh: (instruction: string) => void;
   onSelectionAction: (action: string) => void;
   onInspectAction: (action: string) => void;
   onApply: () => void;
@@ -244,17 +245,18 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
           className="min-h-9 w-full resize-none border-0 bg-transparent text-[13px] leading-snug outline-none"
           disabled={!canEdit}
         />
-        <div className="grid grid-cols-5 gap-1 text-[11px]">
+        <div className="grid grid-cols-6 gap-1 text-[11px]">
           <button aria-label="Rewrite" className="btn-primary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => runInstruction("Rewrite selected passage")}>Rewrite</button>
           <button aria-label="Academic" className="btn-primary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>Academic</button>
+          <button aria-label="Refresh selected labels" className="btn-primary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => runLocalRefresh()}>Refresh</button>
           <button aria-label="Analyze" className="btn-secondary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => runAnalyze()}>Analyze</button>
-          <button aria-label="Translate" className="btn-secondary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Translate selected text")}>Translate</button>
+          <button aria-label="Translate" className="btn-secondary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => runTranslate()}>Translate</button>
           <button
             aria-label="Explain highlight"
             className="btn-secondary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none"
             disabled={!canExplain || props.loading}
             title={canExplain ? "Explain the active highlight label." : "Click a highlighted sentence first."}
-            onClick={() => props.onInspectAction("Explain this highlight")}
+            onClick={() => runExplain()}
           >
             Explain
           </button>
@@ -272,6 +274,24 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   function runAnalyze() {
     const text = (instructionRef.current?.value ?? instruction).trim();
     props.onInspectAction(text ? `Analyze selected text: ${text}` : "Analyze selected text");
+    setInstruction("");
+  }
+
+  function runLocalRefresh() {
+    const text = (instructionRef.current?.value ?? instruction).trim();
+    props.onLocalRefresh(text);
+    setInstruction("");
+  }
+
+  function runTranslate() {
+    const text = (instructionRef.current?.value ?? instruction).trim();
+    props.onInspectAction(text ? `Translate selected text: ${text}` : "Translate selected text");
+    setInstruction("");
+  }
+
+  function runExplain() {
+    const text = (instructionRef.current?.value ?? instruction).trim();
+    props.onInspectAction(text ? `Explain this highlight: ${text}` : "Explain this highlight");
     setInstruction("");
   }
 }
@@ -304,9 +324,9 @@ function EditPreview({
         {suggestion.reply ? <p className="text-blue-900/70">{firstSentence(suggestion.reply)}</p> : null}
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        {!readOnly ? <button className="btn-primary px-2 py-1 text-xs" onClick={onApply}>Accept</button> : null}
-        <button className="btn-secondary px-2 py-1 text-xs" onClick={onDismiss}>{readOnly ? "Dismiss" : "Reject"}</button>
+        {!readOnly ? <button className="btn-primary px-2 py-1 text-xs" onClick={onApply}>Apply</button> : null}
         <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(suggestion.proposedText ?? suggestion.reply)}>Copy</button>
+        <button className="btn-secondary px-2 py-1 text-xs" onClick={onDismiss}>Dismiss</button>
       </div>
     </article>
   );
@@ -390,9 +410,11 @@ function RefreshResultCard({ result, onDismiss }: { result: RefreshResponse; onD
 
 function InspectCard({ suggestion, onDismiss }: { suggestion: AssistResponse; onDismiss: () => void }) {
   const isAnalyze = suggestion.actionType === "analyze-selection" || /analysis/i.test(suggestion.title ?? "");
-  const title = suggestion.title || (isAnalyze ? "Analysis" : "Highlight explanation");
+  const isLocalRefresh = suggestion.actionType === "local-refresh";
+  const isTranslate = suggestion.actionType === "translate-selection";
+  const title = suggestion.title || (isTranslate ? "Translation preview" : isAnalyze ? "Analysis" : "Highlight explanation");
   return (
-    <article data-testid={isAnalyze ? "assistant-analysis-result" : "assistant-highlight-explanation"} className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
+    <article data-testid={isLocalRefresh ? "assistant-local-refresh-result" : isTranslate ? "assistant-translation-result" : isAnalyze ? "assistant-analysis-result" : "assistant-highlight-explanation"} className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="font-semibold text-slate-800">{title}</span>
         <ProviderBadge mode={suggestion.providerMode} />

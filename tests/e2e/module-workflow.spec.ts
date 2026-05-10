@@ -3,7 +3,7 @@ import * as h from "./helpers";
 
 test.beforeEach(h.setupPage);
 
-test("student can edit paragraphs, add a patch, and insert a manual citation", async ({ page }) => {
+test("student can edit paragraphs, use local refresh, and insert a manual citation", async ({ page }) => {
   await expect(page.getByText("EssayCraft").first()).toBeVisible();
 
   const textEditor = h.editor(page);
@@ -12,15 +12,15 @@ test("student can edit paragraphs, add a patch, and insert a manual citation", a
 
   await textEditor.focus();
   await page.keyboard.press("Control+Enter");
-  const patchBox = h.inlineNoteInput(page);
-  await expect(patchBox).toBeVisible();
-  await patchBox.fill("Make the question more specific for a school policy essay.");
-  await page.keyboard.press("Control+Enter");
-  await expect(page.getByTestId("patch-marker")).toBeVisible();
-  await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
-  await expect(page.getByTestId("patch-margin-marker")).toHaveAttribute("title", /Make the question more specific/);
+  await expect(page.getByTestId("assistant-edit-mode")).toBeVisible();
+  await expect(h.inlineNoteInput(page)).toHaveCount(0);
+  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("I think this should be background.");
+  await page.getByRole("button", { name: "Refresh selected labels" }).click();
+  await expect(page.getByTestId("assistant-local-refresh-result")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByTestId("assistant-local-refresh-result").getByRole("button", { name: "Copy" })).toBeVisible();
+  await expect(page.getByTestId("assistant-local-refresh-result").getByRole("button", { name: "Dismiss" })).toBeVisible();
   await expect(page.getByTestId("patch-list")).toHaveCount(0);
-  expect(await h.canonicalModuleText(page)).not.toContain("Make the question more specific");
+  expect(await h.canonicalModuleText(page)).not.toContain("I think this should be background.");
 
   await page.getByRole("tab", { name: /Sources/i }).click();
   await page.getByPlaceholder("Source title").fill("Student focus survey");

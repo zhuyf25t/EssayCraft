@@ -113,6 +113,8 @@ export type RefreshRequest = {
   projectTitle?: string;
   moduleNumber: ModuleNumber;
   text: string;
+  selectedRange?: TextRange;
+  instruction?: string;
   annotations: Annotation[];
   patches: Patch[];
   sources: SourceCard[];

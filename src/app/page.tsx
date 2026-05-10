@@ -13,6 +13,7 @@ import { Toolbar } from "@/components/Toolbar";
 import { TranslateModal } from "@/components/TranslateModal";
 import { annotationAtOffset, normalizeAnnotations, normalizeText, sentenceRangeAt } from "@/lib/annotations";
 import { inTextCitationPreview } from "@/lib/citationAudit";
+import { LABELS } from "@/lib/labels";
 import { copyRichText, downloadCurrentModuleHtml, downloadProjectJson } from "@/lib/export";
 import { protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { repairPatchesForText } from "@/lib/patches";
@@ -36,6 +37,7 @@ import type {
 } from "@/types/essaycraft";
 
 const EMPTY_RANGE: TextRange = { start: 0, end: 0 };
+const INLINE_NOTES_ENABLED = false;
 type TranslateMode = "en-to-zh" | "zh-to-en" | "auto-to-zh";
 type RightTab = "assistant" | "sources" | "snapshots" | "export";
 
@@ -154,11 +156,13 @@ export default function Home() {
   const activeOffset = selectedRange.end > selectedRange.start ? selectedRange.start : activeSentenceRange?.start ?? selectedRange.start;
   const hasEditorContext = selectedRange.end > selectedRange.start || Boolean(activeSentenceRange) || selectedRange.start > 0;
   const activeAnnotation = currentDoc && hasEditorContext ? annotationAtOffset(currentDoc.annotations, activeOffset) : undefined;
-  const activeRangePatches = currentDoc && editRange
+  const activeRangePatches = INLINE_NOTES_ENABLED && currentDoc && editRange
     ? currentDoc.patches.filter((patch) => patchTouchesRange(patch, editRange))
     : [];
   const activePatchCount = activeRangePatches.length;
-  const openPatches = currentDoc?.patches.filter((patch) => patch.status !== "resolved" && !patch.resolved && !patch.stale && patch.text.trim()) ?? [];
+  const openPatches = INLINE_NOTES_ENABLED
+    ? currentDoc?.patches.filter((patch) => patch.status !== "resolved" && !patch.resolved && !patch.stale && patch.text.trim()) ?? []
+    : [];
 
   if (!project || !currentDoc) {
     return <main className="flex min-h-screen items-center justify-center text-slate-500">Loading EssayCraft...</main>;
@@ -276,6 +280,19 @@ export default function Home() {
   }
 
   function handleOpenPatch(range: TextRange) {
+    if (!INLINE_NOTES_ENABLED) {
+      const requestedRange = range.end > range.start
+        ? range
+        : selectedRange.end > selectedRange.start
+          ? selectedRange
+          : activeSentenceRange ?? range;
+      const expanded = expandRangeToCompleteSentences(activeDoc.text, requestedRange);
+      setSelectedRange(expanded);
+      setActiveSentenceRange(expanded);
+      requestAssistantMode("edit");
+      setStatus("Inline notes are disabled for now. Use Edit Refresh with a note.");
+      return;
+    }
     const requestedRange = range.end > range.start
       ? range
       : selectedRange.end > selectedRange.start
@@ -367,7 +384,7 @@ export default function Home() {
           moduleNumber: activeProject.currentModule,
           text: activeDoc.text,
           annotations: activeDoc.annotations,
-          patches: activeDoc.patches,
+          patches: INLINE_NOTES_ENABLED ? activeDoc.patches : [],
           sources: activeDoc.sources
         })
       });
@@ -411,6 +428,67 @@ export default function Home() {
     }
   }
 
+  async function handleLocalRefresh(instruction: string) {
+    const baseRange = selectedRange.end > selectedRange.start ? selectedRange : activeSentenceRange;
+    if (!baseRange || baseRange.end <= baseRange.start) {
+      setStatus("Select text or click a sentence before refreshing local labels.");
+      requestAssistantMode("edit");
+      return;
+    }
+
+    const expandedRange = expandRangeToCompleteSentences(activeDoc.text, baseRange);
+    setSelectedRange(expandedRange);
+    setActiveSentenceRange(expandedRange);
+    setLoading(true);
+    setBusyAction("refresh");
+    setAssistantSuggestion(undefined);
+    setRefreshResult(undefined);
+    try {
+      const response = await fetch("/api/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: activeProject.topic,
+          projectTitle: activeProject.title,
+          moduleNumber: activeProject.currentModule,
+          text: activeDoc.text,
+          selectedRange: expandedRange,
+          instruction,
+          annotations: activeDoc.annotations,
+          patches: [],
+          sources: activeDoc.sources
+        })
+      });
+      const data = (await response.json()) as RefreshResponse & { error?: string };
+      if (!response.ok) throw new Error(data.error ?? "Local refresh failed.");
+
+      const localAnnotations = normalizeAnnotations(activeDoc.text, data.annotations)
+        .filter((annotation) => rangesOverlap(annotation, expandedRange));
+      const reply = formatLocalRefreshReply(activeDoc.text, expandedRange, localAnnotations, data, instruction);
+      setAssistantSuggestion({
+        kind: "inspect",
+        title: "Local label refresh",
+        actionType: "local-refresh",
+        originalExcerpt: activeDoc.text.slice(expandedRange.start, expandedRange.end),
+        reply,
+        annotations: localAnnotations,
+        warnings: data.warnings,
+        providerMode: data.providerMode,
+        modelUsed: data.modelUsed,
+        latencyMs: data.latencyMs,
+        fallbackReason: data.fallbackReason
+      });
+      setRightTab("assistant");
+      requestAssistantMode("edit");
+      setStatus(data.providerMode === "unavailable" ? "Local refresh unavailable." : "Local label refresh ready.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Local refresh failed.");
+    } finally {
+      setLoading(false);
+      setBusyAction(null);
+    }
+  }
+
   async function handleGenerateNext() {
     if (activeProject.currentModule >= 6) {
       setStatus("Module 6 is the final module.");
@@ -438,7 +516,7 @@ export default function Home() {
         sourceTitle: activeDoc.title,
         sourceText: activeDoc.text,
         sourceAnnotations: activeDoc.annotations,
-        sourcePatches: activeDoc.patches,
+        sourcePatches: INLINE_NOTES_ENABLED ? activeDoc.patches : [],
         sourceSources: activeDoc.sources
       });
       const response = await fetch("/api/generate-next", {
@@ -732,7 +810,7 @@ function handleSaveSnapshot() {
           ? selectedRange
           : activeSentenceRange;
     const submittedText = submittedRange ? activeDoc.text.slice(submittedRange.start, submittedRange.end) : undefined;
-    const submittedPatches = submittedRange
+    const submittedPatches = INLINE_NOTES_ENABLED && submittedRange
       ? activeDoc.patches.filter((patch) => patchTouchesRange(patch, submittedRange))
       : [];
     const userMessage: Omit<AssistantMessage, "id" | "createdAt"> = { role: "user", text: action };
@@ -763,7 +841,7 @@ function handleSaveSnapshot() {
           moduleTitle: activeDoc.title,
           text: activeDoc.text,
           annotations: activeDoc.annotations,
-          patches: activeDoc.patches,
+          patches: INLINE_NOTES_ENABLED ? activeDoc.patches : [],
           sources: activeDoc.sources,
           selectedRange: submittedRange,
           selectedText: submittedText,
@@ -1025,7 +1103,7 @@ function handleSaveSnapshot() {
               <div className="shrink-0">
                 <div>
                   <h1 className="text-lg font-semibold text-slate-800">Module {activeProject.currentModule}: {activeDoc.title}</h1>
-                  <p className="text-sm text-slate-500">Edit normally. Ctrl/Cmd+Enter anchors a patch note to the current sentence or selection.</p>
+                  <p className="text-sm text-slate-500">Edit normally. Select text, then use Edit actions for local AI help.</p>
                 </div>
               </div>
 
@@ -1033,7 +1111,7 @@ function handleSaveSnapshot() {
                 <Editor
                   text={activeDoc.text}
                   annotations={activeDoc.annotations}
-                  patches={activeDoc.patches}
+                  patches={INLINE_NOTES_ENABLED ? activeDoc.patches : []}
                   selectedRange={selectedRange}
                   activeSentenceRange={activeSentenceRange}
                   resetKey={editorResetKey}
@@ -1042,7 +1120,7 @@ function handleSaveSnapshot() {
                   onActiveSentenceChange={setActiveSentenceRange}
                   onOpenPatch={handleOpenPatch}
                   onPatchMarkerClick={editPatch}
-                  patchEditor={patchRange ? {
+                  patchEditor={INLINE_NOTES_ENABLED && patchRange ? {
                     range: patchRange,
                     anchorQuote: patchQuote,
                     initialValue: editingPatchId ? activeDoc.patches.find((patch) => patch.id === editingPatchId)?.text ?? "" : "",
@@ -1092,6 +1170,7 @@ function handleSaveSnapshot() {
                       refreshResult={refreshResult}
                       onChat={(message) => void handleAssist(message, "chat")}
                       onClearChat={handleClearAssistantHistory}
+                      onLocalRefresh={(instruction) => void handleLocalRefresh(instruction)}
                       onSelectionAction={(action) => void handleAssist(action, "edit")}
                       onInspectAction={(action) => void handleAssist(action, "inspect")}
                       onApply={handleApplyAssistant}
@@ -1216,6 +1295,49 @@ function patchTouchesRange(patch: Patch, range: TextRange) {
     return overlapsAnchorText || containsInlineChip;
   }
   return start >= range.start && start <= range.end;
+}
+
+function expandRangeToCompleteSentences(text: string, range: TextRange): TextRange {
+  const start = Math.max(0, Math.min(text.length, range.start));
+  const end = Math.max(start, Math.min(text.length, range.end));
+  const first = sentenceRangeAt(text, start);
+  const last = sentenceRangeAt(text, Math.max(start, end - 1));
+  const expandedStart = first.end > first.start ? first.start : start;
+  const expandedEnd = last.end > last.start ? last.end : end;
+  return {
+    start: Math.max(0, Math.min(text.length, expandedStart)),
+    end: Math.max(expandedStart, Math.min(text.length, expandedEnd))
+  };
+}
+
+function rangesOverlap(annotation: TextRange, range: TextRange) {
+  return annotation.start < range.end && range.start < annotation.end;
+}
+
+function formatLocalRefreshReply(
+  text: string,
+  range: TextRange,
+  annotations: RefreshResponse["annotations"],
+  result: RefreshResponse,
+  instruction: string
+) {
+  if (result.providerMode === "unavailable") {
+    return "AI unavailable. The selected sentence labels were not refreshed.";
+  }
+  const excerpt = text.slice(range.start, range.end).replace(/\s+/g, " ").trim();
+  const header = [
+    "Selected range was expanded to complete sentence boundaries.",
+    instruction.trim() ? `Your note: ${instruction.trim()}` : "",
+    excerpt ? `Text: ${excerpt}` : ""
+  ].filter(Boolean).join("\n");
+  const labels = annotations.length
+    ? annotations.map((annotation, index) => {
+        const label = LABELS[annotation.label]?.name ?? annotation.label;
+        const reason = annotation.comment ? ` ${annotation.comment}` : "";
+        return `${index + 1}. ${label}: ${annotation.text}${reason}`;
+      }).join("\n")
+    : "No label suggestion was returned for the selected sentence(s).";
+  return `${header}\n\n${labels}`;
 }
 
 function extractModuleOneQuestion(text: string) {

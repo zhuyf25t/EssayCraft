@@ -19,7 +19,7 @@ export async function POST(request: Request) {
     const openPatches = input.patches.filter((patch) => !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim());
 
     if (!openPatches.length) {
-      const units = buildRefreshUnits(input.text);
+      const units = buildRefreshUnits(input.text, input.selectedRange);
       const result = await runJsonAiTask({
         taskType: "refreshAnnotations",
         messages: buildRefreshUnitMessages(input, units),
@@ -28,7 +28,9 @@ export async function POST(request: Request) {
         unavailable: (reason) => unavailableRefresh(input, reason),
         parseProvider: (parsed) => {
           const annotations = annotationsFromUnitLabels(units, parsed.unitLabels);
-          const validation = validateProviderRefreshAnnotations(input.text, annotations, input.moduleNumber);
+          const validation = validateProviderRefreshAnnotations(input.text, annotations, input.moduleNumber, {
+            requireCoverage: !input.selectedRange
+          });
           const warnings = [...(parsed.warnings ?? []), ...validation.warnings];
           if (validation.usedFallback) {
             throw new Error(validation.reason ?? "Provider returned invalid unit labels.");
@@ -100,10 +102,21 @@ export async function POST(request: Request) {
   }
 }
 
-function buildRefreshUnits(text: string) {
+function buildRefreshUnits(text: string, selectedRange?: RefreshRequest["selectedRange"]) {
   const units = rhetoricalUnitRanges(text)
     .filter((unit) => unit.text.trim().length > 0);
-  return units.map((unit, index) => ({
+  const scopedUnits = selectedRange
+    ? units.filter((unit) => unit.start < selectedRange.end && selectedRange.start < unit.end)
+    : units;
+  if (selectedRange && !scopedUnits.length && selectedRange.end > selectedRange.start) {
+    const start = Math.max(0, Math.min(text.length, selectedRange.start));
+    const end = Math.max(start, Math.min(text.length, selectedRange.end));
+    const selectedText = text.slice(start, end);
+    if (selectedText.trim()) {
+      scopedUnits.push({ start, end, text: selectedText });
+    }
+  }
+  return scopedUnits.map((unit, index) => ({
     index,
     start: unit.start,
     end: unit.end,

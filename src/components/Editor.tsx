@@ -1,9 +1,8 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
 import type { Annotation, Patch, TextRange } from "@/types/essaycraft";
-import { LABELS } from "@/lib/labels";
-import { annotationAtOffset, sentenceRangeAt } from "@/lib/annotations";
+import { sentenceRangeAt } from "@/lib/annotations";
 import { countCharacters, countWords } from "@/lib/sentence";
 import { stripEditorKernelMarkers } from "@/lib/noteKernel";
 import {
@@ -17,7 +16,6 @@ import {
   selectionTouchesEditor,
   setDomSelectionFromTextRange,
   textRangeFromDomSelection,
-  friendlyAnnotationComment,
   type InlinePatchEditorState
 } from "./editorDom";
 
@@ -76,10 +74,6 @@ export function Editor({
     onPatchClose
   };
 
-  const activeAnnotation = useMemo(
-    () => annotationAtOffset(annotations, selectedRange.start),
-    [annotations, selectedRange.start]
-  );
   const patchEditorSignature = patchEditor
     ? [
         patchEditor.editingPatchId ?? "new",
@@ -296,9 +290,7 @@ export function Editor({
           <span className="font-semibold text-slate-800">Writing canvas</span>
           <span className="ml-2 text-xs text-slate-500">{countWords(text)} words / {countCharacters(text)} chars</span>
         </div>
-        <div className="text-xs text-slate-500">
-          {activeAnnotation ? `${LABELS[activeAnnotation.label].name}: ${friendlyAnnotationComment(activeAnnotation.comment, LABELS[activeAnnotation.label].description)}` : "Ctrl/Cmd+Enter adds a note"}
-        </div>
+        <div className="text-xs text-slate-500">Select text, then use Edit actions</div>
       </div>
 
       <div data-testid="editor-stack" className="editor-stack">

@@ -32,7 +32,15 @@ describe("assistant prompts", () => {
     const messages = buildAssistMessages(request("Analyze selected text: \u4f60\u8bc4\u4ef7\u4e00\u4e0b\u8fd9\u53e5\u8bdd\u3002\u7528\u4e2d\u6587\u3002"));
 
     expect(messages[0].content).toContain('Use kind "inspect"');
-    expect(messages[0].content).toContain("Inspect responses explain a highlight/annotation");
+    expect(messages[0].content).toContain("Inspect responses are read-only analysis, translation, or highlight explanation");
+  });
+
+  it("keeps Translate read-only and carries the target-language instruction", () => {
+    const messages = buildAssistMessages(request("Translate selected text: Please translate into Chinese"));
+
+    expect(messages[0].content).toContain('Use kind "inspect"');
+    expect(messages[0].content).toContain("translate only the selected text");
+    expect(messages[1].content).toContain("Please translate into Chinese");
   });
 
   it("includes relevant open notes separately from all module patches", () => {
@@ -87,11 +95,13 @@ describe("assistant prompts", () => {
     ]);
 
     expect(messages[0].content).toContain("Label every provided sentence/rhetorical unit");
+    expect(messages[0].content).toContain("First read the full essay context");
+    expect(messages[0].content).toContain("Do not label a unit in isolation");
     expect(messages[0].content).toContain("unitLabels");
     expect(messages[0].content).not.toContain("\"start\":0,\"end\":20");
     expect(messages[0].content).not.toContain("final review checklist");
+    expect(messages[1].content).toContain("Full essay context");
     expect(messages[1].content).toContain("\"index\": 0");
     expect(messages[1].content).toContain("Technology changes society.");
-    expect(messages[1].content).not.toContain("Full clean text");
   });
 });
