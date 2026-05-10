@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyNotesFallback, rewriteWithInstruction } from "./rewriteFallback";
+import { applyNotesFallback, restoreStructuredLineBreaks, rewriteWithInstruction } from "./rewriteFallback";
 import type { Patch } from "@/types/essaycraft";
 
 const BANNED = [
@@ -67,5 +67,13 @@ describe("rewriteFallback", () => {
     expect(proposed).toContain("Research question:");
     expect(proposed).toMatch(/technolog|human/i);
     expect(proposed).not.toContain("Topic: Technology, humanity\n\nTopic:");
+  });
+
+  it("restores reason list line breaks instead of applying one long line", () => {
+    const raw = "- Reason 1: Technology improves productivity, - Reason 2: AI adapts quickly, - Reason 3: complex global problems need new tools.";
+
+    expect(restoreStructuredLineBreaks(raw)).toBe(
+      "- Reason 1: Technology improves productivity\n- Reason 2: AI adapts quickly\n- Reason 3: complex global problems need new tools."
+    );
   });
 });

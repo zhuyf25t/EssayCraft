@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import type { Annotation, GenerateNextResponse, ModuleNumber, SourceCard } from "@/types/essaycraft";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import type { Annotation, GenerateNextRequest, GenerateNextResponse, ModuleNumber, SourceCard } from "@/types/essaycraft";
 import {
   addAiMetadata,
   aiMetadata,
@@ -49,33 +50,26 @@ export async function POST(request: Request) {
 
     try {
       const client = createAiClient(task.timeoutMs);
-      const completion = await withAiTimeout(
-        client.chat.completions.create({
-          model: task.model,
-          messages: buildGenerateNextMessages(input),
-          response_format: { type: "json_object" },
-          max_tokens: 7000,
-          temperature: 0.25
-        }),
-        task.timeoutMs
-      );
+      const maxTokens = generateMaxTokens();
+      const messages = buildGenerateNextMessages(input);
+      const first = await requestGenerateJson(client, messages, task.model, task.timeoutMs, maxTokens, 0.25);
+      let candidate = parseGenerateCandidate(first.raw, input, expectedTarget);
+      let totalTokens = first.totalTokens;
 
-      const raw = completion.choices[0]?.message?.content;
-      if (!raw) throw new Error("AI returned empty content.");
-
-      const parsed = generateNextResponseSchema.parse(JSON.parse(raw));
-      if (parsed.moduleNumber !== expectedTarget) {
-        throw new Error(`AI returned Module ${parsed.moduleNumber}, expected Module ${expectedTarget}.`);
+      if (candidate.contractIssues.length) {
+        const repaired = await requestGenerateJson(
+          client,
+          buildGenerateRepairMessages(input, first.raw, candidate.text, candidate.contractIssues),
+          task.model,
+          task.timeoutMs,
+          maxTokens,
+          0
+        );
+        totalTokens += repaired.totalTokens;
+        candidate = parseGenerateCandidate(repaired.raw, input, expectedTarget);
       }
 
-      const text = normalizeGeneratedModuleText(
-        sanitizeUnsupportedCitations(cleanGeneratedText(parsed.text, parsed.moduleNumber), input.sourceSources),
-        parsed.moduleNumber
-      );
-      if (!text.trim()) {
-        throw new Error("AI returned empty generated text after cleanup.");
-      }
-      const contractIssues = validateTransitionOutput(input.sourceModuleNumber, text);
+      const { parsed, text, contractIssues } = candidate;
       if (contractIssues.length) {
         throw new Error(`AI output failed transition contract: ${contractIssues.join("; ")}`);
       }
@@ -92,7 +86,7 @@ export async function POST(request: Request) {
 
       return NextResponse.json(addAiMetadata(
         normalized,
-        aiMetadata(startedAt, "deepseek", task.model, undefined, completion.usage?.total_tokens ?? 0)
+        aiMetadata(startedAt, "deepseek", task.model, undefined, totalTokens)
       ));
     } catch (aiError) {
       console.warn("Generate Next AI unavailable:", aiError);
@@ -115,6 +109,118 @@ function unavailableGenerate(startedAt: number, reason: string) {
 function safeUnavailableReason(reason: string) {
   if (reason === "missing-api-key") return "DeepSeek API key is not configured.";
   return "Provider request did not complete successfully.";
+}
+
+async function requestGenerateJson(
+  client: ReturnType<typeof createAiClient>,
+  messages: ChatCompletionMessageParam[],
+  model: string,
+  timeoutMs: number,
+  maxTokens: number,
+  temperature: number
+) {
+  const completion = await withAiTimeout(
+    client.chat.completions.create({
+      model,
+      messages,
+      response_format: { type: "json_object" },
+      max_tokens: maxTokens,
+      temperature
+    }),
+    timeoutMs
+  );
+  const raw = completion.choices[0]?.message?.content;
+  if (!raw) throw new Error("AI returned empty content.");
+  return {
+    raw,
+    totalTokens: completion.usage?.total_tokens ?? 0
+  };
+}
+
+function parseGenerateCandidate(
+  raw: string,
+  input: GenerateNextRequest,
+  expectedTarget: Exclude<ModuleNumber, 1>
+) {
+  const parsed = generateNextResponseSchema.parse(JSON.parse(raw));
+  if (parsed.moduleNumber !== expectedTarget) {
+    throw new Error(`AI returned Module ${parsed.moduleNumber}, expected Module ${expectedTarget}.`);
+  }
+
+  const text = normalizeGeneratedModuleText(
+    sanitizeUnsupportedCitations(cleanGeneratedText(parsed.text, parsed.moduleNumber), input.sourceSources),
+    parsed.moduleNumber
+  );
+  if (!text.trim()) {
+    throw new Error("AI returned empty generated text after cleanup.");
+  }
+  return {
+    parsed,
+    text,
+    contractIssues: validateTransitionOutput(input.sourceModuleNumber, text)
+  };
+}
+
+function buildGenerateRepairMessages(
+  input: GenerateNextRequest,
+  rawOutput: string,
+  cleanedText: string,
+  contractIssues: string[]
+): ChatCompletionMessageParam[] {
+  const transition = getTransitionPrompt(input.sourceModuleNumber);
+  return [
+    {
+      role: "system",
+      content: `Repair the previous EssayCraft Generate Next response. Return strict JSON only.
+
+The previous JSON was syntactically readable, but the generated module text failed the transition contract.
+Do not invent real citations, authors, years, titles, URLs, DOIs, journals, or reference entries.
+Keep the target moduleNumber ${transition.toModule} and title "${transition.name}".
+Rewrite the text so it satisfies the transition output contract, paragraph format, citation behavior, and validation rules.
+
+Output contract:
+${transition.outputContract.map((item) => `- ${item}`).join("\n")}
+
+Paragraph format:
+${transition.paragraphFormat}
+
+Citation behavior:
+${transition.citationBehavior}
+
+Validation rules:
+${transition.validationRules.map((item) => `- ${item}`).join("\n")}
+
+Required JSON shape:
+{"moduleNumber":${transition.toModule},"title":"${transition.name}","text":"Paragraph 1...\\n\\nParagraph 2...","annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.85,"comment":"brief reason"}],"sources":[],"globalFeedback":["short feedback"],"warnings":[]}`
+    },
+    {
+      role: "user",
+      content: `Contract issues to fix:
+${contractIssues.map((issue) => `- ${issue}`).join("\n")}
+
+Project topic:
+${input.topic}
+
+Source module ${input.sourceModuleNumber}: ${input.sourceTitle}
+${JSON.stringify(input.sourceText)}
+
+Teacher-editable transition instruction:
+${transition.userPromptTemplate}
+
+Previous generated text after cleanup:
+${JSON.stringify(cleanedText)}
+
+Previous raw JSON output:
+${rawOutput}
+
+Return corrected JSON only.`
+    }
+  ];
+}
+
+function generateMaxTokens() {
+  const configured = Number(process.env.ESSAYCRAFT_GENERATE_MAX_TOKENS ?? process.env.ESSAYCRAFT_MAX_TOKENS);
+  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 16384;
 }
 
 function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6>, sourceText: string, sourceSources: SourceCard[] = [], sourceAnnotations: Annotation[] = []): GenerateNextResponse {
@@ -777,9 +883,9 @@ function validateTransitionOutput(sourceModuleNumber: Exclude<ModuleNumber, 6>, 
   const issues: string[] = [];
   const lower = text.toLowerCase();
   if (sourceModuleNumber === 1) {
-    if (!/argument branch\s*1/i.test(text)) issues.push("missing argument branches");
-    if (!/source status\s*:\s*source needed/i.test(text)) issues.push("missing source-needed status");
-    if (!/cars check/i.test(text)) issues.push("missing CARS checks");
+    if (!/(?:argument branch|branch|claim|reason)\s*1/i.test(text)) issues.push("missing argument branches");
+    if (!/(?:source status\s*:\s*source needed|\[source needed|source[- ]needed|source needed)/i.test(text)) issues.push("missing source-needed status");
+    if (!/(?:cars\s*(?:check|checklist|reminder|evaluation)|credible[\s\S]{0,80}accurate[\s\S]{0,80}reasonable[\s\S]{0,80}support)/i.test(text)) issues.push("missing CARS checks");
     if (/\[citation needed\]/i.test(text)) issues.push("Module 2 should use source-needed planning language instead of citation-needed markers");
   }
   if (sourceModuleNumber === 2) {

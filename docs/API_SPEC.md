@@ -27,8 +27,8 @@ Every AI result includes:
 ```bash
 DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-flash
-DEEPSEEK_FAST_MODEL=deepseek-v4-flash
+DEEPSEEK_MODEL=deepseek-v4-pro
+DEEPSEEK_FAST_MODEL=deepseek-v4-pro
 DEEPSEEK_HIGH_QUALITY_MODEL=deepseek-v4-pro
 ESSAYCRAFT_FORCE_MOCK_AI=0
 ESSAYCRAFT_ALLOW_OFFLINE_MOCK=0
@@ -37,6 +37,7 @@ ESSAYCRAFT_EDIT_TIMEOUT_MS=60000
 ESSAYCRAFT_REFRESH_TIMEOUT_MS=60000
 ESSAYCRAFT_TRANSLATE_TIMEOUT_MS=60000
 ESSAYCRAFT_GENERATE_TIMEOUT_MS=90000
+ESSAYCRAFT_GENERATE_MAX_TOKENS=16384
 ```
 
 ## AI Tasks
@@ -88,4 +89,3 @@ Translation is preview-only. Provider failures return an unavailable message unl
 `GET /api/diagnostics` returns provider configuration, model names, timeout settings, and the no-silent-fallback note without exposing secrets.
 
 `POST /api/diagnostics/test` sends a tiny server-side provider health check and returns success/failure, latency, model, and provider mode.
-

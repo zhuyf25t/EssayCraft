@@ -42,7 +42,8 @@ export function changeRequested(instruction: string) {
 }
 
 export function cleanReplacement(value: string) {
-  return stripEditorKernelMarkers(value)
+  const cleaned = stripEditorKernelMarkers(value)
+    .replace(/\r\n?/g, "\n")
     .replace(/^A more academic version could state:\s*/i, "")
     .replace(/^A more academic version could state\s*/i, "")
     .replace(/^could state:\s*/i, "")
@@ -56,7 +57,19 @@ export function cleanReplacement(value: string) {
     .replace(/\s*\[citation needed if this includes factual evidence\]\.?/gi, "")
     .replace(/\s*if this includes factual evidence\.?/gi, "")
     .replace(/This rewrite improves.*$/i, "")
-    .replace(/\s+/g, " ")
+    .replace(/[ \t]+/g, " ")
+    .replace(/[ \t]*\n[ \t]*/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return restoreStructuredLineBreaks(cleaned);
+}
+
+export function restoreStructuredLineBreaks(value: string) {
+  return value
+    .replace(/\s*(?:,|;)?\s+(-\s*Reason\s*\d+\s*:)/gi, "\n$1")
+    .replace(/(Thesis map\s*:)\s*(-\s*Reason\s*\d+\s*:)/gi, "$1\n$2")
+    .replace(/([.!?])\s+(-\s*Reason\s*\d+\s*:)/gi, "$1\n$2")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
