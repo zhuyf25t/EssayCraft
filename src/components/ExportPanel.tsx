@@ -28,6 +28,8 @@ export function ExportPanel({
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [diagnostics, setDiagnostics] = useState<AiDiagnostics | null>(null);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [providerTest, setProviderTest] = useState<AiProviderTest | null>(null);
+  const [providerTesting, setProviderTesting] = useState(false);
 
   async function toggleDiagnostics() {
     const nextOpen = !diagnosticsOpen;
@@ -42,10 +44,13 @@ export function ExportPanel({
       setDiagnostics({
         providerConfigured: false,
         forceMock: false,
+        offlineMockAllowed: false,
         model: "unknown",
         fastModel: "unknown",
         highQualityModel: "unknown",
         interactiveTimeoutMs: 0,
+        chatTimeoutMs: 0,
+        editTimeoutMs: 0,
         assistTimeoutMs: 0,
         refreshTimeoutMs: 0,
         translateTimeoutMs: 0,
@@ -55,6 +60,26 @@ export function ExportPanel({
       });
     } finally {
       setDiagnosticsLoading(false);
+    }
+  }
+
+  async function testProvider() {
+    setProviderTesting(true);
+    setProviderTest(null);
+    try {
+      const response = await fetch("/api/diagnostics/test", { method: "POST" });
+      const body = await response.json().catch(() => ({}));
+      setProviderTest({
+        ok: response.ok && Boolean(body.ok),
+        message: body.message ?? (response.ok ? "Provider responded." : "Provider test failed."),
+        providerMode: body.providerMode ?? "unavailable",
+        latencyMs: body.latencyMs,
+        modelUsed: body.modelUsed
+      });
+    } catch {
+      setProviderTest({ ok: false, message: "Provider test failed.", providerMode: "unavailable" });
+    } finally {
+      setProviderTesting(false);
     }
   }
 
@@ -121,13 +146,24 @@ export function ExportPanel({
               <>
                 <p>Provider configured: {diagnostics.providerConfigured ? "yes" : "no"}</p>
                 <p>Force mock: {diagnostics.forceMock ? "on" : "off"}</p>
+                <p>Offline mock allowed: {diagnostics.offlineMockAllowed ? "yes" : "no"}</p>
                 <p>Fast model: {diagnostics.fastModel}</p>
                 <p>Default model: {diagnostics.model}</p>
-                <p>Assist timeout: {diagnostics.assistTimeoutMs}ms</p>
+                <p>Chat timeout: {diagnostics.chatTimeoutMs}ms</p>
+                <p>Edit timeout: {diagnostics.editTimeoutMs}ms</p>
                 <p>Refresh timeout: {diagnostics.refreshTimeoutMs}ms</p>
                 <p>Translate timeout: {diagnostics.translateTimeoutMs}ms</p>
                 <p>Generate timeout: {diagnostics.generateTimeoutMs}ms</p>
                 <p>{diagnostics.note}</p>
+                <button type="button" className="btn-secondary mt-2 px-2 py-1 text-xs" onClick={testProvider} disabled={providerTesting}>
+                  {providerTesting ? "Testing..." : "Test provider"}
+                </button>
+                {providerTest ? (
+                  <p data-testid="ai-provider-test-result" className={providerTest.ok ? "text-emerald-700" : "text-rose-700"}>
+                    {providerTest.providerMode}: {providerTest.message}
+                    {typeof providerTest.latencyMs === "number" ? ` (${providerTest.latencyMs}ms)` : ""}
+                  </p>
+                ) : null}
               </>
             ) : null}
           </div>
@@ -140,14 +176,25 @@ export function ExportPanel({
 type AiDiagnostics = {
   providerConfigured: boolean;
   forceMock: boolean;
+  offlineMockAllowed: boolean;
   model: string;
   fastModel: string;
   highQualityModel: string;
   interactiveTimeoutMs: number;
+  chatTimeoutMs: number;
+  editTimeoutMs: number;
   assistTimeoutMs: number;
   refreshTimeoutMs: number;
   translateTimeoutMs: number;
   generateTimeoutMs: number;
   baseUrlConfigured: boolean;
   note: string;
+};
+
+type AiProviderTest = {
+  ok: boolean;
+  message: string;
+  providerMode: "deepseek" | "mock" | "unavailable";
+  latencyMs?: number;
+  modelUsed?: string;
 };
