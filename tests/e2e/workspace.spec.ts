@@ -3,6 +3,7 @@ import type { Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
 const editor = (page: Page) => page.getByTestId("editor-textarea");
+const inlineNoteInput = (page: Page) => page.getByTestId("inline-note-input");
 const NOTE_LEAK_RE = /\u2063|\u2064|NOTE:[A-Za-z0-9_-]+|\/NOTE|NOTE[A-Za-z0-9_-]{6,}|PATCH[A-Za-z0-9_-]{6,}|\b(?:note|patch)-[0-9a-f-]{6,}\b|\[object Object\]/i;
 const generateButton = (page: Page, fromModule: number) =>
   page.getByRole("button", { name: new RegExp(`^Generate Module ${fromModule + 1} from Module ${fromModule}$`) });
@@ -92,6 +93,59 @@ async function editorText(page: Page) {
   });
 }
 
+async function setInlineNoteCaret(page: Page, offset: number) {
+  await inlineNoteInput(page).evaluate((node, target) => {
+    if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
+      const position = Math.max(0, Math.min(node.value.length, target));
+      node.focus();
+      node.setSelectionRange(position, position);
+      return;
+    }
+    const root = node as HTMLElement;
+    const textNode = root.firstChild ?? root;
+    const length = textNode.textContent?.length ?? 0;
+    const range = document.createRange();
+    range.setStart(textNode, Math.max(0, Math.min(length, target)));
+    range.collapse(true);
+    const selection = window.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(range);
+  }, offset);
+}
+
+async function inlineNoteCaret(page: Page) {
+  return inlineNoteInput(page).evaluate((node) => {
+    if (node instanceof HTMLTextAreaElement || node instanceof HTMLInputElement) {
+      return [node.selectionStart ?? 0, node.selectionEnd ?? 0];
+    }
+    const root = node as HTMLElement;
+    const selection = window.getSelection();
+    if (!selection?.rangeCount) return [0, 0];
+    const range = selection.getRangeAt(0);
+    const offsetFor = (container: Node, offset: number) => {
+      let count = 0;
+      let found = false;
+      const walk = (current: Node) => {
+        if (found) return;
+        if (current === container) {
+          if (current.nodeType === Node.TEXT_NODE) count += offset;
+          else count += Array.from(current.childNodes).slice(0, offset).reduce((sum, child) => sum + (child.textContent?.length ?? 0), 0);
+          found = true;
+          return;
+        }
+        if (current.nodeType === Node.TEXT_NODE) {
+          count += current.textContent?.length ?? 0;
+          return;
+        }
+        for (const child of Array.from(current.childNodes)) walk(child);
+      };
+      walk(root);
+      return count;
+    };
+    return [offsetFor(range.startContainer, range.startOffset), offsetFor(range.endContainer, range.endOffset)];
+  });
+}
+
 async function expectEditorText(page: Page, expected: string | RegExp) {
   const value = await editorText(page);
   if (typeof expected === "string") expect(value).toBe(expected);
@@ -172,6 +226,11 @@ test("toolbar hierarchy stays visible without global page scroll", async ({ page
     { width: 1280, height: 720 }
   ]) {
     await page.setViewportSize(viewport);
+    await expect(page.getByTestId("action-toolbar")).toBeVisible();
+    await expect(page.getByTestId("workflow-generate")).toBeVisible();
+    await expect(page.getByTestId("bottom-action-bar")).toBeVisible();
+    await expect(page.getByTestId("highlight-key")).toBeVisible();
+    await expect(page.getByTestId("module-progress")).toBeVisible();
     const metrics = await page.evaluate(() => {
       const toolbar = document.querySelector('[data-testid="action-toolbar"]') as HTMLElement;
       const generate = document.querySelector('[data-testid="workflow-generate"]') as HTMLElement;
@@ -288,7 +347,7 @@ test("student can edit paragraphs, add a patch, and insert a manual citation", a
 
   await textEditor.focus();
   await page.keyboard.press("Control+Enter");
-  const patchBox = page.getByPlaceholder("Add a note for EssayCraft");
+  const patchBox = inlineNoteInput(page);
   await expect(patchBox).toBeVisible();
   await patchBox.fill("Make the question more specific for a school policy essay.");
   await page.keyboard.press("Control+Enter");
@@ -767,7 +826,7 @@ test("inline notes drive apply notes preview and preserve text until accepted", 
   await selectEditorRange(page, 0, "Research shows".length);
   await expect(page.getByTestId("assistant-edit-context")).toContainText("Selected range");
   await page.keyboard.press("Control+Enter");
-  const patchBox = page.getByPlaceholder("Add a note for EssayCraft");
+  const patchBox = inlineNoteInput(page);
   await patchBox.fill("This is analysis, not evidence.");
   await page.keyboard.press("Enter");
 
@@ -795,7 +854,7 @@ test("inline notes drive apply notes preview and preserve text until accepted", 
   await selectEditorRange(page, 0, "Research shows".length);
   await expect(page.getByTestId("assistant-edit-context")).toContainText("Selected range");
   await page.keyboard.press("Control+Enter");
-  await page.getByPlaceholder("Add a note for EssayCraft").fill("This is analysis, not evidence. Find a stronger source.");
+  await inlineNoteInput(page).fill("This is analysis, not evidence. Find a stronger source.");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
 
@@ -833,7 +892,7 @@ test("Chinese note input persists and Project Title drives Apply Notes", async (
   await selectEditorRange(page, 0, "Topic: Social media balance".length);
   await page.keyboard.press("Control+Enter");
 
-  const noteInput = page.getByPlaceholder("Add a note for EssayCraft");
+  const noteInput = inlineNoteInput(page);
   await noteInput.pressSequentially("根据我的 title 重写这个 topic");
   await expect(noteInput).toHaveValue("根据我的 title 重写这个 topic");
   await page.waitForTimeout(300);
@@ -858,12 +917,39 @@ test("Chinese note input persists and Project Title drives Apply Notes", async (
   expect(await canonicalModuleText(page)).toBe(original);
 
   await page.getByRole("button", { name: "Accept" }).click();
-  await expect.poll(async () => canonicalModuleText(page)).toContain("Topic: Technology, humanity");
+  await expect.poll(async () => canonicalModuleText(page)).toContain("Topic: Technology vs. Humanity");
   const acceptedState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(acceptedState.modules["1"].text).not.toContain("根据我的 title");
   expect(acceptedState.modules["1"].text).not.toMatch(NOTE_LEAK_RE);
   expect(acceptedState.modules["1"].patches[0].resolved).toBe(true);
   await expect(page.getByTestId("patch-margin-marker")).toHaveCount(0);
+});
+
+test("inline note draft keeps caret through refresh rerender", async ({ page }) => {
+  const original = "Topic: Social media balance\n\nResearch question: How can social media be healthier?";
+  await setEditorText(page, original);
+  await selectEditorRange(page, 0, "Topic: Social media balance".length);
+  await page.keyboard.press("Control+Enter");
+
+  const noteInput = inlineNoteInput(page);
+  await noteInput.fill("alpha beta");
+  await setInlineNoteCaret(page, 5);
+
+  await page.getByRole("button", { name: "Refresh Highlighting" }).click();
+  await expect(page.getByRole("button", { name: "Refresh Highlighting" })).toBeEnabled({ timeout: 20_000 });
+  await expect(noteInput).toHaveValue("alpha beta");
+  await expect.poll(async () => inlineNoteCaret(page)).toEqual([5, 5]);
+
+  await noteInput.pressSequentially(" plus");
+  await expect(noteInput).toHaveValue("alpha plus beta");
+  expect(await canonicalModuleText(page)).toBe(original);
+  await noteInput.press("Control+Enter");
+
+  await expect(page.getByTestId("patch-margin-marker")).toHaveAttribute("title", "alpha plus beta");
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(state.modules["1"].text).toBe(original);
+  expect(state.modules["1"].text).not.toMatch(NOTE_LEAK_RE);
+  expect(state.modules["1"].patches[0].text).toBe("alpha plus beta");
 });
 
 test("inline note tokens do not corrupt normal text, spaces, brackets, or paragraphs", async ({ page }) => {
@@ -877,7 +963,7 @@ test("inline note tokens do not corrupt normal text, spaces, brackets, or paragr
   await setEditorText(page, original);
   await selectEditorRange(page, 0, "Research shows".length);
   await page.keyboard.press("Control+Enter");
-  await page.getByPlaceholder("Add a note for EssayCraft").fill("Use a source with ] bracket and [citation needed] marker.");
+  await inlineNoteInput(page).fill("Use a source with ] bracket and [citation needed] marker.");
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
   await expect.poll(async () => {
@@ -924,7 +1010,7 @@ test("Chinese title note visibly revises topic only after Accept", async ({ page
   await setEditorText(page, original);
   await selectEditorRange(page, 0, "Topic: Social media balance".length);
   await page.keyboard.press("Control+Enter");
-  await page.getByPlaceholder("Add a note for EssayCraft").fill("标题可以更长一点");
+  await inlineNoteInput(page).fill("标题可以更长一点");
   await page.keyboard.press("Enter");
 
   await expect(page.getByTestId("patch-marker")).toBeVisible();
@@ -949,7 +1035,7 @@ test("Chinese question note revises research question in preview", async ({ page
   const start = original.indexOf(question);
   await selectEditorRange(page, start, start + question.length);
   await page.keyboard.press("Control+Enter");
-  await page.getByPlaceholder("Add a note for EssayCraft").fill("为什么我觉得这个问题看起来有点呆板呢？意思就是，没有太多新意。");
+  await inlineNoteInput(page).fill("为什么我觉得这个问题看起来有点呆板呢？意思就是，没有太多新意。");
   await page.keyboard.press("Enter");
 
   await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
@@ -965,7 +1051,7 @@ test("Apply Notes blocks stale preview after manual text edits", async ({ page }
   await setEditorText(page, original);
   await selectEditorRange(page, 0, "Topic: Social media balance".length);
   await page.keyboard.press("Control+Enter");
-  await page.getByPlaceholder("Add a note for EssayCraft").fill("Make this title longer.");
+  await inlineNoteInput(page).fill("Make this title longer.");
   await page.keyboard.press("Enter");
 
   await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
@@ -1043,7 +1129,7 @@ test("full project JSON export includes six modules and all metadata groups", as
   await setEditorText(page, "Topic: Export test.\n\nWorking thesis: Export should preserve project metadata.");
   await selectEditorRange(page, 0, "Topic: Export test.".length);
   await page.keyboard.press("Control+Enter");
-  await page.getByPlaceholder("Add a note for EssayCraft").fill("This patch should be exported.");
+  await inlineNoteInput(page).fill("This patch should be exported.");
   await page.keyboard.press("Enter");
 
   await page.getByRole("tab", { name: /Snapshots/i }).click();
@@ -1219,7 +1305,7 @@ test("refresh API mock uses Project Title without inserting note text", async ({
   const body = await response.json();
   expect(body.kind).toBe("revision");
   expect(body.sourceText).toBe(text);
-  expect(body.proposedText).toContain("Topic: Technology, humanity");
+  expect(body.proposedText).toContain("Topic: Technology vs. Humanity");
   expect(body.proposedText).not.toContain("根据我的 title");
   expect(body.proposedText).not.toMatch(NOTE_LEAK_RE);
 });
@@ -1279,6 +1365,7 @@ test("assist API mock separates Explain and Analyze as read-only inspect respons
   expect(explainBody.actionType).toBe("highlight-explanation");
   expect(explainBody.reply).toContain("Technology has always changed");
   expect(explainBody.reply).toMatch(/Citation|source|citation/i);
+  expect(explainBody.reply).toMatch(/source cards|source-support/i);
   expect(explainBody.proposedText).toBeUndefined();
 
   const analyze = await request.post("/api/assist", {
@@ -1302,5 +1389,6 @@ test("assist API mock separates Explain and Analyze as read-only inspect respons
   expect(analyzeBody.kind).toBe("inspect");
   expect(analyzeBody.actionType).toBe("analyze-selection");
   expect(analyzeBody.reply).toMatch(/这句话|建议/);
+  expect(analyzeBody.reply).toMatch(/Technology vs\. Humanity|human agency|human judgment/);
   expect(analyzeBody.proposedText).toBeUndefined();
 });
