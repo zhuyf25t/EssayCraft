@@ -501,13 +501,44 @@ test("empty source module shows a friendly Generate Next error", async ({ page }
 test("refresh highlighting preserves exact editor text", async ({ page }) => {
   const original = "Topic: Citation testing.\n\nResearch shows an important pattern [citation needed].\n\nThis paragraph must stay exactly the same.";
   await setEditorText(page, original);
+  await page.route("**/api/refresh", async (route) => {
+    await page.waitForTimeout(150);
+    await route.continue();
+  });
   await page.getByRole("button", { name: "Refresh Highlighting" }).click();
+  await expect(page.getByRole("button", { name: "Refreshing" })).toBeVisible();
   await expectEditorText(page, original);
+  await expect(page.getByTestId("refresh-result-card")).toContainText("Refresh result", { timeout: 20_000 });
+  await expect(page.getByTestId("refresh-result-card")).toContainText("labels refreshed");
+  await expect(page.getByTestId("refresh-result-card")).toContainText("topic, research question, thesis");
   const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(state.modules["1"].text).toBe(original);
   expect(state.modules["1"].annotations.every((annotation: { start: number; end: number; text: string }) =>
     state.modules["1"].text.slice(annotation.start, annotation.end) === annotation.text
   )).toBe(true);
+});
+
+test("Module 6 refresh shows a visible final review checklist", async ({ page }) => {
+  const finalDraft = `Technology has always changed the way human beings live, but the central question is whether progress protects human agency.
+
+This essay argues that technology should serve humanity by supporting human judgment, strengthening education, and limiting harmful design choices.
+
+One reason is that digital tools can support learning when students use them intentionally. However, broad claims about student outcomes still need evidence [citation needed].
+
+Overall, the final version should return to the thesis and explain why responsible design matters.`;
+  await moduleButton(page, 6, "Final Review / Conclusion / Export").click();
+  await setEditorText(page, finalDraft);
+  await page.getByRole("button", { name: "Refresh Highlighting" }).click();
+
+  const card = page.getByTestId("refresh-result-card");
+  await expect(card).toContainText("Final review ready", { timeout: 20_000 });
+  const checklist = page.getByTestId("module-review-checklist");
+  for (const item of ["Content", "Structure", "Clarity", "Style", "Proofreading", "Citations / References", "Conclusion"]) {
+    await expect(checklist).toContainText(item);
+  }
+  await expect(card).toContainText("citation-needed");
+  await expect(card).toContainText(/source cards|references/i);
+  expect(await canonicalModuleText(page, 6)).toBe(finalDraft);
 });
 
 test("Translate preview shows Chinese mock output without changing the document", async ({ page }) => {
@@ -621,16 +652,15 @@ test("Edit mode explains active highlight without confidence or relabel controls
 
   await page.getByRole("button", { name: "Explain highlight" }).click();
   await expect(page.getByTestId("assistant-highlight-explanation")).toContainText("Highlight explanation", { timeout: 20_000 });
-  await expect(page.getByTestId("assistant-highlight-explanation")).toContainText(/background|thesis|highlight/i);
+  await expect(page.getByTestId("assistant-highlight-explanation")).toContainText("Topic: Social media balance");
+  await expect(page.getByTestId("assistant-highlight-explanation")).toContainText(/Background|highlight/i);
   await expect(page.getByTestId("assistant-highlight-explanation").getByRole("button", { name: "Accept" })).toHaveCount(0);
   await expectEditorText(page, /Topic: Social media balance/);
 
   await setEditorText(page, "Plain draft without refreshed annotations.");
   await editor(page).click();
-  await expect(page.getByRole("button", { name: "Explain highlight" })).toBeEnabled();
-  await page.getByRole("button", { name: "Explain highlight" }).click();
-  await expect(page.getByTestId("assistant-highlight-explanation")).toContainText("Highlight explanation", { timeout: 20_000 });
-  await expect(page.getByTestId("assistant-highlight-explanation").getByRole("button", { name: "Accept" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Explain highlight" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Explain highlight" })).toHaveAttribute("title", /Click a highlighted sentence first/);
 });
 
 test("assistant uses selection context and dismisses preview without changing text", async ({ page }) => {
@@ -645,6 +675,7 @@ test("assistant uses selection context and dismisses preview without changing te
   await expect(page.getByTestId("assistant-edit-context")).toContainText("(compact)");
   await expect(page.getByRole("button", { name: "Rewrite", exact: true })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Make academic" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Analyze" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Translate" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Explain highlight" })).toBeVisible();
   const academicButtonStyle = await page.getByRole("button", { name: "Make academic" }).evaluate((node) => {
@@ -659,6 +690,21 @@ test("assistant uses selection context and dismisses preview without changing te
   await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Accept" })).toBeVisible();
   await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Copy" })).toBeVisible();
   await page.getByRole("button", { name: "Reject" }).click();
+  await expectEditorText(page, original);
+});
+
+test("Analyze uses instruction language and is read-only", async ({ page }) => {
+  const original = "Technology has always changed the way human beings live.";
+  await setEditorText(page, original);
+  await selectEditorRange(page, 0, original.length);
+  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("你评价一下这句话。用中文。");
+  await page.getByRole("button", { name: "Analyze" }).click();
+
+  const analysis = page.getByTestId("assistant-analysis-result");
+  await expect(analysis).toContainText("Analysis", { timeout: 20_000 });
+  await expect(analysis).toContainText(/这句话|建议/);
+  await expect(analysis.getByRole("button", { name: "Accept" })).toHaveCount(0);
+  await expect(analysis.getByRole("button", { name: "Copy" })).toBeVisible();
   await expectEditorText(page, original);
 });
 
@@ -1176,4 +1222,85 @@ test("refresh API mock uses Project Title without inserting note text", async ({
   expect(body.proposedText).toContain("Topic: Technology, humanity");
   expect(body.proposedText).not.toContain("根据我的 title");
   expect(body.proposedText).not.toMatch(NOTE_LEAK_RE);
+});
+
+test("refresh API mock returns Module 6 final review without rewriting text", async ({ request }) => {
+  const text = `Technology should serve humanity by protecting human agency.
+
+The essay argues that schools, designers, and users share responsibility for ethical technology use.
+
+One evidence claim still needs source support [citation needed].
+
+Overall, the conclusion should return to the thesis and explain why the issue matters.`;
+  const response = await request.post("/api/refresh", {
+    data: {
+      topic: "Technology vs. Humanity.",
+      projectTitle: "Technology vs. Humanity.",
+      moduleNumber: 6,
+      text,
+      annotations: [],
+      patches: [],
+      sources: []
+    }
+  });
+
+  expect(response.status()).toBe(200);
+  const body = await response.json();
+  expect(body.kind).toBe("moduleReview");
+  expect(body.proposedText).toBeUndefined();
+  expect(body.reviewSummary).toContain("argumentative direction");
+  for (const label of ["Content", "Structure", "Clarity", "Style", "Proofreading", "Citations / References", "Conclusion"]) {
+    expect(JSON.stringify(body.reviewChecklist)).toContain(label);
+  }
+  expect(body.citationGaps).toBeGreaterThanOrEqual(1);
+});
+
+test("assist API mock separates Explain and Analyze as read-only inspect responses", async ({ request }) => {
+  const text = "Technology has always changed the way human beings live.";
+  const explain = await request.post("/api/assist", {
+    data: {
+      topic: "Technology vs. Humanity.",
+      projectTitle: "Technology vs. Humanity.",
+      moduleNumber: 6,
+      moduleTitle: "Final Review / Conclusion / Export",
+      text,
+      annotations: [{ id: "ann-cite", start: 0, end: text.length, text, label: "citation", confidence: 0.8, comment: "May need support." }],
+      patches: [],
+      sources: [],
+      selectedRange: { start: 0, end: text.length },
+      selectedText: text,
+      action: "Explain this highlight",
+      history: []
+    }
+  });
+  expect(explain.status()).toBe(200);
+  const explainBody = await explain.json();
+  expect(explainBody.kind).toBe("inspect");
+  expect(explainBody.actionType).toBe("highlight-explanation");
+  expect(explainBody.reply).toContain("Technology has always changed");
+  expect(explainBody.reply).toMatch(/Citation|source|citation/i);
+  expect(explainBody.proposedText).toBeUndefined();
+
+  const analyze = await request.post("/api/assist", {
+    data: {
+      topic: "Technology vs. Humanity.",
+      projectTitle: "Technology vs. Humanity.",
+      moduleNumber: 6,
+      moduleTitle: "Final Review / Conclusion / Export",
+      text,
+      annotations: [],
+      patches: [],
+      sources: [],
+      selectedRange: { start: 0, end: text.length },
+      selectedText: text,
+      action: "Analyze selected text: 你评价一下这句话。用中文。",
+      history: []
+    }
+  });
+  expect(analyze.status()).toBe(200);
+  const analyzeBody = await analyze.json();
+  expect(analyzeBody.kind).toBe("inspect");
+  expect(analyzeBody.actionType).toBe("analyze-selection");
+  expect(analyzeBody.reply).toMatch(/这句话|建议/);
+  expect(analyzeBody.proposedText).toBeUndefined();
 });
