@@ -104,6 +104,11 @@ export function Editor({
   useLayoutEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
+    const previousScrollTop = editor.scrollTop;
+    const restoreEditorScroll = () => {
+      const maxScrollTop = Math.max(0, editor.scrollHeight - editor.clientHeight);
+      editor.scrollTop = Math.max(0, Math.min(previousScrollTop, maxScrollTop));
+    };
     const currentPatchEditor = patchEditorRef.current;
     const shouldRestoreEditorSelection = document.activeElement === editor || selectionTouchesEditor(editor);
     const restoreRange = pendingSelectionRef.current ?? (shouldRestoreEditorSelection ? textRangeFromDomSelection(editor) : null);
@@ -168,10 +173,14 @@ export function Editor({
       return;
     }
 
+    restoreEditorScroll();
+
     if (restoreRange && shouldRestoreEditorSelection) {
       pendingSelectionRef.current = null;
       setDomSelectionFromTextRange(editor, restoreRange);
+      restoreEditorScroll();
     }
+    requestAnimationFrame(restoreEditorScroll);
   }, [
     text,
     annotations,
