@@ -10,6 +10,12 @@ export const moduleButton = (page: Page, moduleNumber: number, title: string) =>
   page.getByTitle(`Module ${moduleNumber}: ${title}`).first();
 
 export async function setEditorText(page: Page, value: string) {
+  const isTextarea = await editor(page).evaluate((node) => node instanceof HTMLTextAreaElement);
+  if (isTextarea) {
+    await editor(page).fill(value);
+    await expect.poll(async () => canonicalModuleText(page)).toBe(value);
+    return;
+  }
   await editor(page).evaluate((node, text) => {
     const root = node as HTMLElement;
     root.textContent = text;
@@ -20,6 +26,21 @@ export async function setEditorText(page: Page, value: string) {
 
 export async function selectEditorRange(page: Page, start: number, end: number) {
   await editor(page).evaluate(async (node, range) => {
+    if (node instanceof HTMLTextAreaElement) {
+      node.focus();
+      const start = Math.max(0, Math.min(node.value.length, Math.min(range.start, range.end)));
+      const end = Math.max(start, Math.min(node.value.length, Math.max(range.start, range.end)));
+      const direction = range.start > range.end ? "backward" : "forward";
+      node.setSelectionRange(start, end, direction);
+      node.dispatchEvent(new Event("select", { bubbles: true }));
+      node.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: null }));
+      document.dispatchEvent(new Event("selectionchange"));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      node.setSelectionRange(start, end, direction);
+      node.dispatchEvent(new Event("select", { bubbles: true }));
+      node.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertText", data: null }));
+      return;
+    }
     const root = node as HTMLElement;
     const positionForOffset = (target: number) => {
       let count = 0;
@@ -91,6 +112,7 @@ export async function canonicalModuleText(page: Page, moduleNumber?: number) {
 
 export async function editorText(page: Page) {
   return editor(page).evaluate((node) => {
+    if (node instanceof HTMLTextAreaElement) return node.value;
     const cleanText = (node as HTMLElement).dataset.cleanText;
     if (cleanText !== undefined) return cleanText;
     const clone = (node as HTMLElement).cloneNode(true) as HTMLElement;

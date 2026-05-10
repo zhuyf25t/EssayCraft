@@ -87,11 +87,12 @@ body {
   flex: 1 1 auto;
   min-height: 0;
   background: #fffefb;
+  overflow: hidden;
 }
 
-.editor-content {
+.editor-content,
+.editor-highlight-content {
   box-sizing: border-box;
-  height: 100%;
   min-height: 0;
   width: 100%;
   padding: 1.1rem 1.25rem;
@@ -102,7 +103,14 @@ body {
   white-space: pre-wrap;
   overflow-wrap: break-word;
   tab-size: 2;
+}
+
+.editor-content {
+  position: relative;
+  z-index: 1;
+  height: 100%;
   outline: none;
+  resize: none;
   overflow: auto;
   color: #172033;
   border: 0;
@@ -110,12 +118,29 @@ body {
   caret-color: #1d4ed8;
 }
 
+.editor-textarea-control {
+  display: block;
+}
+
+.editor-highlight-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.editor-highlight-content {
+  min-height: 100%;
+  color: transparent;
+}
+
 .editor-content::selection {
   background: rgba(96, 165, 250, 0.28);
 }
 
 .highlight-backdrop {
-  color: inherit;
+  color: transparent;
   border-radius: 4px;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;

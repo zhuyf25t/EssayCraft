@@ -1,23 +1,11 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, type ClipboardEvent, type FormEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, type ClipboardEvent, type KeyboardEvent } from "react";
 import type { Annotation, Patch, TextRange } from "@/types/essaycraft";
-import { sentenceRangeAt } from "@/lib/annotations";
+import { normalizeAnnotations, sentenceRangeAt } from "@/lib/annotations";
+import { LABELS } from "@/lib/labels";
 import { countCharacters, countWords } from "@/lib/sentence";
 import { stripEditorKernelMarkers } from "@/lib/noteKernel";
-import {
-  activeElementInInlineNoteEditor,
-  autosizeInlineNoteInput,
-  noteEditorKey,
-  renderEditorContent,
-  sameOptionalRange,
-  sameRange,
-  serializeEditorDom,
-  selectionTouchesEditor,
-  setDomSelectionFromTextRange,
-  textRangeFromDomSelection,
-  type InlinePatchEditorState
-} from "./editorDom";
 
 type EditorProps = {
   text: string;
@@ -31,256 +19,119 @@ type EditorProps = {
   onActiveSentenceChange: (range: TextRange | undefined) => void;
   onOpenPatch: (range: TextRange) => void;
   onPatchMarkerClick: (patch: Patch) => void;
-  patchEditor?: InlinePatchEditorState;
+  patchEditor?: unknown;
   onPatchSubmit: (text: string) => void;
   onPatchClose: () => void;
   onPatchDelete: (patchId: string) => void;
 };
 
+type HighlightSegment = {
+  key: string;
+  text: string;
+  className: string;
+};
+
+const EMPTY_RANGE: TextRange = { start: 0, end: 0 };
+
 export function Editor({
   text,
   annotations,
-  patches,
   selectedRange,
   activeSentenceRange,
   resetKey,
   onTextChange,
   onSelectionChange,
   onActiveSentenceChange,
-  onOpenPatch,
-  onPatchMarkerClick,
-  patchEditor,
-  onPatchSubmit,
-  onPatchClose,
-  onPatchDelete
+  onOpenPatch
 }: EditorProps) {
-  const editorRef = useRef<HTMLDivElement>(null);
-  const pendingSelectionRef = useRef<TextRange | null>(null);
-  const composingRef = useRef(false);
-  const noteDraftRef = useRef<{ key: string; value: string } | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlightContentRef = useRef<HTMLDivElement>(null);
   const lastResetKeyRef = useRef(resetKey);
-  const patchEditorRef = useRef(patchEditor);
-  patchEditorRef.current = patchEditor;
-  const callbacksRef = useRef({
-    onPatchMarkerClick,
-    onPatchDelete,
-    onPatchSubmit,
-    onPatchClose
-  });
-  callbacksRef.current = {
-    onPatchMarkerClick,
-    onPatchDelete,
-    onPatchSubmit,
-    onPatchClose
-  };
-
-  const patchEditorSignature = patchEditor
-    ? [
-        patchEditor.editingPatchId ?? "new",
-        patchEditor.range.start,
-        patchEditor.range.end,
-        patchEditor.anchorQuote,
-        patchEditor.initialValue
-      ].join("|")
-    : "none";
+  const segments = useMemo(
+    () => buildHighlightSegments(text, annotations, activeSentenceRange),
+    [text, annotations, activeSentenceRange]
+  );
 
   useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const syncNativeSelection = () => {
-      if (activeElementInInlineNoteEditor()) return;
-      if (!editor.contains(document.activeElement) && !selectionTouchesEditor(editor)) return;
-      syncSelectionFromDom();
-    };
-    document.addEventListener("selectionchange", syncNativeSelection);
-    return () => document.removeEventListener("selectionchange", syncNativeSelection);
-  });
-
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    editor.scrollTop = 0;
-    onSelectionChange({ start: 0, end: 0 });
+    const textarea = textareaRef.current;
+    if (!textarea || lastResetKeyRef.current === resetKey) return;
+    lastResetKeyRef.current = resetKey;
+    textarea.scrollTop = 0;
+    textarea.scrollLeft = 0;
+    textarea.setSelectionRange(0, 0);
+    syncHighlightScroll();
+    onSelectionChange(EMPTY_RANGE);
     onActiveSentenceChange(undefined);
-    pendingSelectionRef.current = { start: 0, end: 0 };
   }, [resetKey, onSelectionChange, onActiveSentenceChange]);
 
-  useLayoutEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const shouldResetViewport = lastResetKeyRef.current !== resetKey;
-    lastResetKeyRef.current = resetKey;
-    const previousScrollTop = shouldResetViewport ? 0 : editor.scrollTop;
-    const restoreEditorScroll = () => {
-      const maxScrollTop = Math.max(0, editor.scrollHeight - editor.clientHeight);
-      editor.scrollTop = Math.max(0, Math.min(previousScrollTop, maxScrollTop));
+  function currentRange(): TextRange {
+    const textarea = textareaRef.current;
+    if (!textarea) return EMPTY_RANGE;
+    return {
+      start: Math.max(0, Math.min(textarea.value.length, textarea.selectionStart ?? 0)),
+      end: Math.max(0, Math.min(textarea.value.length, textarea.selectionEnd ?? 0))
     };
-    const currentPatchEditor = patchEditorRef.current;
-    const shouldRestoreEditorSelection = document.activeElement === editor || selectionTouchesEditor(editor);
-    const restoreRange = shouldResetViewport
-      ? { start: 0, end: 0 }
-      : pendingSelectionRef.current ?? (shouldRestoreEditorSelection ? textRangeFromDomSelection(editor) : null);
-    const patchEditorKey = currentPatchEditor ? noteEditorKey(currentPatchEditor) : null;
-    const existingNoteInput = currentPatchEditor
-      ? editor.querySelector<HTMLTextAreaElement>("[data-inline-note-input]")
-      : null;
-    const noteInputSelection = existingNoteInput && patchEditorKey
-      ? {
-          key: patchEditorKey,
-          value: existingNoteInput.value,
-          start: existingNoteInput.selectionStart,
-          end: existingNoteInput.selectionEnd,
-          direction: existingNoteInput.selectionDirection
-        }
-      : null;
+  }
 
-    if (currentPatchEditor && patchEditorKey) {
-      if (noteInputSelection?.key === patchEditorKey) {
-        noteDraftRef.current = { key: patchEditorKey, value: noteInputSelection.value };
-      } else if (noteDraftRef.current?.key !== patchEditorKey) {
-        noteDraftRef.current = { key: patchEditorKey, value: currentPatchEditor.initialValue };
-      }
-    } else {
-      noteDraftRef.current = null;
+  function syncSelectionFromTextarea() {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const range = currentRange();
+    if (range.start !== selectedRange.start || range.end !== selectedRange.end) {
+      onSelectionChange(range);
     }
-    const patchEditorDraftValue = currentPatchEditor && patchEditorKey
-      ? noteDraftRef.current?.value ?? currentPatchEditor.initialValue
-      : "";
-
-    renderEditorContent(editor, {
-      text,
-      annotations,
-      patches,
-      activeSentenceRange,
-      patchEditor: currentPatchEditor && patchEditorKey
-        ? { ...currentPatchEditor, initialValue: patchEditorDraftValue }
-        : undefined,
-      onPatchMarkerClick: (patch) => callbacksRef.current.onPatchMarkerClick(patch),
-      onPatchDelete: (patchId) => callbacksRef.current.onPatchDelete(patchId),
-      onPatchSubmit: (value) => callbacksRef.current.onPatchSubmit(value),
-      onPatchClose: () => callbacksRef.current.onPatchClose(),
-      onPatchDraftChange: (value) => {
-        if (patchEditorKey) noteDraftRef.current = { key: patchEditorKey, value };
-      }
-    });
-
-    if (currentPatchEditor) {
-      const input = editor.querySelector<HTMLTextAreaElement>("[data-inline-note-input]");
-      restoreEditorScroll();
-      requestAnimationFrame(() => {
-        if (!input) return;
-        autosizeInlineNoteInput(input);
-        input.focus({ preventScroll: true });
-        if (noteInputSelection?.key === patchEditorKey) {
-          const start = Math.max(0, Math.min(input.value.length, noteInputSelection.start));
-          const end = Math.max(start, Math.min(input.value.length, noteInputSelection.end));
-          input.setSelectionRange(start, end, noteInputSelection.direction);
-        } else if (!patchEditorDraftValue) {
-          input.select();
-        }
-        restoreEditorScroll();
-      });
-      pendingSelectionRef.current = null;
-      return;
-    }
-
-    restoreEditorScroll();
-
-    if (restoreRange && shouldRestoreEditorSelection) {
-      pendingSelectionRef.current = null;
-      setDomSelectionFromTextRange(editor, restoreRange);
-      restoreEditorScroll();
-    }
-    requestAnimationFrame(restoreEditorScroll);
-  }, [
-    text,
-    annotations,
-    patches,
-    activeSentenceRange,
-    patchEditorSignature,
-    resetKey
-  ]);
-
-  function syncSelectionFromDom() {
-    const editor = editorRef.current;
-    if (!editor || activeElementInInlineNoteEditor()) return;
-    const range = textRangeFromDomSelection(editor);
-    const serialized = serializeEditorDom(editor, patches);
-    const sourceText = serialized.text;
-    if (sourceText !== text) {
-      pendingSelectionRef.current = range;
-      onTextChange(sourceText, serialized.patches);
-    }
-    if (!sameRange(range, selectedRange)) onSelectionChange(range);
     if (range.end > range.start) {
       if (activeSentenceRange) onActiveSentenceChange(undefined);
       return;
     }
-    const sentence = sentenceRangeAt(sourceText, range.start, range.end);
+    const sentence = sentenceRangeAt(textarea.value, range.start, range.end);
     const nextSentence = sentence.end > sentence.start ? sentence : undefined;
-    if (!sameOptionalRange(nextSentence, activeSentenceRange)) onActiveSentenceChange(nextSentence);
+    if (!sameOptionalRange(nextSentence, activeSentenceRange)) {
+      onActiveSentenceChange(nextSentence);
+    }
   }
 
-  function handleInput(event: FormEvent<HTMLDivElement>) {
-    if ((event.target as HTMLElement).closest("[data-inline-note-editor]")) return;
-    if (composingRef.current) return;
-    commitDomChange();
+  function syncHighlightScroll() {
+    const textarea = textareaRef.current;
+    const content = highlightContentRef.current;
+    if (!textarea || !content) return;
+    content.style.transform = `translate(${-textarea.scrollLeft}px, ${-textarea.scrollTop}px)`;
   }
 
-  function commitDomChange() {
-    const editor = editorRef.current;
-    if (!editor) return;
-    const range = textRangeFromDomSelection(editor);
-    pendingSelectionRef.current = range;
-    const serialized = serializeEditorDom(editor, patches);
-    onTextChange(serialized.text, serialized.patches);
+  function replaceSelection(value: string) {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? 0;
+    const end = textarea.selectionEnd ?? start;
+    const nextText = `${textarea.value.slice(0, start)}${value}${textarea.value.slice(end)}`;
+    const nextOffset = start + value.length;
+    onTextChange(nextText);
+    requestAnimationFrame(() => {
+      textarea.focus({ preventScroll: true });
+      textarea.setSelectionRange(nextOffset, nextOffset);
+      syncSelectionFromTextarea();
+      syncHighlightScroll();
+    });
   }
 
-  function insertPlainText(value: string) {
-    const selection = window.getSelection();
-    if (!selection?.rangeCount) return;
-    const range = selection.getRangeAt(0);
-    range.deleteContents();
-    const textNode = document.createTextNode(value);
-    range.insertNode(textNode);
-    range.setStart(textNode, value.length);
-    range.setEnd(textNode, value.length);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    commitDomChange();
-  }
-
-  function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.nativeEvent.isComposing || (event.target as HTMLElement).closest("[data-inline-note-editor]")) return;
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.nativeEvent.isComposing) return;
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
-      const range = textRangeFromDomSelection(event.currentTarget);
+      const range = currentRange();
       onSelectionChange(range);
       onOpenPatch(range);
       return;
     }
-    if (event.key === "Enter") {
+    if (event.key === "Enter" && !event.shiftKey && !event.altKey) {
       event.preventDefault();
-      insertPlainText("\n\n");
-      return;
-    }
-    if (event.key === " ") {
-      event.preventDefault();
-      insertPlainText(" ");
+      replaceSelection("\n\n");
     }
   }
 
-  function copyCleanSelection(event: ClipboardEvent<HTMLDivElement>, shouldCut = false) {
-    if ((event.target as HTMLElement).closest("[data-inline-note-editor]")) return;
-    const editor = editorRef.current;
-    const selection = window.getSelection();
-    if (!editor || !selection?.rangeCount || !selectionTouchesEditor(editor)) return;
-    const range = textRangeFromDomSelection(editor);
-    if (range.end <= range.start) return;
-    const cleanText = serializeEditorDom(editor, patches).text.slice(range.start, range.end);
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
     event.preventDefault();
-    event.clipboardData.setData("text/plain", cleanText);
-    if (shouldCut) insertPlainText("");
+    replaceSelection(stripEditorKernelMarkers(event.clipboardData.getData("text/plain")));
   }
 
   return (
@@ -294,41 +145,38 @@ export function Editor({
       </div>
 
       <div data-testid="editor-stack" className="editor-stack">
-        <div
-          ref={editorRef}
+        <div className="editor-highlight-layer" aria-hidden="true">
+          <div ref={highlightContentRef} className="editor-highlight-content">
+            {segments.length ? segments.map((segment) => (
+              segment.className
+                ? <mark key={segment.key} className={segment.className}>{segment.text}</mark>
+                : <span key={segment.key}>{segment.text}</span>
+            )) : " "}
+          </div>
+        </div>
+        <textarea
+          ref={textareaRef}
           data-testid="editor-textarea"
-          role="textbox"
-          aria-multiline="true"
-          contentEditable
-          suppressContentEditableWarning
+          aria-label="Writing canvas"
+          value={text}
           spellCheck
-          className="editor-content"
-          onBeforeInput={(event) => {
-            const native = event.nativeEvent as InputEvent;
-            if (native.isComposing || composingRef.current || (event.target as HTMLElement).closest("[data-inline-note-editor]")) return;
-            if (native.inputType === "insertText" && native.data) {
-              event.preventDefault();
-              insertPlainText(native.data);
-            }
+          className="editor-content editor-textarea-control"
+          onChange={(event) => {
+            onTextChange(event.currentTarget.value);
+            requestAnimationFrame(syncSelectionFromTextarea);
           }}
-          onCompositionStart={() => {
-            composingRef.current = true;
+          onInput={syncSelectionFromTextarea}
+          onCompositionEnd={(event) => {
+            onTextChange(event.currentTarget.value);
+            requestAnimationFrame(syncSelectionFromTextarea);
           }}
-          onCompositionEnd={() => {
-            composingRef.current = false;
-            requestAnimationFrame(commitDomChange);
-          }}
-          onInput={handleInput}
-          onClick={syncSelectionFromDom}
-          onKeyUp={syncSelectionFromDom}
-          onCopy={(event) => copyCleanSelection(event)}
-          onCut={(event) => copyCleanSelection(event, true)}
-          onPaste={(event) => {
-            if ((event.target as HTMLElement).closest("[data-inline-note-editor]")) return;
-            event.preventDefault();
-            insertPlainText(stripEditorKernelMarkers(event.clipboardData.getData("text/plain")));
-          }}
+          onSelect={syncSelectionFromTextarea}
+          onClick={syncSelectionFromTextarea}
+          onMouseUp={syncSelectionFromTextarea}
+          onKeyUp={syncSelectionFromTextarea}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onScroll={syncHighlightScroll}
         />
       </div>
 
@@ -337,4 +185,46 @@ export function Editor({
       </div>
     </section>
   );
+}
+
+function buildHighlightSegments(text: string, annotations: Annotation[], activeSentenceRange?: TextRange): HighlightSegment[] {
+  if (!text) return [];
+  const sorted = normalizeAnnotations(text, annotations);
+  const points = new Set<number>([0, text.length]);
+  for (const annotation of sorted) {
+    points.add(annotation.start);
+    points.add(annotation.end);
+  }
+  if (activeSentenceRange && activeSentenceRange.end > activeSentenceRange.start) {
+    points.add(activeSentenceRange.start);
+    points.add(activeSentenceRange.end);
+  }
+
+  const ordered = [...points].sort((a, b) => a - b);
+  const segments: HighlightSegment[] = [];
+  for (let index = 0; index < ordered.length - 1; index += 1) {
+    const start = ordered[index];
+    const end = ordered[index + 1];
+    if (end <= start) continue;
+    const value = text.slice(start, end);
+    const decoratable = value.trim().length > 0;
+    const annotation = decoratable ? sorted.find((item) => item.start <= start && item.end >= end) : undefined;
+    const active = decoratable && activeSentenceRange && activeSentenceRange.start <= start && activeSentenceRange.end >= end;
+    const className = [
+      annotation ? `highlight-backdrop ${LABELS[annotation.label].className}` : "",
+      active ? "active-sentence-backdrop" : ""
+    ].filter(Boolean).join(" ");
+    segments.push({
+      key: `${start}-${end}-${annotation?.id ?? "plain"}-${active ? "active" : "rest"}`,
+      text: value,
+      className
+    });
+  }
+  return segments;
+}
+
+function sameOptionalRange(a: TextRange | undefined, b: TextRange | undefined) {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a.start === b.start && a.end === b.end;
 }

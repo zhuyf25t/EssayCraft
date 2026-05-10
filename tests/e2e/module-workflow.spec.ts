@@ -44,11 +44,43 @@ test("editor preserves a normal trailing space while typing", async ({ page }) =
 
   await expect.poll(async () => h.canonicalModuleText(page)).toBe(`${text} `);
   await expect.poll(async () => h.editor(page).evaluate((node) => {
-    const selection = window.getSelection();
-    if (!selection?.rangeCount) return -1;
-    const range = selection.getRangeAt(0);
-    return node.contains(range.startContainer) ? range.startOffset : -1;
+    if (!(node instanceof HTMLTextAreaElement)) return -1;
+    return node.selectionStart;
   })).toBeGreaterThan(0);
+});
+
+test("editor keeps native textarea selection, deletion, and Chinese input stable", async ({ page }) => {
+  const text = "Topic: Technology\n\nResearch question: What should humanity do?\n\nWorking thesis: Technology needs human judgment.";
+  await h.setEditorText(page, text);
+
+  const questionStart = text.indexOf("Research question");
+  const questionEnd = text.indexOf("\n\nWorking thesis");
+  await h.selectEditorRange(page, questionEnd, questionEnd);
+  await page.keyboard.down("Shift");
+  for (let index = 0; index < 12; index += 1) await page.keyboard.press("ArrowLeft");
+  await page.keyboard.up("Shift");
+  const selectedLength = await h.editor(page).evaluate((node) => {
+    if (!(node instanceof HTMLTextAreaElement)) return 0;
+    return Math.abs(node.selectionEnd - node.selectionStart);
+  });
+  expect(selectedLength).toBeGreaterThan(1);
+
+  await h.selectEditorRange(page, text.indexOf("Technology needs"), text.indexOf("Technology needs") + "Technology".length);
+  await page.keyboard.type("人文");
+  await expect.poll(async () => h.canonicalModuleText(page)).toContain("人文 needs human judgment.");
+
+  const beforeDelete = await h.canonicalModuleText(page);
+  const humanStart = beforeDelete.indexOf("人文");
+  await h.selectEditorRange(page, humanStart, humanStart + 2);
+  await page.keyboard.press("Backspace");
+  await expect.poll(async () => h.canonicalModuleText(page)).not.toContain("人文");
+
+  await h.selectEditorRange(page, questionEnd, questionStart);
+  const reverseSelected = await h.editor(page).evaluate((node) => {
+    if (!(node instanceof HTMLTextAreaElement)) return "";
+    return node.value.slice(node.selectionStart, node.selectionEnd);
+  });
+  expect(reverseSelected).toContain("Research question");
 });
 
 test("source needs controls are preview-only while source editing is locked", async ({ page }) => {
