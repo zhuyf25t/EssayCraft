@@ -664,16 +664,18 @@ test("assistant uses selection context and dismisses preview without changing te
 
 test("rewrite follows English and Chinese length instructions without meta text", async ({ page }) => {
   const original = "Research question: How can students use AI responsibly?";
+  await page.getByLabel("Project Title").fill("Technology vs. Humanity.");
   await setEditorText(page, original);
   await selectEditorRange(page, 0, original.length);
 
-  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("可以把问题写得更长一点");
+  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("可以把问题写得更长一点，并且结合 project title");
   await page.getByRole("button", { name: "Rewrite", exact: true }).click();
   await expect(page.getByTestId("assistant-edit-preview")).toContainText("Revision preview", { timeout: 20_000 });
 
   const proposed = await page.getByTestId("assistant-edit-preview").locator("p").nth(1).innerText();
   expect(proposed.length).toBeGreaterThan(original.length);
   expect(proposed).toContain("Research question:");
+  expect(proposed).toMatch(/technolog|human/i);
   for (const banned of [
     "A more academic version could state",
     "could state:",
@@ -776,6 +778,46 @@ test("inline notes drive apply notes preview and preserve text until accepted", 
   await expect.poll(async () => canonicalModuleText(page)).toBe(original);
   const undoState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(undoState.modules["1"].patches[0].resolved).toBe(false);
+});
+
+test("Chinese note input persists and Project Title drives Apply Notes", async ({ page }) => {
+  const original = "Topic: Social media balance\n\nResearch question: How can social media be healthier?";
+  await page.getByLabel("Project Title").fill("Technology vs. Humanity.");
+  await setEditorText(page, original);
+  await selectEditorRange(page, 0, "Topic: Social media balance".length);
+  await page.keyboard.press("Control+Enter");
+
+  const noteInput = page.getByPlaceholder("Add a note for EssayCraft");
+  await noteInput.pressSequentially("根据我的 title 重写这个 topic");
+  await expect(noteInput).toHaveValue("根据我的 title 重写这个 topic");
+  await page.waitForTimeout(300);
+  await expect(noteInput).toHaveValue("根据我的 title 重写这个 topic");
+  expect(await canonicalModuleText(page)).toBe(original);
+  expect(await canonicalModuleText(page)).not.toContain("根据我的 title");
+  await page.getByTestId("inline-patch-editor").getByRole("button", { name: "Save" }).click();
+
+  await expect(page.getByTestId("patch-margin-marker")).toHaveAttribute("title", "根据我的 title 重写这个 topic");
+  const stateAfterSave = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(stateAfterSave.modules["1"].text).toBe(original);
+  expect(stateAfterSave.modules["1"].text).not.toMatch(NOTE_LEAK_RE);
+  expect(stateAfterSave.modules["1"].patches[0].text).toBe("根据我的 title 重写这个 topic");
+
+  await page.getByTestId("patch-margin-marker").click();
+  await expect(noteInput).toHaveValue("根据我的 title 重写这个 topic");
+  await page.getByTestId("inline-patch-editor").getByRole("button", { name: "Save" }).click();
+
+  await page.getByRole("button", { name: "Apply Notes & Refresh" }).click();
+  await expect(page.getByTestId("apply-notes-preview")).toContainText("Technology", { timeout: 20_000 });
+  await expect(page.getByTestId("apply-notes-preview")).toContainText(/humanity/i);
+  expect(await canonicalModuleText(page)).toBe(original);
+
+  await page.getByRole("button", { name: "Accept" }).click();
+  await expect.poll(async () => canonicalModuleText(page)).toContain("Topic: Technology, humanity");
+  const acceptedState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(acceptedState.modules["1"].text).not.toContain("根据我的 title");
+  expect(acceptedState.modules["1"].text).not.toMatch(NOTE_LEAK_RE);
+  expect(acceptedState.modules["1"].patches[0].resolved).toBe(true);
+  await expect(page.getByTestId("patch-margin-marker")).toHaveCount(0);
 });
 
 test("inline note tokens do not corrupt normal text, spaces, brackets, or paragraphs", async ({ page }) => {
@@ -913,7 +955,7 @@ test("assistant apply snapshots selected replacement and blocks stale ranges", a
     await expect(preview).not.toContainText(banned);
   }
   await page.getByRole("button", { name: "Accept" }).click();
-  await expectEditorText(page, /^Alpha sentence\. young people get beneficial factors\./);
+  await expectEditorText(page, /^Alpha sentence\. young people (get|gain) beneficial factors\./);
   const appliedState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(appliedState.modules["1"].snapshots[0].text).toBe(original);
   await page.keyboard.press("Control+Z");
@@ -1072,4 +1114,66 @@ test("refresh API mock visibly revises naturalness notes", async ({ request }) =
   expect(body.proposedText).not.toBe(sourceText);
   expect(body.proposedText).toContain("individuals, schools, and social media platforms");
   expect(JSON.stringify(body)).not.toMatch(/DeepSeek|debug|AI returned|no API key/i);
+});
+
+test("assist API mock uses Project Title for Chinese rewrite instructions", async ({ request }) => {
+  const selected = "Research question: How can social media be healthier?";
+  const response = await request.post("/api/assist", {
+    data: {
+      topic: "Technology vs. Humanity.",
+      projectTitle: "Technology vs. Humanity.",
+      moduleNumber: 1,
+      moduleTitle: "Topic & Question",
+      text: selected,
+      annotations: [],
+      patches: [],
+      sources: [],
+      selectedRange: { start: 0, end: selected.length },
+      selectedText: selected,
+      action: "根据我的 title 重写，可以把问题写得更长一点",
+      history: []
+    }
+  });
+
+  expect(response.status()).toBe(200);
+  const body = await response.json();
+  expect(body.kind).toBe("edit");
+  expect(body.proposedText).toContain("Research question:");
+  expect(body.proposedText).toMatch(/technolog|human/i);
+  expect(body.proposedText).not.toBe(selected);
+  expect(body.proposedText.length).toBeGreaterThan(selected.length);
+  expect(body.proposedText).not.toMatch(/A more academic version could state|Here is a revised version|The student should|In this context/i);
+});
+
+test("refresh API mock uses Project Title without inserting note text", async ({ request }) => {
+  const text = "Topic: Social media balance\n\nResearch question: How can social media be healthier?";
+  const response = await request.post("/api/refresh", {
+    data: {
+      topic: "Technology vs. Humanity.",
+      projectTitle: "Technology vs. Humanity.",
+      moduleNumber: 1,
+      text,
+      annotations: [],
+      patches: [{
+        id: "patch-title",
+        moduleNumber: 1,
+        anchorStart: 0,
+        anchorEnd: "Topic: Social media balance".length,
+        anchorQuote: "Topic: Social media balance",
+        text: "根据我的 title 重写这个 topic",
+        createdAt: "2026-05-10T00:00:00.000Z",
+        status: "open",
+        resolved: false
+      }],
+      sources: []
+    }
+  });
+
+  expect(response.status()).toBe(200);
+  const body = await response.json();
+  expect(body.kind).toBe("revision");
+  expect(body.sourceText).toBe(text);
+  expect(body.proposedText).toContain("Topic: Technology, humanity");
+  expect(body.proposedText).not.toContain("根据我的 title");
+  expect(body.proposedText).not.toMatch(NOTE_LEAK_RE);
 });
