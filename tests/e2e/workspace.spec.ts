@@ -75,6 +75,13 @@ async function expectEditorAtTop(page: Page) {
   await expect.poll(async () => editor(page).evaluate((node) => Math.round(node.scrollTop))).toBeLessThanOrEqual(2);
 }
 
+async function expectEditorScrollWithin(page: Page, expected: number, tolerance = 4) {
+  await expect.poll(async () => {
+    const current = await editor(page).evaluate((node) => Math.round(node.scrollTop));
+    return Math.abs(current - expected);
+  }).toBeLessThanOrEqual(tolerance);
+}
+
 async function canonicalModuleText(page: Page, moduleNumber?: number) {
   return page.evaluate((mod) => {
     const state = JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}");
@@ -598,6 +605,15 @@ Overall, the final version should return to the thesis and explain why responsib
   await expect(card).toContainText("citation-needed");
   await expect(card).toContainText(/source cards|references/i);
   expect(await canonicalModuleText(page, 6)).toBe(finalDraft);
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  const annotations = state.modules["6"].annotations as Array<{ label: string; text: string }>;
+  const labels = new Set(annotations.map((annotation) => annotation.label));
+  const citationChars = annotations
+    .filter((annotation) => annotation.label === "citation")
+    .reduce((sum, annotation) => sum + annotation.text.length, 0);
+  expect(labels.size).toBeGreaterThan(2);
+  expect(citationChars / finalDraft.length).toBeLessThan(0.6);
+  expect(Math.max(...annotations.map((annotation) => annotation.text.length))).toBeLessThanOrEqual(350);
 });
 
 test("Translate preview shows Chinese mock output without changing the document", async ({ page }) => {
@@ -673,8 +689,8 @@ test("assistant chat mode answers module-level Ask without a preview card", asyn
 
   const messages = page.getByTestId("assistant-chat-messages");
   await expect(messages).toContainText("What do you think of this paragraph?");
-  await expect(messages).toContainText("Your Module 1 has", { timeout: 20_000 });
-  await expect(messages).toContainText("thesis map");
+  await expect(messages).toContainText(/Module 1 .*has|Module 1 currently has/, { timeout: 20_000 });
+  await expect(messages).toContainText(/research question|working thesis|thesis map/i);
   await expect(messages).not.toContainText("I can explain highlights");
   await expect(page.getByTestId("assistant-edit-preview")).toHaveCount(0);
   for (const raw of ["proposedText", "replaceRange", "invalid_type", "Expected string"]) {
@@ -685,6 +701,39 @@ test("assistant chat mode answers module-level Ask without a preview card", asyn
     return el.scrollTop + el.clientHeight >= el.scrollHeight - 6;
   });
   expect(atBottom).toBe(true);
+});
+
+test("assistant chat composer sends on Enter or Ctrl Enter and keeps Shift Enter newline", async ({ page }) => {
+  const composer = page.getByPlaceholder("Ask EssayCraft about this module...");
+  const messages = page.getByTestId("assistant-chat-messages");
+
+  await composer.fill("Line one");
+  await composer.press("Shift+Enter");
+  await composer.pressSequentially("Line two");
+  await expect(composer).toHaveValue("Line one\nLine two");
+  await expect(messages).not.toContainText("Line two");
+
+  await composer.press("Control+Enter");
+  await expect(messages).toContainText("Line one");
+  await expect(messages).toContainText("Line two");
+  await expect(messages).toContainText(/Module 1|current module text/i, { timeout: 20_000 });
+
+  await composer.fill("Plain Enter sends");
+  await composer.press("Enter");
+  await expect(messages).toContainText("Plain Enter sends");
+});
+
+test("assistant chat answers Chinese contextual questions instead of a template", async ({ page }) => {
+  const composer = page.getByPlaceholder("Ask EssayCraft about this module...");
+  const messages = page.getByTestId("assistant-chat-messages");
+
+  await composer.fill("为什么这个 research question 有点弱？用中文。");
+  await composer.press("Enter");
+
+  await expect(messages).toContainText("为什么这个 research question 有点弱？", { timeout: 20_000 });
+  await expect(messages).toContainText(/研究问题|方向清楚|责任|题目/);
+  await expect(messages).not.toContainText("I can explain highlights");
+  await expect(page.getByTestId("assistant-edit-preview")).toHaveCount(0);
 });
 
 test("clicking a sentence activates Edit selection mode", async ({ page }) => {
@@ -733,15 +782,29 @@ test("assistant uses selection context and dismisses preview without changing te
   await expect(page.getByTestId("assistant-edit-context")).toContainText(`${original.length} chars`);
   await expect(page.getByTestId("assistant-edit-context")).toContainText("(compact)");
   await expect(page.getByRole("button", { name: "Rewrite", exact: true })).toBeEnabled();
-  await expect(page.getByRole("button", { name: "Make academic" })).toBeEnabled();
+  await expect(page.getByRole("button", { name: "Academic" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Analyze" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Translate" })).toBeEnabled();
   await expect(page.getByRole("button", { name: "Explain highlight" })).toBeVisible();
-  const academicButtonStyle = await page.getByRole("button", { name: "Make academic" }).evaluate((node) => {
+  const rewriteButtonStyle = await page.getByRole("button", { name: "Rewrite", exact: true }).evaluate((node) => {
     const style = getComputedStyle(node as HTMLElement);
     return { background: style.backgroundColor, color: style.color };
   });
-  expect(academicButtonStyle.background).not.toBe("rgb(255, 255, 255)");
+  const academicButtonStyle = await page.getByRole("button", { name: "Academic" }).evaluate((node) => {
+    const style = getComputedStyle(node as HTMLElement);
+    return { background: style.backgroundColor, color: style.color };
+  });
+  const secondaryButtonStyles = await Promise.all(["Analyze", "Translate", "Explain highlight"].map((name) =>
+    page.getByRole("button", { name }).evaluate((node) => {
+      const style = getComputedStyle(node as HTMLElement);
+      return { background: style.backgroundColor, color: style.color };
+    })
+  ));
+  expect(academicButtonStyle).toEqual(rewriteButtonStyle);
+  for (const style of secondaryButtonStyles) {
+    expect(style.background).toBe("rgb(255, 255, 255)");
+    expect(style.color).not.toBe(rewriteButtonStyle.color);
+  }
   await expect(page.getByRole("button", { name: "Strengthen" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Add note" })).toHaveCount(0);
   await page.getByRole("button", { name: "Rewrite", exact: true }).click();
@@ -750,6 +813,80 @@ test("assistant uses selection context and dismisses preview without changing te
   await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Copy" })).toBeVisible();
   await page.getByRole("button", { name: "Reject" }).click();
   await expectEditorText(page, original);
+});
+
+test("selection containing notes shows clean text and sends notes as instructions", async ({ page }) => {
+  type CapturedAssistPayload = {
+    selectedText?: string;
+    selectedPatches?: Array<{ text: string }>;
+  };
+  const original = "First claim needs support. Second sentence stays clean.";
+  const noteText = "Use this note as an instruction only.";
+  const selected = "First claim needs support. Second sentence";
+  let capturedPayload: CapturedAssistPayload | undefined;
+
+  await setEditorText(page, original);
+  await selectEditorRange(page, 0, "First claim".length);
+  await page.keyboard.press("Control+Enter");
+  await inlineNoteInput(page).fill(noteText);
+  await inlineNoteInput(page).press("Control+Enter");
+
+  await selectEditorRange(page, 0, selected.length);
+  const context = page.getByTestId("assistant-edit-context");
+  await expect(context).toContainText("Selected range");
+  await expect(context).toContainText("1 note");
+  await expect(context).toContainText(selected);
+  await expect(context).not.toContainText(noteText);
+
+  await page.route("**/api/assist", async (route) => {
+    capturedPayload = JSON.parse(route.request().postData() ?? "{}") as CapturedAssistPayload;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        kind: "inspect",
+        title: "Analysis",
+        actionType: "analyze-selection",
+        reply: "Selection is clean.",
+        annotations: [],
+        warnings: [],
+        providerMode: "mock"
+      })
+    });
+  });
+
+  await page.getByRole("button", { name: "Analyze" }).click();
+  await expect(page.getByTestId("assistant-analysis-result")).toContainText("Selection is clean.");
+  expect(capturedPayload?.selectedText).toBe(selected);
+  expect(capturedPayload?.selectedText).not.toContain(noteText);
+  expect(capturedPayload?.selectedPatches).toHaveLength(1);
+  expect(capturedPayload?.selectedPatches?.[0].text).toBe(noteText);
+});
+
+test("accepted rewrite resolves notes inside the selected range", async ({ page }) => {
+  const original = "Research question: How can students use AI responsibly?";
+  await page.getByLabel("Project Title").fill("Technology vs. Humanity.");
+  await setEditorText(page, original);
+  await selectEditorRange(page, 0, original.length);
+  await page.keyboard.press("Control+Enter");
+  await inlineNoteInput(page).fill("可以把问题写得更长一点");
+  await page.keyboard.press("Enter");
+
+  await selectEditorRange(page, 0, original.length);
+  await expect(page.getByTestId("assistant-edit-context")).toContainText("1 note included");
+  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("结合 project title");
+  await page.getByRole("button", { name: "Rewrite", exact: true }).click();
+  await expect(page.getByTestId("assistant-edit-preview")).toContainText("Revision preview", { timeout: 20_000 });
+  await expect(page.getByTestId("assistant-edit-preview")).not.toContainText("可以把问题写得更长一点");
+  const proposed = await page.getByTestId("assistant-edit-preview").locator("p").nth(1).innerText();
+  expect(proposed.length).toBeGreaterThan(original.length);
+  expect(proposed).toMatch(/technolog|human/i);
+
+  await page.getByRole("button", { name: "Accept" }).click();
+  await expect.poll(async () => canonicalModuleText(page)).not.toBe(original);
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(state.modules["1"].text).not.toContain("可以把问题写得更长一点");
+  expect(state.modules["1"].patches[0].resolved).toBe(true);
 });
 
 test("Analyze uses instruction language and is read-only", async ({ page }) => {
@@ -950,6 +1087,40 @@ test("inline note draft keeps caret through refresh rerender", async ({ page }) 
   expect(state.modules["1"].text).toBe(original);
   expect(state.modules["1"].text).not.toMatch(NOTE_LEAK_RE);
   expect(state.modules["1"].patches[0].text).toBe("alpha plus beta");
+});
+
+test("inline note save and Escape preserve editor scroll", async ({ page }) => {
+  const original = Array.from({ length: 60 }, (_, index) => `Paragraph ${index + 1}. Social media study habits need careful revision.`).join("\n\n");
+  const anchor = "Paragraph 36. Social media";
+  const start = original.indexOf(anchor);
+  const stableScrollTop = 520;
+
+  await setEditorText(page, original);
+  await selectEditorRange(page, start, start + anchor.length);
+  await page.keyboard.press("Control+Enter");
+  await inlineNoteInput(page).fill("Keep the source request focused.");
+  await editor(page).evaluate((node, value) => {
+    node.scrollTop = value;
+    node.dispatchEvent(new Event("scroll"));
+  }, stableScrollTop);
+  const beforeSave = await editor(page).evaluate((node) => Math.round(node.scrollTop));
+
+  await inlineNoteInput(page).press("Control+Enter");
+  await expect(page.getByTestId("patch-margin-marker")).toHaveAttribute("title", "Keep the source request focused.");
+  await expectEditorScrollWithin(page, beforeSave);
+
+  await page.getByTestId("patch-margin-marker").click();
+  await expect(inlineNoteInput(page)).toHaveValue("Keep the source request focused.");
+  await editor(page).evaluate((node, value) => {
+    node.scrollTop = value;
+    node.dispatchEvent(new Event("scroll"));
+  }, stableScrollTop);
+  const beforeEscape = await editor(page).evaluate((node) => Math.round(node.scrollTop));
+
+  await inlineNoteInput(page).press("Escape");
+  await expect(page.getByTestId("inline-patch-editor")).toHaveCount(0);
+  await expectEditorScrollWithin(page, beforeEscape);
+  expect(await canonicalModuleText(page)).toBe(original);
 });
 
 test("inline note tokens do not corrupt normal text, spaces, brackets, or paragraphs", async ({ page }) => {
