@@ -89,8 +89,7 @@ body {
   background: #fffefb;
 }
 
-.editor-backdrop,
-.editor-textarea {
+.editor-content {
   box-sizing: border-box;
   height: 100%;
   min-height: 0;
@@ -103,35 +102,15 @@ body {
   white-space: pre-wrap;
   overflow-wrap: break-word;
   tab-size: 2;
-}
-
-.editor-backdrop {
-  pointer-events: none;
-  position: absolute;
-  inset: 0;
-  z-index: 2;
+  outline: none;
   overflow: auto;
   color: #172033;
-  user-select: none;
-}
-
-.editor-textarea {
-  position: relative;
-  z-index: 1;
-  display: block;
-  resize: none;
   border: 0;
   background: transparent;
-  color: transparent;
   caret-color: #1d4ed8;
-  outline: none;
 }
 
-.editor-textarea::placeholder {
-  color: #94a3b8;
-}
-
-.editor-textarea::selection {
+.editor-content::selection {
   background: rgba(96, 165, 250, 0.28);
 }
 

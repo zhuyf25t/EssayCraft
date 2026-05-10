@@ -35,7 +35,7 @@ export function Toolbar(props: ToolbarProps) {
     <div data-testid="action-toolbar" className="relative z-20 shrink-0 border-t border-slate-200 bg-white/95 px-4 py-2">
       <div data-testid="bottom-action-bar" className="mx-auto grid max-w-5xl grid-cols-[minmax(8rem,1fr)_minmax(18rem,2fr)_minmax(8rem,1fr)_minmax(8rem,1fr)] items-center gap-2">
         <button className="btn-secondary whitespace-nowrap px-3 py-2 text-sm" onClick={props.onBack} disabled={props.currentModule <= 1 || props.loading}>
-          ← Back
+          Back
         </button>
 
         <button
@@ -49,7 +49,7 @@ export function Toolbar(props: ToolbarProps) {
             ? `Generating Module ${props.currentModule + 1}...`
             : finalModule
               ? "Finalize / Export"
-              : `Next: Generate Module ${props.currentModule + 1} from Module ${props.currentModule} →`}
+              : `Generate Module ${props.currentModule + 1} from Module ${props.currentModule}`}
         </button>
 
         <button className="btn-secondary whitespace-nowrap px-3 py-2 text-sm" onClick={props.onSaveSnapshot} disabled={props.loading}>

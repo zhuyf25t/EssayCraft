@@ -5,12 +5,12 @@ import { moduleDisplayStatus, moduleStatusTone, type ModuleDisplayStatus } from 
 
 const MODULES: ModuleNumber[] = [1, 2, 3, 4, 5, 6];
 const MODULE_ICONS: Record<ModuleNumber, string> = {
-  1: "\u{1F4A1}",
-  2: "\u{1F50D}",
-  3: "\u2630",
-  4: "\u270E",
-  5: "\u201C",
-  6: "\u2691"
+  1: "I",
+  2: "R",
+  3: "O",
+  4: "D",
+  5: "C",
+  6: "F"
 };
 
 export function ModuleSidebar({
