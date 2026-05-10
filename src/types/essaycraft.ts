@@ -177,6 +177,7 @@ export type AssistRequest = {
   sources: SourceCard[];
   selectedRange?: TextRange;
   selectedText?: string;
+  selectedPatches?: Patch[];
   action: string;
   history?: AssistantMessage[];
 };

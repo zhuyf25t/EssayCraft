@@ -1,11 +1,14 @@
 ﻿import { NextResponse } from "next/server";
 import type { AssistRequest, AssistResponse, AssistResponseLegacy } from "@/types/essaycraft";
 import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
+import { buildCitationCheckReply, buildContextualModuleFeedback } from "@/lib/assistFallback";
 import { buildMockAnnotations, exactAnnotations, normalizeAnnotations } from "@/lib/annotations";
 import { normalizedForNoopCompare, protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { buildAssistMessages } from "@/lib/prompts";
 import { changeRequested, cleanReplacement, rewriteWithInstruction } from "@/lib/rewriteFallback";
 import { assistRequestSchema, assistResponseSchema } from "@/lib/schemas";
+
+export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
@@ -70,7 +73,7 @@ function normalizeAssistInput(input: AssistRequest): AssistRequest {
   const text = protectModuleText(input.text);
   const range = input.selectedRange;
   if (!range || range.end <= range.start) {
-    return { ...input, text, selectedRange: undefined, selectedText: undefined };
+    return { ...input, text, selectedRange: undefined, selectedText: undefined, selectedPatches: [] };
   }
   const safeRange = {
     start: Math.max(0, Math.min(text.length, range.start)),
@@ -80,8 +83,19 @@ function normalizeAssistInput(input: AssistRequest): AssistRequest {
     ...input,
     text,
     selectedRange: safeRange.end > safeRange.start ? safeRange : undefined,
-    selectedText: safeRange.end > safeRange.start ? text.slice(safeRange.start, safeRange.end) : undefined
+    selectedText: safeRange.end > safeRange.start ? text.slice(safeRange.start, safeRange.end) : undefined,
+    selectedPatches: safeRange.end > safeRange.start ? selectedPatchesForRange(input, safeRange) : []
   };
+}
+
+function selectedPatchesForRange(input: AssistRequest, range: { start: number; end: number }) {
+  const submitted = (input.selectedPatches ?? []).filter(isOpenPatch);
+  if (submitted.length) return submitted;
+  return input.patches.filter((patch) => isOpenPatch(patch) && patch.anchorStart < range.end && range.start < patch.anchorEnd);
+}
+
+function isOpenPatch(patch: AssistRequest["patches"][number]) {
+  return !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim();
 }
 
 function validateAssistReplaceRange(input: AssistRequest, response: AssistResponse) {
@@ -179,7 +193,7 @@ function mockAssist(input: AssistRequest): AssistResponse {
       title: "Citation-gap check",
       kind: "inspect",
       actionType: "citation-check",
-      reply: "I found citation-risk areas. Evidence claims should keep [citation needed] until you add real source details in source cards.",
+      reply: buildCitationCheckReply(input),
       explanation: "This check only marks possible citation gaps. It does not invent authors, dates, titles, or references.",
       annotations: normalizeAnnotations(input.text, buildMockAnnotations(input.text).filter((annotation) => annotation.label === "issue" || annotation.text.includes("[citation needed]"))),
       warnings,
@@ -293,11 +307,13 @@ function mockAssist(input: AssistRequest): AssistResponse {
 
   if (isEditAction(action) && range && !action.includes("translate")) {
     const base = selected.trim() || "This point needs clearer explanation.";
+    const noteInstruction = selectedPatchInstruction(input);
+    const actionWithNotes = noteInstruction ? `${input.action}\nSelection notes: ${noteInstruction}` : input.action;
     const proposedText = action.includes("analysis")
       ? strengthenAnalysis(base)
-      : rewriteWithInstruction(base, input.action, input.projectTitle || input.topic);
+      : rewriteWithInstruction(base, actionWithNotes, input.projectTitle || input.topic);
     const safeProposed = normalizedForNoopCompare(proposedText) === normalizedForNoopCompare(base) && changeRequested(input.action)
-      ? rewriteWithInstruction(base, `${input.action} longer project title`, input.projectTitle || input.topic)
+      ? rewriteWithInstruction(base, `${actionWithNotes} longer project title`, input.projectTitle || input.topic)
       : proposedText;
 
     return {
@@ -319,50 +335,19 @@ function mockAssist(input: AssistRequest): AssistResponse {
     title: `Module ${input.moduleNumber} feedback`,
     kind: "chat",
     actionType: "module-feedback",
-    reply: moduleFeedback(input),
-    explanation: "This is module-level feedback because no text is selected. Select a sentence for an applyable rewrite.",
+    reply: buildContextualModuleFeedback(input),
+    explanation: "Chat is read-only. Use Edit for preview/apply changes.",
     annotations: [],
     warnings,
     providerMode: "mock"
   };
 }
 
-function moduleFeedback(input: AssistRequest) {
-  const text = input.text.trim();
-  if (!text) return `Module ${input.moduleNumber} is empty. Add draft text first, then I can comment on structure, clarity, and evidence needs.`;
-  const lower = text.toLowerCase();
-  const projectTitle = normalizeAssistantTitle(input.projectTitle || input.topic);
-  const titleContext = projectTitle ? ` Keep the project title "${projectTitle}" visible as the controlling focus.` : "";
-  if (input.moduleNumber === 1) {
-    const hasTopic = /^topic\s*:/im.test(text);
-    const hasQuestion = /^(research question|question)\s*:/im.test(text);
-    const hasThesis = /(working thesis|thesis)\s*:/i.test(text);
-    const reasons = (text.match(/reason\s*\d+\s*:/gi) ?? []).length;
-    const strengths = [
-      hasTopic ? "clear topic" : "",
-      hasQuestion ? "research question" : "",
-      hasThesis ? "working thesis" : "",
-      reasons ? `${reasons}-part thesis map` : ""
-    ].filter(Boolean).join(", ");
-    return `Your Module 1 has ${strengths || "the beginning of a topic plan"}. The strongest part is that the essay has a focused direction.${titleContext} A useful improvement is to make the thesis map parallel: each reason should use the same grammatical structure and clearly support the thesis.`;
-  }
-  if (input.moduleNumber === 2) {
-    return `Your research plan is moving in the right direction because it separates argument branches from source needs.${titleContext} The next improvement is to make each evidence need specific enough to search for: name the kind of study, report, data, or policy example that would support each branch.`;
-  }
-  if (input.moduleNumber === 3) {
-    return `Your outline gives the draft a workable sequence.${titleContext} The next improvement is to check whether every body paragraph has four parts: a topic sentence, evidence to use, analysis purpose, and a link back to the thesis.`;
-  }
-  if (input.moduleNumber === 4) {
-    const citations = (text.match(/\[citation needed\]/gi) ?? []).length;
-    return `Your draft is readable as essay prose rather than an outline.${titleContext} The main improvement is evidence integration: ${citations ? `${citations} citation-needed marker(s) still need real sources` : "check that factual claims have citations"}. Also make sure each paragraph ends by linking back to the thesis.`;
-  }
-  if (input.moduleNumber === 5) {
-    return `This module should focus on citation integrity.${titleContext} Check that every in-text citation has a matching source card and every source card used in the reference list is actually cited in the draft.`;
-  }
-  if (lower.includes("final review") || input.moduleNumber === 6) {
-    return `Your final review should confirm content, structure, clarity, academic style, proofreading, and citation readiness.${titleContext} If any citation-needed marker remains, the essay is exportable but not submission-ready.`;
-  }
-  return `Your Module ${input.moduleNumber} has usable material.${titleContext} The next improvement is to make the paragraph roles explicit: claim, evidence, analysis, and link back to the thesis.`;
+function selectedPatchInstruction(input: AssistRequest) {
+  return (input.selectedPatches ?? [])
+    .filter((patch) => !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim())
+    .map((patch) => patch.text.trim())
+    .join("\n");
 }
 
 function moduleHighlightSummary(input: AssistRequest) {
@@ -412,21 +397,24 @@ function analyzeSelection(value: string, action: string, input: AssistRequest) {
   const title = normalizeAssistantTitle(input.projectTitle || input.topic);
   const titlePhrase = title ? ` Project title: "${title}".` : "";
   const focus = analysisFocus(trimmed, label, title);
+  const noteCount = (input.selectedPatches ?? []).filter((patch) => !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim()).length;
+  const notePhrase = noteCount ? ` This selection also includes ${noteCount} note${noteCount === 1 ? "" : "s"} that should be treated as revision instructions, not essay text.` : "";
   if (wantsChinese) {
     const role = label ? `它目前更像是“${label}”功能` : "它需要先判断在段落中的功能";
     const chineseFocus = /grammar|语法|proofread|润色/.test(action)
       ? "语法和表达上，建议检查句子是否过长、主谓是否清楚，以及关键词是否重复。"
       : `${focus} 建议把它和中心论点的关系说得更明确，并补足必要的证据或分析。`;
     const chineseTitle = title ? `项目题目是“${title}”。` : "";
-    return `这句话是：“${quote}”。${chineseTitle}${role}。${chineseFocus} 如果你想修改它，可以用 Rewrite 或 Academic；Analyze 只提供评论，不会改正文。`;
+    const chineseNotes = noteCount ? `这个选区还有 ${noteCount} 条 note，它们会作为修改指令，不算正文。` : "";
+    return `这句话是：“${quote}”。${chineseTitle}${role}。${chineseFocus}${chineseNotes} 如果你想修改它，可以用 Rewrite 或 Academic；Analyze 只提供评论，不会改正文。`;
   }
   if (/grammar|proofread|punctuation/i.test(action)) {
-    return `This passage says: "${quote}".${titlePhrase} Grammar check: look for sentence length, clear subject-verb structure, and repeated wording. Analyze is read-only; use Rewrite or Academic for a replacement preview.`;
+    return `This passage says: "${quote}".${titlePhrase} Grammar check: look for sentence length, clear subject-verb structure, and repeated wording.${notePhrase} Analyze is read-only; use Rewrite or Academic for a replacement preview.`;
   }
   if (/critique|evaluate|what do you think/i.test(action)) {
-    return `This passage says: "${quote}".${titlePhrase} ${focus} It should more clearly connect its claim to the essay's main argument and name what evidence or reasoning supports it.`;
+    return `This passage says: "${quote}".${titlePhrase} ${focus} It should more clearly connect its claim to the essay's main argument and name what evidence or reasoning supports it.${notePhrase}`;
   }
-  return `This passage says: "${quote}".${titlePhrase} Its likely role is ${label ?? "a draft sentence"}. ${focus} Check whether it gives context, states a claim, supplies evidence, or explains why the point matters.`;
+  return `This passage says: "${quote}".${titlePhrase} Its likely role is ${label ?? "a draft sentence"}. ${focus} Check whether it gives context, states a claim, supplies evidence, or explains why the point matters.${notePhrase}`;
 }
 
 function analysisFocus(value: string, label: string | undefined, projectTitle: string) {

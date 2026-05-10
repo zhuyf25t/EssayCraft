@@ -159,6 +159,7 @@ export const assistRequestSchema = z.object({
   sources: z.array(sourceCardSchema).default([]),
   selectedRange: rangeSchema.optional(),
   selectedText: z.string().optional(),
+  selectedPatches: z.array(patchSchema).default([]),
   action: z.string(),
   history: z.array(assistantMessageSchema).default([])
 });

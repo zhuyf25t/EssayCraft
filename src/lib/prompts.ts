@@ -1,4 +1,5 @@
 import type { AssistRequest, GenerateNextRequest, RefreshRequest, TranslateRequest } from "@/types/essaycraft";
+import { relevantOpenNotesForAssist } from "@/lib/assistFallback";
 import { getTransitionPrompt } from "@/lib/moduleTransitionPrompts";
 
 export const COURSE_WORKFLOW_CONTEXT = `
@@ -165,6 +166,7 @@ export function buildAssistMessages(input: AssistRequest) {
   const isEdit = Boolean(input.selectedRange) && !isAnalyze && isEditAssistAction(input.action);
   const isInspect = (/(explain|relabel|highlight|citation)/i.test(input.action) || isAnalyze) && !isEdit;
   const expectedKind = isEdit ? "edit" : isInspect ? "inspect" : "chat";
+  const relevantNotes = relevantOpenNotesForAssist(input);
   const system = `You are EssayCraft's AI Assistant. Return strict json only.
 
 Rules:
@@ -193,6 +195,8 @@ Requested action: ${input.action}
 
 Selected range: ${JSON.stringify(input.selectedRange ?? null)}
 Selected text: ${JSON.stringify(input.selectedText ?? "")}
+Notes inside selected/active range:
+${JSON.stringify(input.selectedPatches ?? [], null, 2)}
 
 Full module text:
 ${JSON.stringify(input.text)}
@@ -202,6 +206,9 @@ ${JSON.stringify(input.annotations, null, 2)}
 
 Patches:
 ${JSON.stringify(input.patches, null, 2)}
+
+Relevant open notes for the submitted selection/module:
+${JSON.stringify(relevantNotes, null, 2)}
 
 Sources:
 ${JSON.stringify(input.sources, null, 2)}
