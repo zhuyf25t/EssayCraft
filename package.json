@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "smoke": "vitest run src/lib && node tests/runtime-smoke.mjs",
-    "test:e2e": "playwright test"
+    "test:e2e": "node tests/run-playwright.mjs"
   },
   "dependencies": {
     "@types/node": "^22.10.2",

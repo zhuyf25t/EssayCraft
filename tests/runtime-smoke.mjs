@@ -1,8 +1,12 @@
 import { spawn, execFileSync } from "node:child_process";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
 
 const port = process.env.RUNTIME_SMOKE_PORT ?? "3225";
+const distDir = process.env.RUNTIME_SMOKE_DIST_DIR ?? `.next-smoke-${port}`;
 const url = `http://127.0.0.1:${port}`;
 const timeoutMs = 60_000;
+const generatedTypeFileSnapshot = snapshotGeneratedTypeFiles();
 const child = process.platform === "win32"
   ? spawn("cmd.exe", ["/d", "/s", "/c", `npm run dev -- --port ${port}`], processOptions())
   : spawn("npm", ["run", "dev", "--", "--port", port], processOptions());
@@ -12,6 +16,7 @@ function processOptions() {
   cwd: process.cwd(),
   env: {
     ...process.env,
+    NEXT_DIST_DIR: distDir,
     ESSAYCRAFT_FORCE_MOCK_AI: "1"
   },
   stdio: ["ignore", "pipe", "pipe"]
@@ -54,6 +59,8 @@ try {
   throw error;
 } finally {
   stopProcessTree(child.pid);
+  cleanupSmokeDistDir();
+  restoreGeneratedTypeFiles(generatedTypeFileSnapshot);
 }
 
 async function waitForOk(targetUrl, timeout) {
@@ -88,5 +95,36 @@ function stopProcessTree(pid) {
     process.kill(pid, "SIGTERM");
   } catch {
     // Process may already have exited.
+  }
+}
+
+function cleanupSmokeDistDir() {
+  if (process.env.RUNTIME_SMOKE_DIST_DIR) return;
+  const root = path.resolve(process.cwd());
+  const target = path.resolve(root, distDir);
+  if (!target.startsWith(`${root}${path.sep}`)) return;
+  try {
+    rmSync(target, { recursive: true, force: true });
+  } catch {
+    // Cache cleanup is best-effort; a later run can reuse or remove it.
+  }
+}
+
+function snapshotGeneratedTypeFiles() {
+  return ["next-env.d.ts", "tsconfig.json"].map((file) => ({
+    file,
+    existed: existsSync(file),
+    content: existsSync(file) ? readFileSync(file, "utf8") : ""
+  }));
+}
+
+function restoreGeneratedTypeFiles(snapshot) {
+  for (const item of snapshot) {
+    if (!item.existed) continue;
+    try {
+      writeFileSync(item.file, item.content);
+    } catch {
+      // Best-effort cleanup so smoke cannot leave Next's distDir rewrites in git.
+    }
   }
 }

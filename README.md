@@ -56,6 +56,8 @@ For MVP interaction testing, Assistant, Refresh Highlighting, and Reference Tran
 
 Next.js dev-server messages such as `Compiled /api/refresh` are normal local compile logs, not EssayCraft product errors. If DeepSeek is unreachable because of proxy/network latency, the server falls back to deterministic local mock behavior after the configured timeout.
 
+Do not run multiple manual Next processes against the same cache directory. Next rewrites server chunks during build/start, which can make an already-running dev server report errors like `Cannot find module './331.js'`. EssayCraft's smoke and e2e scripts isolate their temporary servers with `NEXT_DIST_DIR` (`.next-smoke-*` and `.next-playwright-*`) and restore Next's generated TypeScript references afterward, so validation can run beside a normal dev server. If a dev server is already corrupted, stop it, remove `.next`, and restart `npm run dev`.
+
 ## Validation
 
 ```bash
