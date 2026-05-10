@@ -190,6 +190,9 @@ test("right panel tabs keep secondary work organized and toolbar clutter is redu
 
   await rail.getByRole("tab", { name: /Export/i }).click();
   await expect(rail.getByRole("tabpanel", { name: "Export" })).toContainText("Export & Project Files");
+  await expect(page.getByTestId("editor-shell")).not.toContainText("AI diagnostics");
+  await rail.getByRole("tabpanel", { name: "Export" }).getByRole("button", { name: /AI diagnostics/ }).click();
+  await expect(page.getByTestId("ai-diagnostics")).toContainText(/Interactive timeout|Provider configured/i);
 
   await rail.getByRole("tab", { name: /Assistant/i }).click();
   await expect(rail.getByRole("tabpanel", { name: "Assistant" })).toContainText("Chat");
@@ -555,7 +558,10 @@ test("Edit mode explains active highlight without confidence or relabel controls
 
   await editor(page).fill("Plain draft without refreshed annotations.");
   await editor(page).click();
-  await expect(page.getByRole("button", { name: "Explain highlight" })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Explain highlight" })).toBeEnabled();
+  await page.getByRole("button", { name: "Explain highlight" }).click();
+  await expect(page.getByTestId("assistant-highlight-explanation")).toContainText("Highlight explanation", { timeout: 20_000 });
+  await expect(page.getByTestId("assistant-highlight-explanation").getByRole("button", { name: "Accept" })).toHaveCount(0);
 });
 
 test("assistant uses selection context and dismisses preview without changing text", async ({ page }) => {
@@ -698,6 +704,38 @@ test("inline notes drive apply notes preview and preserve text until accepted", 
   await expect.poll(async () => canonicalModuleText(page)).toBe(original);
   const undoState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
   expect(undoState.modules["1"].patches[0].resolved).toBe(false);
+});
+
+test("inline note tokens do not corrupt normal text, spaces, brackets, or paragraphs", async ({ page }) => {
+  const literalNoteText = "Research note: compare the phrase [Note: compare sources] with the source cards.";
+  await editor(page).fill(literalNoteText);
+  expect(await canonicalModuleText(page)).toBe(literalNoteText);
+  const literalState = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(literalState.modules["1"].patches).toHaveLength(0);
+
+  const original = "Research shows that better phone habits improve student attention.\n\nSecond paragraph keeps its blank line.";
+  await editor(page).fill(original);
+  await selectEditorRange(page, 0, "Research shows".length);
+  await page.keyboard.press("Control+Enter");
+  await page.getByPlaceholder("Add a note for EssayCraft").fill("Use a source with ] bracket and [citation needed] marker.");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("patch-margin-marker")).toBeVisible();
+
+  await editor(page).evaluate((node) => {
+    const textarea = node as HTMLTextAreaElement;
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  });
+  await page.keyboard.type(" Added ending.");
+
+  const canonical = await canonicalModuleText(page);
+  expect(canonical).toContain("Research shows that better phone habits");
+  expect(canonical).toContain("\n\nSecond paragraph keeps its blank line. Added ending.");
+  expect(canonical).not.toContain("[Note:");
+  const state = await page.evaluate(() => JSON.parse(localStorage.getItem("essaycraft:mvp:project") ?? "{}"));
+  expect(state.modules["1"].patches).toHaveLength(1);
+  expect(state.modules["1"].patches[0].text).toContain("] bracket");
+  expect(state.modules["1"].patches[0].text).toContain("[citation needed]");
 });
 
 test("Chinese title note visibly revises topic only after Accept", async ({ page }) => {
