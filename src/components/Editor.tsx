@@ -51,6 +51,7 @@ export function Editor({
   const pendingSelectionRef = useRef<TextRange | null>(null);
   const composingRef = useRef(false);
   const noteDraftRef = useRef<{ key: string; value: string } | null>(null);
+  const lastResetKeyRef = useRef(resetKey);
   const patchEditorRef = useRef(patchEditor);
   patchEditorRef.current = patchEditor;
   const callbacksRef = useRef({
@@ -104,14 +105,18 @@ export function Editor({
   useLayoutEffect(() => {
     const editor = editorRef.current;
     if (!editor) return;
-    const previousScrollTop = editor.scrollTop;
+    const shouldResetViewport = lastResetKeyRef.current !== resetKey;
+    lastResetKeyRef.current = resetKey;
+    const previousScrollTop = shouldResetViewport ? 0 : editor.scrollTop;
     const restoreEditorScroll = () => {
       const maxScrollTop = Math.max(0, editor.scrollHeight - editor.clientHeight);
       editor.scrollTop = Math.max(0, Math.min(previousScrollTop, maxScrollTop));
     };
     const currentPatchEditor = patchEditorRef.current;
     const shouldRestoreEditorSelection = document.activeElement === editor || selectionTouchesEditor(editor);
-    const restoreRange = pendingSelectionRef.current ?? (shouldRestoreEditorSelection ? textRangeFromDomSelection(editor) : null);
+    const restoreRange = shouldResetViewport
+      ? { start: 0, end: 0 }
+      : pendingSelectionRef.current ?? (shouldRestoreEditorSelection ? textRangeFromDomSelection(editor) : null);
     const patchEditorKey = currentPatchEditor ? noteEditorKey(currentPatchEditor) : null;
     const existingNoteInput = currentPatchEditor
       ? editor.querySelector<HTMLTextAreaElement>("[data-inline-note-input]")
@@ -189,7 +194,8 @@ export function Editor({
     annotations,
     patches,
     activeSentenceRange,
-    patchEditorSignature
+    patchEditorSignature,
+    resetKey
   ]);
 
   function syncSelectionFromDom() {
