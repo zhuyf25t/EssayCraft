@@ -1,11 +1,12 @@
 import type { ModuleNumber } from "@/types/essaycraft";
+import { stripEditorKernelMarkers } from "@/lib/noteKernel";
 
 export function normalizeLineEndings(value: string) {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
 export function cleanGeneratedText(value: string, moduleNumber?: ModuleNumber) {
-  let text = normalizeLineEndings(value).trim();
+  let text = normalizeLineEndings(stripEditorKernelMarkers(value)).trim();
   text = stripCodeFences(text);
   text = stripHtml(text);
   text = decodeEscapedNewlinesWhenSafe(text);

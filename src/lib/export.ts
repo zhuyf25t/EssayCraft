@@ -1,6 +1,7 @@
 import type { Annotation, ModuleDocument, Project, SegmentLabel } from "@/types/essaycraft";
 import { LABELS } from "@/lib/labels";
 import { normalizeAnnotations, normalizeText } from "@/lib/annotations";
+import { protectModuleText } from "@/lib/noteKernel";
 
 const COLORS: Record<SegmentLabel, string> = {
   background: "#fff3a3",
@@ -15,18 +16,19 @@ const COLORS: Record<SegmentLabel, string> = {
 };
 
 export async function copyRichText(doc: ModuleDocument) {
-  const html = documentHtmlFragment(doc.text, doc.annotations);
+  const cleanText = protectModuleText(doc.text);
+  const html = documentHtmlFragment(cleanText, doc.annotations);
 
   if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
     const item = new ClipboardItem({
       "text/html": new Blob([html], { type: "text/html" }),
-      "text/plain": new Blob([doc.text], { type: "text/plain" })
+      "text/plain": new Blob([cleanText], { type: "text/plain" })
     });
     await navigator.clipboard.write([item]);
     return;
   }
 
-  await navigator.clipboard.writeText(doc.text);
+  await navigator.clipboard.writeText(cleanText);
 }
 
 export function downloadProjectJson(project: Project) {
@@ -66,7 +68,7 @@ ${sources ? `<h2>Source Cards</h2><ul>${sources}</ul>` : ""}
 }
 
 export function documentHtmlFragment(text: string, annotations: Annotation[]) {
-  const normalized = normalizeText(text);
+  const normalized = protectModuleText(normalizeText(text));
   const ranges = paragraphRanges(normalized);
   if (ranges.length === 0) return "<p><br /></p>";
 
@@ -134,7 +136,13 @@ function triggerDownload(blob: Blob, filename: string) {
 }
 
 function removeRuntimeOnlyData(project: Project): Project {
-  return JSON.parse(JSON.stringify(project)) as Project;
+  const copy = JSON.parse(JSON.stringify(project)) as Project;
+  for (const key of Object.keys(copy.modules)) {
+    const moduleKey = Number(key) as keyof Project["modules"];
+    const doc = copy.modules[moduleKey];
+    if (doc) doc.text = protectModuleText(doc.text);
+  }
+  return copy;
 }
 
 function slugify(value: string) {

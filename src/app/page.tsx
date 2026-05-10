@@ -13,6 +13,7 @@ import { TranslateModal } from "@/components/TranslateModal";
 import { annotationAtOffset, normalizeAnnotations, normalizeText, sentenceRangeAt } from "@/lib/annotations";
 import { inTextCitationPreview } from "@/lib/citationAudit";
 import { copyRichText, downloadCurrentModuleHtml, downloadProjectJson } from "@/lib/export";
+import { protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { patchAtOffset, repairPatchesForText } from "@/lib/patches";
 import { MODULE_TITLES, addSnapshot, clearModule, importProject, replaceModuleContent, restoreSnapshot } from "@/lib/project";
 import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
@@ -247,7 +248,7 @@ export default function Home() {
   }
 
   function handleTextChange(value: string, nextPatches?: Patch[]) {
-    const text = normalizeText(value);
+    const text = protectModuleText(normalizeText(value));
     editorAiUndoReadyRef.current = false;
     updateCurrentModule((doc) => ({
       ...doc,
@@ -261,8 +262,13 @@ export default function Home() {
   }
 
   function handleOpenPatch(range: TextRange) {
-    const start = Math.max(0, Math.min(activeDoc.text.length, range.start));
-    const end = Math.max(start, Math.min(activeDoc.text.length, range.end));
+    const requestedRange = range.end > range.start
+      ? range
+      : selectedRange.end > selectedRange.start
+        ? selectedRange
+        : range;
+    const start = Math.max(0, Math.min(activeDoc.text.length, requestedRange.start));
+    const end = Math.max(start, Math.min(activeDoc.text.length, requestedRange.end));
     const nextRange = { start, end };
     setEditingPatchId(null);
     setPatchRange(nextRange);
@@ -272,10 +278,16 @@ export default function Home() {
 
   function handlePatchSubmit(text: string) {
     if (!patchRange) return;
+    const noteText = stripEditorKernelMarkers(text).trim();
+    if (!noteText) {
+      setEditingPatchId(null);
+      setPatchRange(null);
+      return;
+    }
     if (editingPatchId) {
       updateCurrentModule((doc) => ({
         ...doc,
-        patches: doc.patches.map((patch) => patch.id === editingPatchId ? { ...patch, text, resolved: false, status: "open", stale: false, updatedAt: nowIso() } : patch),
+        patches: doc.patches.map((patch) => patch.id === editingPatchId ? { ...patch, text: noteText, resolved: false, status: "open", stale: false, updatedAt: nowIso() } : patch),
         updatedAt: nowIso()
       }));
       setStatus("Note updated.");
@@ -286,7 +298,7 @@ export default function Home() {
         anchorStart: patchRange.start,
         anchorEnd: patchRange.end,
         anchorQuote: activeDoc.text.slice(patchRange.start, patchRange.end),
-        text,
+        text: noteText,
         createdAt: nowIso(),
         updatedAt: nowIso(),
         status: "open",
@@ -347,7 +359,8 @@ export default function Home() {
       if (!response.ok) throw new Error(data.error ?? "Refresh failed.");
 
       if (data.kind === "revision" && data.proposedText) {
-        setRevisionPreview(data);
+        const safePlan = (data.patchResolutionPlan ?? []).filter((patchId) => activeDoc.patches.some((patch) => patch.id === patchId));
+        setRevisionPreview({ ...data, patchResolutionPlan: safePlan });
         setAssistantSuggestion(undefined);
         setRightTab("assistant");
         requestAssistantMode("edit");
@@ -763,11 +776,9 @@ function handleSaveSnapshot() {
     pushAiUndo(activeProject.currentModule, activeDoc, "Before applying notes");
     updateCurrentModule((doc) => {
       const snapDoc = addSnapshot(doc, "Before applying patch notes");
-      const text = normalizeText(revisionPreview.proposedText ?? snapDoc.text);
-      const openPatchIds = new Set(snapDoc.patches.filter((patch) => patch.status !== "resolved" && !patch.resolved && !patch.stale).map((patch) => patch.id));
+      const text = protectModuleText(normalizeText(revisionPreview.proposedText ?? snapDoc.text));
       const plannedPatchIds = new Set(revisionPreview.patchResolutionPlan ?? []);
-      const patchIds = [...plannedPatchIds].some((patchId) => openPatchIds.has(patchId)) ? plannedPatchIds : openPatchIds;
-      const resolvedPatches = snapDoc.patches.map((patch) => patchIds.has(patch.id)
+      const resolvedPatches = snapDoc.patches.map((patch) => plannedPatchIds.has(patch.id)
         ? { ...patch, resolved: true, status: "resolved" as const, appliedAt: nowIso(), updatedAt: nowIso() }
         : patch);
       return {
@@ -806,7 +817,7 @@ function handleSaveSnapshot() {
     pushAiUndo(activeProject.currentModule, activeDoc, "Before applying assistant edit");
     updateCurrentModule((doc) => {
       const snapDoc = addSnapshot(doc, "Before applying assistant suggestion");
-      const text = `${snapDoc.text.slice(0, range.start)}${assistantSuggestion.proposedText}${snapDoc.text.slice(range.end)}`;
+      const text = protectModuleText(`${snapDoc.text.slice(0, range.start)}${assistantSuggestion.proposedText}${snapDoc.text.slice(range.end)}`);
       const annotations = assistantSuggestion.annotations.length ? assistantSuggestion.annotations : snapDoc.annotations;
       return {
         ...snapDoc,

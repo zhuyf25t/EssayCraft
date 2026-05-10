@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import type { Annotation, Patch, RefreshResponse } from "@/types/essaycraft";
 import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
 import { buildMockAnnotations, exactAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
+import { normalizedForNoopCompare, protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { buildRefreshMessages } from "@/lib/prompts";
 import { refreshRequestSchema, refreshResponseSchema } from "@/lib/schemas";
 
 export async function POST(request: Request) {
   try {
     const json = await request.json();
-    const input = refreshRequestSchema.parse(json);
+    const parsedInput = refreshRequestSchema.parse(json);
+    const input = { ...parsedInput, text: protectModuleText(parsedInput.text) };
     const openPatches = input.patches.filter((patch) => !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim());
 
     if (!hasAiKey()) {
@@ -34,12 +36,17 @@ export async function POST(request: Request) {
 
       const parsed = refreshResponseSchema.parse(JSON.parse(raw));
       if (openPatches.length && parsed.kind === "revision" && parsed.proposedText?.trim()) {
+        const proposedText = stripEditorKernelMarkers(parsed.proposedText);
+        if (normalizedForNoopCompare(proposedText) === normalizedForNoopCompare(input.text)) {
+          throw new Error("Provider returned an unchanged note revision.");
+        }
         return NextResponse.json({
           ...parsed,
+          proposedText,
           providerMode: "deepseek",
           sourceText: input.text,
-          proposedAnnotations: normalizeAnnotations(parsed.proposedText, parsed.proposedAnnotations ?? buildMockAnnotations(parsed.proposedText)),
-          patchResolutionPlan: parsed.patchResolutionPlan ?? openPatches.map((patch) => patch.id)
+          proposedAnnotations: normalizeAnnotations(proposedText, parsed.proposedAnnotations ?? buildMockAnnotations(proposedText)),
+          patchResolutionPlan: (parsed.patchResolutionPlan ?? []).filter((patchId) => openPatches.some((patch) => patch.id === patchId))
         });
       }
       if (openPatches.length) {

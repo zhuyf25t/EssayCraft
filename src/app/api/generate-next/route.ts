@@ -4,6 +4,7 @@ import { createAiClient, AI_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-clie
 import { buildMockAnnotations, exactAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
 import { buildCitationAudit } from "@/lib/citationAudit";
 import { getTransitionPrompt } from "@/lib/moduleTransitionPrompts";
+import { protectModuleText } from "@/lib/noteKernel";
 import { buildGenerateNextMessages } from "@/lib/prompts";
 import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
 import { cleanGeneratedText } from "@/lib/textFormat";
@@ -13,7 +14,8 @@ const GENERATE_TIMEOUT_MS = Number(process.env.ESSAYCRAFT_GENERATE_TIMEOUT_MS ??
 export async function POST(request: Request) {
   try {
     const json = await request.json();
-    const input = generateNextRequestSchema.parse(json);
+    const parsedInput = generateNextRequestSchema.parse(json);
+    const input = { ...parsedInput, sourceText: protectModuleText(parsedInput.sourceText) };
     const expectedTarget = (input.sourceModuleNumber + 1) as Exclude<ModuleNumber, 1>;
 
     if (!input.sourceText.trim()) {

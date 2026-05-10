@@ -8,6 +8,7 @@ import type {
   SourceCard
 } from "@/types/essaycraft";
 import { buildMockAnnotations, normalizeAnnotations, normalizeText } from "@/lib/annotations";
+import { protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { id, nowIso } from "@/lib/utils";
 
 export const MODULE_TITLES: Record<ModuleNumber, string> = {
@@ -81,7 +82,7 @@ Conclusion
 - Restate thesis and explain why balance is more practical than total rejection.`;
 
 function createModule(moduleNumber: ModuleNumber, seedText = ""): ModuleDocument {
-  const text = normalizeText(seedText);
+  const text = protectModuleText(normalizeText(seedText));
   return {
     moduleNumber,
     title: MODULE_TITLES[moduleNumber],
@@ -165,7 +166,7 @@ export function replaceModuleContent(
   annotations: Annotation[],
   sources: SourceCard[] = moduleDoc.sources
 ): ModuleDocument {
-  const normalized = normalizeText(text);
+  const normalized = protectModuleText(normalizeText(text));
   return {
     ...moduleDoc,
     text: normalized,
@@ -194,12 +195,11 @@ export function migrateProject(raw: unknown): Project {
     const source = maybe.modules[String(moduleNumber)];
     if (!source) continue;
 
-    const text =
-      typeof source.text === "string"
-        ? normalizeText(source.text)
-        : Array.isArray(source.segments)
-          ? source.segments.map((segment) => segment.text ?? "").join(" ")
-          : "";
+    const text = protectModuleText(typeof source.text === "string"
+      ? normalizeText(source.text)
+      : Array.isArray(source.segments)
+        ? source.segments.map((segment) => segment.text ?? "").join(" ")
+        : "");
 
     modules[moduleNumber] = {
       ...modules[moduleNumber],
@@ -251,7 +251,7 @@ export function normalizeProject(project: Project): Project {
 
   for (const moduleNumber of [1, 2, 3, 4, 5, 6] as ModuleNumber[]) {
     const doc = project.modules?.[moduleNumber] ?? project.modules?.[String(moduleNumber) as unknown as ModuleNumber];
-    const text = normalizeText(doc?.text ?? "");
+    const text = protectModuleText(normalizeText(doc?.text ?? ""));
     modules[moduleNumber] = {
       moduleNumber,
       title: doc?.title || MODULE_TITLES[moduleNumber],
@@ -280,7 +280,7 @@ export function normalizeProject(project: Project): Project {
 
 function normalizeSnapshots(snapshots: Snapshot[], fallbackText: string): Snapshot[] {
   return snapshots.slice(0, 20).map((snapshot) => {
-    const text = normalizeText(snapshot.text ?? fallbackText);
+    const text = protectModuleText(normalizeText(snapshot.text ?? fallbackText));
     return {
       id: snapshot.id || id("snap"),
       createdAt: snapshot.createdAt || nowIso(),
@@ -297,17 +297,22 @@ function normalizePatches(patches: unknown, text: string): Patch[] {
   if (!Array.isArray(patches)) return [];
   return patches
     .map((patch) => patch as Partial<Patch>)
-    .filter((patch) => typeof patch.text === "string" && patch.text.trim().length > 0)
+    .filter((patch) => typeof patch.text === "string" && stripEditorKernelMarkers(patch.text).trim().length > 0)
     .map((patch) => {
       const start = Math.max(0, Math.min(text.length, Number(patch.anchorStart) || 0));
       const end = Math.max(start, Math.min(text.length, Number(patch.anchorEnd) || start));
+      const patchText = stripEditorKernelMarkers(patch.text ?? "").trim();
       return {
         id: patch.id || id("patch"),
+        moduleNumber: patch.moduleNumber,
         anchorStart: start,
         anchorEnd: end,
         anchorQuote: patch.anchorQuote || text.slice(start, end),
-        text: patch.text || "",
+        text: patchText,
         createdAt: patch.createdAt || nowIso(),
+        updatedAt: patch.updatedAt,
+        appliedAt: patch.appliedAt,
+        status: patch.status,
         resolved: patch.resolved,
         stale: patch.stale
       };
