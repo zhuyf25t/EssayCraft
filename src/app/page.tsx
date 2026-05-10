@@ -5,7 +5,6 @@ import { AssistantPanel } from "@/components/AssistantPanel";
 import { Editor } from "@/components/Editor";
 import { FinishModal } from "@/components/FinishModal";
 import { ModuleSidebar } from "@/components/ModuleSidebar";
-import { PatchPopover } from "@/components/PatchPopover";
 import { ProgressTracker } from "@/components/ProgressTracker";
 import { SnapshotPanel } from "@/components/SnapshotPanel";
 import { SourceWorkbench } from "@/components/SourceWorkbench";
@@ -247,14 +246,14 @@ export default function Home() {
     setStatus("Undid last AI edit.");
   }
 
-  function handleTextChange(value: string) {
+  function handleTextChange(value: string, nextPatches?: Patch[]) {
     const text = normalizeText(value);
     editorAiUndoReadyRef.current = false;
     updateCurrentModule((doc) => ({
       ...doc,
       text,
       annotations: normalizeAnnotations(text, doc.annotations),
-      patches: repairPatchesForText(text, doc.patches),
+      patches: nextPatches ? repairPatchesForText(text, nextPatches) : repairPatchesForText(text, doc.patches),
       updatedAt: nowIso()
     }));
     setRevisionPreview(undefined);
@@ -310,6 +309,17 @@ export default function Home() {
     setActiveSentenceRange({ start: patch.anchorStart, end: patch.anchorEnd });
     setPatchRange({ start: patch.anchorStart, end: patch.anchorEnd });
     setEditingPatchId(patch.id);
+  }
+
+  function deletePatch(patchId: string) {
+    updateCurrentModule((doc) => ({
+      ...doc,
+      patches: doc.patches.filter((patch) => patch.id !== patchId),
+      updatedAt: nowIso()
+    }));
+    setPatchRange(null);
+    setEditingPatchId(null);
+    setStatus("Note deleted.");
   }
 
   async function handleRefresh() {
@@ -939,19 +949,6 @@ export default function Home() {
               </div>
 
               <div className="relative min-h-0 flex-1 overflow-hidden">
-                {patchRange ? (
-                  <PatchPopover
-                    range={patchRange}
-                    anchorQuote={patchQuote}
-                    text={activeDoc.text}
-                    initialValue={editingPatchId ? activeDoc.patches.find((patch) => patch.id === editingPatchId)?.text ?? "" : ""}
-                    onSubmit={handlePatchSubmit}
-                    onClose={() => {
-                      setPatchRange(null);
-                      setEditingPatchId(null);
-                    }}
-                  />
-                ) : null}
                 <Editor
                   text={activeDoc.text}
                   annotations={activeDoc.annotations}
@@ -964,6 +961,18 @@ export default function Home() {
                   onActiveSentenceChange={setActiveSentenceRange}
                   onOpenPatch={handleOpenPatch}
                   onPatchMarkerClick={editPatch}
+                  patchEditor={patchRange ? {
+                    range: patchRange,
+                    anchorQuote: patchQuote,
+                    initialValue: editingPatchId ? activeDoc.patches.find((patch) => patch.id === editingPatchId)?.text ?? "" : "",
+                    editingPatchId
+                  } : undefined}
+                  onPatchSubmit={handlePatchSubmit}
+                  onPatchClose={() => {
+                    setPatchRange(null);
+                    setEditingPatchId(null);
+                  }}
+                  onPatchDelete={deletePatch}
                 />
               </div>
 
