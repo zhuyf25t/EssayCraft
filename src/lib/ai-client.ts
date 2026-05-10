@@ -24,7 +24,7 @@ export const AI_HIGH_QUALITY_MODEL = process.env.DEEPSEEK_HIGH_QUALITY_MODEL || 
 export const AI_MODEL = process.env.DEEPSEEK_MODEL || AI_HIGH_QUALITY_MODEL;
 export const AI_FAST_MODEL = process.env.DEEPSEEK_FAST_MODEL || process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 
-export async function withAiTimeout<T>(promise: Promise<T>, timeoutMs = 8000): Promise<T> {
+export async function withAiTimeout<T>(promise: Promise<T>, timeoutMs = Number(process.env.ESSAYCRAFT_FAST_FALLBACK_MS ?? 8000)): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeout = setTimeout(() => reject(new Error(`AI provider timed out after ${timeoutMs}ms.`)), timeoutMs);

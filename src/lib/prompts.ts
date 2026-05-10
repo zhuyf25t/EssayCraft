@@ -14,6 +14,48 @@ Module 6: edit and proofread for content, structure, clarity, style, grammar, pu
 const LABEL_RULES = "background, thesis, evidence, analysis, counterargument, citation, conclusion, issue, plain";
 
 export function buildRefreshMessages(input: RefreshRequest) {
+  const openPatches = input.patches.filter((patch) => !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim());
+  if (openPatches.length) {
+    const system = `You are EssayCraft's revision-note engine. Return strict json only.
+
+Task:
+Use the user's temporary revision notes as instructions to propose a revised version of the current module text.
+
+Rules:
+- Return a preview only; do not claim the text has already been applied.
+- Preserve the student's topic, claim, paragraph breaks, and academic workflow module purpose.
+- Do not invent citations, sources, authors, years, URLs, DOIs, or reference entries.
+- Notes are instructions, not essay prose. Do not copy note text into the revised essay.
+- Resolve only the notes whose instructions are reflected in proposedText.
+- Also return proposedAnnotations over proposedText.
+- Output valid json matching this shape:
+{"kind":"revision","annotations":[],"proposedText":"revised text","proposedAnnotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.9,"comment":"brief reason"}],"originalSummary":"one sentence summary","rationale":"one sentence rationale","patchResolutionPlan":["patch-id"],"globalFeedback":["short preview note"],"warnings":[]}
+
+${COURSE_WORKFLOW_CONTEXT}`;
+
+    const user = `Topic: ${input.topic}
+Current module: ${input.moduleNumber}
+
+Current essay text:
+${JSON.stringify(input.text)}
+
+Temporary revision notes:
+${JSON.stringify(openPatches, null, 2)}
+
+Existing annotations:
+${JSON.stringify(input.annotations, null, 2)}
+
+User source cards:
+${JSON.stringify(input.sources, null, 2)}
+
+Return json only.`;
+
+    return [
+      { role: "system" as const, content: system },
+      { role: "user" as const, content: user }
+    ];
+  }
+
   const system = `You are EssayCraft's academic writing annotation engine. Return strict json only.
 
 Task:

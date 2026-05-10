@@ -174,6 +174,9 @@ function reviseSegment(original: string, note: string) {
   if (/\u66f4\u77ed|\u7b80\u77ed|\u7cbe\u7b80|shorter|concise/i.test(note)) {
     return `${leading}${stripMeta(shortenSegment(trimmed))}${trailing}`;
   }
+  if (/\u66f4\u81ea\u7136|\u81ea\u7136|\u5446\u677f|\u666e\u901a|\u65b0\u610f|natural|awkward|less generic/i.test(note)) {
+    return `${leading}${stripMeta(makeNatural(trimmed))}${trailing}`;
+  }
 
   if (/analysis|分析/i.test(note)) {
     revised = stripMeta(trimmed);
@@ -193,7 +196,9 @@ function reviseSegment(original: string, note: string) {
     revised = makeAcademic(trimmed);
   }
 
-  return `${leading}${stripMeta(revised)}${trailing}`;
+  const cleaned = stripMeta(revised);
+  const visible = cleaned === trimmed ? makeNatural(trimmed) : cleaned;
+  return `${leading}${stripMeta(visible)}${trailing}`;
 }
 
 function makeAcademic(value: string) {
@@ -232,6 +237,18 @@ function reviseThesis(value: string) {
   const thesis = cleaned.replace(/^(Working thesis|Thesis)\s*:\s*/i, "").replace(/[.!?]?$/, "").trim();
   if (!thesis) return "Working thesis: The essay should make a specific, arguable claim supported by clear reasons.";
   return `Working thesis: ${thesis}, because the issue requires a clear argument, specific evidence, and practical responsibility.`;
+}
+
+function makeNatural(value: string) {
+  const cleaned = makeAcademic(value);
+  if (/^Topic\s*:/i.test(cleaned)) return reviseTopic(cleaned);
+  if (/^(Research question|Question)\s*:/i.test(cleaned)) return reviseQuestion(cleaned, "\u66f4\u81ea\u7136 \u65b0\u610f");
+  if (/^(Working thesis|Thesis)\s*:/i.test(cleaned)) return reviseThesis(cleaned);
+  if (!cleaned) return value;
+  if (cleaned.length < 80) {
+    return `${cleaned.replace(/[.!?]?$/, "")}, with clearer wording that names the issue, the people affected, and why the point matters.`;
+  }
+  return cleaned.replace(/\bimportant\b/gi, "significant").replace(/\bvery\b/gi, "particularly");
 }
 
 function expandSegment(value: string) {
