@@ -108,13 +108,31 @@ export function Editor({
     const shouldRestoreEditorSelection = document.activeElement === editor || selectionTouchesEditor(editor);
     const restoreRange = pendingSelectionRef.current ?? (shouldRestoreEditorSelection ? textRangeFromDomSelection(editor) : null);
     const patchEditorKey = currentPatchEditor ? noteEditorKey(currentPatchEditor) : null;
+    const existingNoteInput = currentPatchEditor
+      ? editor.querySelector<HTMLTextAreaElement>("[data-inline-note-input]")
+      : null;
+    const noteInputSelection = existingNoteInput && patchEditorKey
+      ? {
+          key: patchEditorKey,
+          value: existingNoteInput.value,
+          start: existingNoteInput.selectionStart,
+          end: existingNoteInput.selectionEnd,
+          direction: existingNoteInput.selectionDirection
+        }
+      : null;
+
     if (currentPatchEditor && patchEditorKey) {
-      if (noteDraftRef.current?.key !== patchEditorKey) {
+      if (noteInputSelection?.key === patchEditorKey) {
+        noteDraftRef.current = { key: patchEditorKey, value: noteInputSelection.value };
+      } else if (noteDraftRef.current?.key !== patchEditorKey) {
         noteDraftRef.current = { key: patchEditorKey, value: currentPatchEditor.initialValue };
       }
     } else {
       noteDraftRef.current = null;
     }
+    const patchEditorDraftValue = currentPatchEditor && patchEditorKey
+      ? noteDraftRef.current?.value ?? currentPatchEditor.initialValue
+      : "";
 
     renderEditorContent(editor, {
       text,
@@ -122,7 +140,7 @@ export function Editor({
       patches,
       activeSentenceRange,
       patchEditor: currentPatchEditor && patchEditorKey
-        ? { ...currentPatchEditor, initialValue: noteDraftRef.current?.value ?? currentPatchEditor.initialValue }
+        ? { ...currentPatchEditor, initialValue: patchEditorDraftValue }
         : undefined,
       onPatchMarkerClick: (patch) => callbacksRef.current.onPatchMarkerClick(patch),
       onPatchDelete: (patchId) => callbacksRef.current.onPatchDelete(patchId),
@@ -136,8 +154,15 @@ export function Editor({
     if (currentPatchEditor) {
       const input = editor.querySelector<HTMLTextAreaElement>("[data-inline-note-input]");
       requestAnimationFrame(() => {
-        input?.focus();
-        if (!currentPatchEditor.initialValue) input?.select();
+        if (!input) return;
+        input.focus();
+        if (noteInputSelection?.key === patchEditorKey) {
+          const start = Math.max(0, Math.min(input.value.length, noteInputSelection.start));
+          const end = Math.max(start, Math.min(input.value.length, noteInputSelection.end));
+          input.setSelectionRange(start, end, noteInputSelection.direction);
+        } else if (!patchEditorDraftValue) {
+          input.select();
+        }
       });
       pendingSelectionRef.current = null;
       return;
@@ -205,7 +230,7 @@ export function Editor({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (event.nativeEvent.isComposing || event.target instanceof HTMLTextAreaElement) return;
+    if (event.nativeEvent.isComposing || (event.target as HTMLElement).closest("[data-inline-note-editor]")) return;
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       const range = textRangeFromDomSelection(event.currentTarget);
@@ -472,6 +497,7 @@ function createInlinePatchEditor(options: {
 
   const input = document.createElement("textarea");
   input.dataset.inlineNoteInput = "true";
+  input.dataset.testid = "inline-note-input";
   input.value = stripEditorKernelMarkers(options.initialValue);
   input.placeholder = "Add a note for EssayCraft";
   input.className = "inline-note-editor-input";
