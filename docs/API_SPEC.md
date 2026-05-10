@@ -2,158 +2,90 @@
 
 All AI calls are server-side Next.js route handlers. The browser never calls DeepSeek directly and never receives `DEEPSEEK_API_KEY`.
 
+## Provider-First Behavior
+
+EssayCraft is AI-native:
+
+- `ESSAYCRAFT_FORCE_MOCK_AI=1` uses the deterministic mock provider and labels results `mock`.
+- Otherwise, if `DEEPSEEK_API_KEY` is configured, routes call DeepSeek.
+- Otherwise, routes return `AI unavailable` metadata and do not create semantic keyword/template output.
+- Provider timeout, invalid JSON, invalid schema, or no-op semantic output returns unavailable/validation failure. It does not silently turn into local essay writing.
+
+Every AI result includes:
+
+```ts
+{
+  providerMode: "deepseek" | "mock" | "unavailable";
+  modelUsed: string;
+  latencyMs: number;
+  fallbackReason?: string; // provider issue / unavailable reason, never an API key
+}
+```
+
 ## Environment Variables
 
 ```bash
-DEEPSEEK_API_KEY=...
+DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-pro
+DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_FAST_MODEL=deepseek-v4-flash
+DEEPSEEK_HIGH_QUALITY_MODEL=deepseek-v4-pro
+ESSAYCRAFT_FORCE_MOCK_AI=0
+ESSAYCRAFT_ALLOW_OFFLINE_MOCK=0
+ESSAYCRAFT_CHAT_TIMEOUT_MS=60000
+ESSAYCRAFT_EDIT_TIMEOUT_MS=60000
+ESSAYCRAFT_REFRESH_TIMEOUT_MS=60000
+ESSAYCRAFT_TRANSLATE_TIMEOUT_MS=60000
+ESSAYCRAFT_GENERATE_TIMEOUT_MS=90000
 ```
 
-If `DEEPSEEK_API_KEY` is missing, each route uses deterministic mock output so the demo remains usable. Interactive routes use the fast model/timeout path. If DeepSeek times out or returns an invalid/no-op edit preview, the server returns a deterministic fallback preview and the UI keeps the same preview/Accept flow.
+## AI Tasks
+
+Routes use the server task registry in `src/lib/ai/tasks.ts` and router in `src/lib/ai/taskRouter.ts`.
+
+Task ids:
+
+- `chatModule`
+- `rewriteSelection`
+- `academicRewrite`
+- `analyzeSelection`
+- `translateSelection`
+- `explainHighlight`
+- `refreshAnnotations`
+- `applyNotesRevision`
+- `generateNextModule`
+- `citationReview`
+- `finalReview`
+
+Engineering validates ranges, schemas, previews, snapshots, and metadata. Semantic writing, analysis, translation, annotation, and generation must come from DeepSeek or explicit mock mode.
 
 ## POST /api/refresh
 
 Purpose: classify existing text ranges. When unresolved inline notes are present, return a revision preview that uses those notes as instructions. The route never directly mutates project state.
 
-Request:
-
-```ts
-{
-  topic: string;
-  projectTitle?: string;
-  moduleNumber: 1 | 2 | 3 | 4 | 5 | 6;
-  text: string;
-  annotations: Annotation[];
-  patches: Patch[];
-  sources: SourceCard[];
-}
-```
-
-Response:
-
-```ts
-type RefreshResponse =
-  | {
-      kind: "annotations";
-      annotations: Annotation[];
-      globalFeedback: string[];
-      warnings: string[];
-      providerMode: "deepseek" | "mock" | "fallback";
-    }
-  | {
-      kind: "revision";
-      sourceText: string;
-      proposedText: string;
-      annotations: Annotation[];
-      proposedAnnotations: Annotation[];
-      originalSummary?: string;
-      rationale?: string;
-      patchResolutionPlan: string[];
-      globalFeedback: string[];
-      warnings: string[];
-      providerMode: "deepseek" | "mock" | "fallback";
-    }
-  | {
-      kind: "moduleReview";
-      annotations: Annotation[];
-      reviewSummary: string;
-      reviewChecklist: Array<{
-        label: string;
-        status: "ready" | "review" | "issue";
-        detail: string;
-      }>;
-      reviewSuggestions: string[];
-      issueCount: number;
-      citationGaps?: number;
-      inTextCitations?: number;
-      realSourceCards?: number;
-      referenceStatus?: string;
-      nextStep?: string;
-      globalFeedback: string[];
-      warnings: string[];
-      providerMode: "deepseek" | "mock" | "fallback";
-    };
-```
-
-Constraints:
-
-- With no open notes, refresh is annotation-only and preserves exact text.
-- Modules 5 and 6 may return `kind: "moduleReview"` so the client can show a visible citation/final-review card while still preserving exact text.
-- Module 6 review checks content, structure, clarity, style, proofreading, citations/references, and conclusion readiness.
-- With open notes, refresh returns a preview. The client snapshots and applies only after explicit Accept.
-- Reject leaves both text and notes unchanged.
-- If provider output is unchanged after a note asks for a change, EssayCraft falls back to deterministic mock revision instead of presenting a no-op as success.
-- All input/output text is cleaned with the note-kernel guard so internal note ids, `NOTE` sentinels, and `[object Object]` cannot enter canonical module text.
+With no notes, the response is annotation/review output and preserves exact text. With notes, the response is a revision preview; the client snapshots and applies only after explicit Accept.
 
 ## POST /api/generate-next
 
 Purpose: generate Module N+1 from Module N using `src/lib/moduleTransitionPrompts.ts`.
 
-Request:
-
-```ts
-{
-  topic: string;
-  sourceModuleNumber: 1 | 2 | 3 | 4 | 5;
-  sourceTitle: string;
-  sourceText: string;
-  sourceAnnotations: Annotation[];
-  sourcePatches: Patch[];
-  sourceSources: SourceCard[];
-}
-```
-
-Response:
-
-```ts
-{
-  moduleNumber: 2 | 3 | 4 | 5 | 6;
-  title: string;
-  text: string;
-  annotations: Annotation[];
-  sources: SourceCard[];
-  globalFeedback: string[];
-  warnings: string[];
-  providerMode: "deepseek" | "mock" | "fallback";
-}
-```
-
-Constraint: no invented citations or references. Modules 2 and 3 use source-needed planning language. Draft/referencing modules mark missing support with `[citation needed]` and/or `issue`.
+If DeepSeek is unavailable and mock mode is not forced, this route returns HTTP 503 with unavailable metadata. It does not overwrite the target module.
 
 ## POST /api/assist
 
-Purpose: produce preview-only assistant suggestions for selected text or the current module.
+Purpose: Chat/Edit/Analyze/Translate/Explain for the current module or selection.
 
-Response:
-
-```ts
-{
-  reply: string;
-  proposedText?: string;
-  replaceRange?: { start: number; end: number };
-  annotations: Annotation[];
-  warnings: string[];
-}
-```
-
-Applying a suggestion is a client action that snapshots first.
+Changing actions return preview data only. The client snapshots and applies only after explicit Accept. Read-only actions never mutate text.
 
 ## POST /api/translate
 
 Purpose: preview English-to-Chinese or Chinese-to-English translation for selected text or the current module.
 
-Response:
+Translation is preview-only. Provider failures return an unavailable message unless mock mode is explicitly forced.
 
-```ts
-{
-  translatedText: string;
-  mode: "en-to-zh" | "zh-to-en" | "auto-to-zh";
-  annotations: Annotation[];
-  warnings: string[];
-  providerMode: "deepseek" | "mock" | "fallback";
-}
-```
+## Diagnostics
 
-Translation is preview-only. The route never mutates project state; the Translate modal can create a preview and copy text only. If the student wants translated wording inserted into the essay, use the AI Assistant preview/apply path.
+`GET /api/diagnostics` returns provider configuration, model names, timeout settings, and the no-silent-fallback note without exposing secrets.
+
+`POST /api/diagnostics/test` sends a tiny server-side provider health check and returns success/failure, latency, model, and provider mode.
+

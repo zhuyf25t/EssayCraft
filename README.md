@@ -40,21 +40,22 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_FAST_MODEL=deepseek-v4-flash
 DEEPSEEK_HIGH_QUALITY_MODEL=deepseek-v4-pro
-ESSAYCRAFT_ASSIST_TIMEOUT_MS=12000
-ESSAYCRAFT_REFRESH_TIMEOUT_MS=10000
-ESSAYCRAFT_TRANSLATE_TIMEOUT_MS=10000
-ESSAYCRAFT_GENERATE_TIMEOUT_MS=30000
-ESSAYCRAFT_FAST_FALLBACK_MS=2500
+ESSAYCRAFT_CHAT_TIMEOUT_MS=60000
+ESSAYCRAFT_EDIT_TIMEOUT_MS=60000
+ESSAYCRAFT_REFRESH_TIMEOUT_MS=60000
+ESSAYCRAFT_TRANSLATE_TIMEOUT_MS=60000
+ESSAYCRAFT_GENERATE_TIMEOUT_MS=90000
 ESSAYCRAFT_FORCE_MOCK_AI=0
+ESSAYCRAFT_ALLOW_OFFLINE_MOCK=0
 ```
 
 Do not commit `.env.local`.
 
-For deterministic demos and tests, set `ESSAYCRAFT_FORCE_MOCK_AI=1`. The app then uses the server-side mock provider even if `.env.local` contains a DeepSeek key.
+For normal use, configure `DEEPSEEK_API_KEY`. For deterministic demos and tests, set `ESSAYCRAFT_FORCE_MOCK_AI=1`; only then does the app use the server-side mock provider even if `.env.local` contains a DeepSeek key.
 
-For MVP interaction testing, Assistant, Refresh Highlighting, and Reference Translation use `DEEPSEEK_FAST_MODEL` by default. When `DEEPSEEK_API_KEY` is configured and `ESSAYCRAFT_FORCE_MOCK_AI` is not `1`, EssayCraft attempts the provider first. Task-specific timeouts control when it falls back locally: assist/chat defaults to 12s, refresh to 10s, translate to 10s, and Generate Next to 30s. Keep `DEEPSEEK_HIGH_QUALITY_MODEL` available for slower quality passes, but do not expose any key through `NEXT_PUBLIC_`.
+EssayCraft is provider-first. When `DEEPSEEK_API_KEY` is configured and `ESSAYCRAFT_FORCE_MOCK_AI` is not `1`, Chat, Edit, Refresh, Translate, and Generate Next call DeepSeek. If the provider is missing, times out, or returns invalid semantic output, the UI reports `AI unavailable` instead of silently producing local keyword/template content. Keep `DEEPSEEK_HIGH_QUALITY_MODEL` available for slower quality passes, but do not expose any key through `NEXT_PUBLIC_`.
 
-Next.js dev-server messages such as `Compiled /api/refresh` are normal local compile logs, not EssayCraft product errors. If DeepSeek is unreachable because of proxy/network latency, the server falls back to deterministic local mock behavior after the configured timeout.
+Next.js dev-server messages such as `Compiled /api/refresh` are normal local compile logs, not EssayCraft product errors. If DeepSeek is unreachable because of proxy/network latency, the result is marked unavailable unless explicit mock mode is enabled.
 
 Do not run multiple manual Next processes against the same cache directory. Next rewrites server chunks during build/start, which can make an already-running dev server report errors like `Cannot find module './331.js'`. EssayCraft's smoke and e2e scripts isolate their temporary servers with `NEXT_DIST_DIR` (`.next-smoke-*` and `.next-playwright-*`) and restore Next's generated TypeScript references afterward, so validation can run beside a normal dev server. If a dev server is already corrupted, stop it, remove `.next`, and restart `npm run dev`.
 

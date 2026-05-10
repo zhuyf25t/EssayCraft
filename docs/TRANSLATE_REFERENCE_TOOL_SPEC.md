@@ -40,7 +40,7 @@ Close
 
 With a configured server-side provider, `/api/translate` validates the response shape and rejects English-to-Chinese responses that contain too little Chinese or echo too much source English.
 
-Without a provider, the deterministic fallback returns readable Chinese or English preview text and sets provider mode to `fallback`.
+Without a provider, translation is unavailable unless `ESSAYCRAFT_FORCE_MOCK_AI=1` is explicitly enabled. Provider validation failures and timeouts do not silently produce local translation text.
 
 ## Safety
 

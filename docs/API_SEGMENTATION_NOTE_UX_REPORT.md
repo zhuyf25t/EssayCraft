@@ -6,7 +6,7 @@ This pass focused on integration reliability rather than broad UI redesign. The 
 
 - sentence/rhetorical-unit segmentation no longer splits decimals, common abbreviations, initials, URLs, DOIs, or parenthetical citations;
 - refresh classification now uses safer sentence-level units and guards against over-labeling full essays as Citation;
-- Assist, Refresh, Translate, and Generate Next use provider-aware routing: forced mock, configured provider, or deterministic fallback after provider failure;
+- Assist, Refresh, Translate, and Generate Next now use provider-first routing: forced mock, configured provider, or AI unavailable after provider failure;
 - task-specific AI timeouts replace the old one-size 2500ms interaction timeout;
 - Chat keeps a visible Thinking state while waiting longer for real provider responses;
 - inline note editing is more compact and stays in the document flow;
@@ -22,7 +22,7 @@ This pass focused on integration reliability rather than broad UI redesign. The 
 - parenthetical citations such as `(Stanford HAI, 2025)`;
 - URLs and DOI strings.
 
-Refresh validation also rejects unusually broad annotation spans and reruns safer fallback labeling if Citation covers too much of a non-reference-list essay.
+Refresh validation rejects unusually broad annotation spans and returns an unavailable/invalid-provider result rather than inventing semantic labels when provider output is unusable.
 
 ## Provider Routing
 
@@ -30,8 +30,8 @@ All AI route handlers now follow the same server-side rule:
 
 1. `ESSAYCRAFT_FORCE_MOCK_AI=1` uses deterministic mock output.
 2. If a DeepSeek key is configured, the route attempts the provider first.
-3. If the provider times out or errors, the route returns deterministic fallback output with compact metadata.
-4. If no key is configured, the route uses deterministic mock output.
+3. If the provider times out or errors, the route returns `AI unavailable` metadata.
+4. If no key is configured, the route returns unavailable unless forced mock is enabled.
 
 Each response can include compact metadata:
 
@@ -40,22 +40,23 @@ Each response can include compact metadata:
 - `latencyMs`
 - `fallbackReason`
 
-The writing surface shows only small provider/mock/fallback badges. Raw provider errors and schema details stay out of the main UI.
+The writing surface shows only small DeepSeek/Mock/AI unavailable badges. Raw provider errors and schema details stay out of the main UI.
 
 ## Timeouts
 
 New task-specific environment variables:
 
-- `ESSAYCRAFT_ASSIST_TIMEOUT_MS=12000`
-- `ESSAYCRAFT_REFRESH_TIMEOUT_MS=10000`
-- `ESSAYCRAFT_TRANSLATE_TIMEOUT_MS=10000`
-- `ESSAYCRAFT_GENERATE_TIMEOUT_MS=30000`
+- `ESSAYCRAFT_CHAT_TIMEOUT_MS=60000`
+- `ESSAYCRAFT_EDIT_TIMEOUT_MS=60000`
+- `ESSAYCRAFT_REFRESH_TIMEOUT_MS=60000`
+- `ESSAYCRAFT_TRANSLATE_TIMEOUT_MS=60000`
+- `ESSAYCRAFT_GENERATE_TIMEOUT_MS=90000`
 
-`ESSAYCRAFT_FAST_FALLBACK_MS` remains documented for quick local fallback behavior, but Chat and other richer assistant actions are no longer forced into an immediate 2500ms fallback by default.
+Timeouts now mark provider tasks unavailable instead of silently switching to local semantic output.
 
 ## Chat
 
-Streaming was not added in this pass. Chat now uses the longer assistant timeout and a visible `Thinking...` state while the provider or fallback is working. The mock/fallback response remains contextual: it receives project title, current module, clean module text, selected context, notes summary, and chat history.
+Streaming was not added in this pass. Chat uses the longer provider timeout and a visible `Thinking...` state while the provider or explicit mock mode is working.
 
 Chat keyboard behavior remains:
 
