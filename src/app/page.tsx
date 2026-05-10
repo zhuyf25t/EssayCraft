@@ -1223,6 +1223,10 @@ function ExportPanel({
         fastModel: "unknown",
         highQualityModel: "unknown",
         interactiveTimeoutMs: 0,
+        assistTimeoutMs: 0,
+        refreshTimeoutMs: 0,
+        translateTimeoutMs: 0,
+        generateTimeoutMs: 0,
         baseUrlConfigured: false,
         note: "Diagnostics unavailable."
       });
@@ -1287,7 +1291,7 @@ function ExportPanel({
             {!diagnostics ? (
               <>
                 <p>Provider configured: checking...</p>
-                <p>Interactive timeout: checking...</p>
+                <p>Task timeouts: checking...</p>
               </>
             ) : null}
             {diagnostics ? (
@@ -1296,7 +1300,10 @@ function ExportPanel({
                 <p>Force mock: {diagnostics.forceMock ? "on" : "off"}</p>
                 <p>Fast model: {diagnostics.fastModel}</p>
                 <p>Default model: {diagnostics.model}</p>
-                <p>Interactive timeout: {diagnostics.interactiveTimeoutMs}ms</p>
+                <p>Assist timeout: {diagnostics.assistTimeoutMs}ms</p>
+                <p>Refresh timeout: {diagnostics.refreshTimeoutMs}ms</p>
+                <p>Translate timeout: {diagnostics.translateTimeoutMs}ms</p>
+                <p>Generate timeout: {diagnostics.generateTimeoutMs}ms</p>
                 <p>{diagnostics.note}</p>
               </>
             ) : null}
@@ -1314,6 +1321,10 @@ type AiDiagnostics = {
   fastModel: string;
   highQualityModel: string;
   interactiveTimeoutMs: number;
+  assistTimeoutMs: number;
+  refreshTimeoutMs: number;
+  translateTimeoutMs: number;
+  generateTimeoutMs: number;
   baseUrlConfigured: boolean;
   note: string;
 };
@@ -1335,7 +1346,11 @@ function patchTouchesRange(patch: Patch, range: TextRange) {
   if (patch.resolved || patch.status === "resolved" || patch.stale || !patch.text.trim()) return false;
   const start = Math.max(0, Math.min(patch.anchorStart, patch.anchorEnd));
   const end = Math.max(start, Math.max(patch.anchorStart, patch.anchorEnd));
-  if (end > start) return start < range.end && range.start < end;
+  if (end > start) {
+    const overlapsAnchorText = start < range.end && range.start < end;
+    const containsInlineChip = range.end > range.start && range.start <= end && end <= range.end;
+    return overlapsAnchorText || containsInlineChip;
+  }
   return start >= range.start && start <= range.end;
 }
 

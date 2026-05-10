@@ -158,9 +158,11 @@ export function Editor({
 
     if (currentPatchEditor) {
       const input = editor.querySelector<HTMLTextAreaElement>("[data-inline-note-input]");
+      restoreEditorScroll();
       requestAnimationFrame(() => {
         if (!input) return;
-        input.focus();
+        autosizeInlineNoteInput(input);
+        input.focus({ preventScroll: true });
         if (noteInputSelection?.key === patchEditorKey) {
           const start = Math.max(0, Math.min(input.value.length, noteInputSelection.start));
           const end = Math.max(start, Math.min(input.value.length, noteInputSelection.end));
@@ -168,6 +170,7 @@ export function Editor({
         } else if (!patchEditorDraftValue) {
           input.select();
         }
+        restoreEditorScroll();
       });
       pendingSelectionRef.current = null;
       return;
@@ -372,7 +375,7 @@ function renderEditorContent(root: HTMLElement, options: {
   }
 
   const patchEditorOffset = patchEditor
-    ? Math.min(text.length, Math.max(0, patchEditor.range.end > patchEditor.range.start ? patchEditor.range.end : patchEditor.range.start))
+    ? Math.min(text.length, Math.max(0, inlineEditorOffset(patchEditor.range)))
     : undefined;
   const points = new Set<number>([0, text.length]);
 
@@ -444,6 +447,7 @@ function createNoteToken(patch: Patch, onPatchMarkerClick: (patch: Patch) => voi
   const noteText = stripEditorKernelMarkers(patch.text).trim();
   const token = document.createElement("span");
   token.dataset.inlineNoteId = patch.id;
+  token.dataset.inlineNoteOffset = String(noteOffset(patch));
   token.dataset.noteText = noteText;
   token.dataset.testid = "patch-margin-marker";
   token.className = "inline-note-token";
@@ -492,8 +496,10 @@ function createInlinePatchEditor(options: {
   const editor = document.createElement("span");
   editor.dataset.testid = "inline-patch-editor";
   editor.dataset.inlineNoteEditor = "true";
+  editor.dataset.inlineNoteEditorOffset = String(inlineEditorOffset(options.range));
   editor.className = "inline-note-editor";
   editor.contentEditable = "false";
+  editor.title = compactAnchor(options.anchorQuote) || `cursor ${options.range.start}`;
 
   const header = document.createElement("span");
   header.className = "inline-note-editor-header";
@@ -510,7 +516,13 @@ function createInlinePatchEditor(options: {
   input.value = stripEditorKernelMarkers(options.initialValue);
   input.placeholder = "Add a note for EssayCraft";
   input.className = "inline-note-editor-input";
-  input.addEventListener("input", () => options.onDraftChange(input.value));
+  input.rows = 1;
+  input.spellcheck = true;
+  input.setAttribute("aria-label", options.editingPatchId ? "Edit note" : "Add note");
+  input.addEventListener("input", () => {
+    options.onDraftChange(input.value);
+    autosizeInlineNoteInput(input);
+  });
 
   const actions = document.createElement("span");
   actions.className = "inline-note-editor-actions";
@@ -563,6 +575,7 @@ function createInlinePatchEditor(options: {
   actions.appendChild(cancel);
 
   editor.append(header, input, actions);
+  requestAnimationFrame(() => autosizeInlineNoteInput(input));
   return editor;
 }
 
@@ -627,6 +640,9 @@ function textRangeFromDomSelection(root: HTMLElement): TextRange {
 }
 
 function offsetFromDomPosition(root: HTMLElement, container: Node, offset: number) {
+  const inlineHost = inlineNoteHostForNode(root, container);
+  if (inlineHost) return inlineHostOffset(inlineHost);
+
   let count = 0;
   let found = false;
 
@@ -658,6 +674,19 @@ function offsetFromDomPosition(root: HTMLElement, container: Node, offset: numbe
 
   walk(root);
   return count;
+}
+
+function inlineNoteHostForNode(root: HTMLElement, node: Node) {
+  if (node === root) return null;
+  const element = node instanceof HTMLElement ? node : node.parentElement;
+  const host = element?.closest<HTMLElement>("[data-inline-note-id], [data-inline-note-editor]");
+  return host && root.contains(host) ? host : null;
+}
+
+function inlineHostOffset(host: HTMLElement) {
+  const raw = host.dataset.inlineNoteOffset ?? host.dataset.inlineNoteEditorOffset;
+  const value = raw ? Number(raw) : 0;
+  return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
 function setDomSelectionFromTextRange(root: HTMLElement, range: TextRange) {
@@ -730,6 +759,18 @@ function friendlyAnnotationComment(comment: string | undefined, fallback: string
 
 function noteOffset(patch: Patch) {
   return patch.anchorEnd > patch.anchorStart ? patch.anchorEnd : patch.anchorStart;
+}
+
+function inlineEditorOffset(range: TextRange) {
+  return range.end > range.start ? range.end : range.start;
+}
+
+function autosizeInlineNoteInput(input: HTMLTextAreaElement) {
+  input.style.height = "0px";
+  const maxHeight = 96;
+  const nextHeight = Math.min(maxHeight, Math.max(22, input.scrollHeight));
+  input.style.height = `${nextHeight}px`;
+  input.style.overflowY = input.scrollHeight > maxHeight ? "auto" : "hidden";
 }
 
 function sameRange(a: TextRange, b: TextRange) {
