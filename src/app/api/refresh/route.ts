@@ -8,6 +8,8 @@ import { validateProviderRefreshAnnotations } from "@/lib/refreshValidation";
 import { applyNotesFallback } from "@/lib/rewriteFallback";
 import { refreshRequestSchema, refreshResponseSchema } from "@/lib/schemas";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(request: Request) {
   try {
     const json = await request.json();

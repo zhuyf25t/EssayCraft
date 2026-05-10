@@ -11,6 +11,8 @@ const LABEL_SEQUENCE: SegmentLabel[] = [
   "conclusion"
 ];
 
+const MAX_FALLBACK_RANGE = 350;
+
 type Range = {
   start: number;
   end: number;
@@ -102,7 +104,7 @@ export function repairAnnotation(text: string, annotation: Annotation): Annotati
 }
 
 export function buildMockAnnotations(text: string): Annotation[] {
-  const ranges = text.includes("\n") ? lineRanges(text) : sentenceRanges(text);
+  const ranges = rhetoricalUnitRanges(text);
   return ranges
     .filter((range) => range.text.trim().length > 0)
     .map((range, index) => ({
@@ -167,7 +169,7 @@ export function sentenceRanges(text: string): Range[] {
   return ranges;
 }
 
-function lineRanges(text: string): Range[] {
+export function rhetoricalUnitRanges(text: string): Range[] {
   const normalized = normalizeText(text);
   const ranges: Range[] = [];
   let offset = 0;
@@ -178,12 +180,87 @@ function lineRanges(text: string): Range[] {
     const start = offset + leading;
     const end = offset + line.length - trailing;
     if (end > start) {
-      ranges.push({ start, end, text: normalized.slice(start, end) });
+      const trimmedLine = normalized.slice(start, end);
+      const lineUnits = keepLineAsUnit(trimmedLine)
+        ? splitLongRange(normalized, start, end)
+        : splitSentenceUnits(normalized, start, end);
+      ranges.push(...lineUnits);
     }
     offset += line.length + 1;
   }
 
-  return ranges.length ? ranges : sentenceRanges(normalized);
+  return ranges.length ? ranges : sentenceRanges(normalized).flatMap((range) => splitLongRange(normalized, range.start, range.end));
+}
+
+function keepLineAsUnit(line: string) {
+  const trimmed = line.trim();
+  if (trimmed.length <= 140 && /^[-*]?\s*(topic|research question|question|working thesis|thesis|thesis map|reason\s*\d+|argument branch|argument|branch|claim|topic sentence|evidence needed|evidence to look for|evidence to use|analysis|analysis purpose|counterargument|opposing view|conclusion|conclusion plan|so what|implication|possible source type|suggested source type|search keywords|source status|cars check|in-text citation|citation|reference entry|reference list|references|works cited|source card|source details|source metadata|student-supplied source|manual source)\b/i.test(trimmed)) {
+    return true;
+  }
+  if (trimmed.length <= 90 && /^[-*]?\s*[\w /-]+:\s*$/i.test(trimmed)) return true;
+  if (trimmed.length <= 120 && /^[-*]?\s*(body paragraph|introduction plan|counterargument paragraph|conclusion plan)\b/i.test(trimmed)) return true;
+  return false;
+}
+
+function splitSentenceUnits(text: string, start: number, end: number): Range[] {
+  const segment = text.slice(start, end);
+  const ranges: Range[] = [];
+  const pattern = /[^.!?;]+(?:[.!?;]+|$)/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(segment)) !== null) {
+    const raw = match[0];
+    const leading = raw.match(/^\s*/)?.[0].length ?? 0;
+    const trailing = raw.match(/\s*$/)?.[0].length ?? 0;
+    const unitStart = start + match.index + leading;
+    const unitEnd = start + match.index + raw.length - trailing;
+    if (unitEnd > unitStart) {
+      ranges.push(...splitLongRange(text, unitStart, unitEnd));
+    }
+  }
+
+  if (!ranges.length && segment.trim()) return splitLongRange(text, start, end);
+  return ranges;
+}
+
+function splitLongRange(text: string, start: number, end: number): Range[] {
+  const trimmed = trimAbsoluteRange(text, start, end);
+  const result: Range[] = [];
+  let cursor = trimmed.start;
+
+  while (cursor < trimmed.end) {
+    const remaining = trimmed.end - cursor;
+    if (remaining <= MAX_FALLBACK_RANGE) {
+      const range = trimAbsoluteRange(text, cursor, trimmed.end);
+      if (range.end > range.start) result.push({ start: range.start, end: range.end, text: text.slice(range.start, range.end) });
+      break;
+    }
+
+    const target = Math.min(trimmed.end, cursor + MAX_FALLBACK_RANGE);
+    const slice = text.slice(cursor, target);
+    const breakAt = Math.max(
+      slice.lastIndexOf(". "),
+      slice.lastIndexOf("? "),
+      slice.lastIndexOf("! "),
+      slice.lastIndexOf("; "),
+      slice.lastIndexOf(", "),
+      slice.lastIndexOf(" ")
+    );
+    const nextEnd = breakAt > 120 ? cursor + breakAt + 1 : target;
+    const range = trimAbsoluteRange(text, cursor, nextEnd);
+    if (range.end > range.start) result.push({ start: range.start, end: range.end, text: text.slice(range.start, range.end) });
+    cursor = Math.max(range.end, cursor + 1);
+  }
+
+  return result;
+}
+
+function trimAbsoluteRange(text: string, start: number, end: number) {
+  let nextStart = Math.max(0, Math.min(text.length, start));
+  let nextEnd = Math.max(nextStart, Math.min(text.length, end));
+  while (nextStart < nextEnd && /\s/.test(text[nextStart] ?? "")) nextStart += 1;
+  while (nextEnd > nextStart && /\s/.test(text[nextEnd - 1] ?? "")) nextEnd -= 1;
+  return { start: nextStart, end: nextEnd };
 }
 
 export function findIssueRanges(text: string): Annotation[] {
@@ -223,7 +300,7 @@ export function guessLabel(text: string, index = 0): SegmentLabel {
   if (/^[-*]?\s*(possible source type|suggested source type|search keywords|source status|cars check)\s*:/i.test(trimmed)) return "plain";
   if (/\[source needed(?::[^\]]*)?\]/i.test(trimmed)) return "evidence";
   if (/^[-*]?\s*(evidence needed|evidence to look for|evidence to use|evidence to find|evidence)\s*:/i.test(trimmed)) return "evidence";
-  if (isPrimaryCitationSignal(trimmed)) return "citation";
+  if (isPrimaryCitationSignal(trimmed) || isSourceSignalSentence(trimmed)) return "citation";
   if (/^[-*]?\s*(analysis|analysis purpose|response)\s*:/i.test(trimmed)) return "analysis";
   if (/^[-*]?\s*(counterargument|opposing view)\b/i.test(trimmed) || lower.includes("some readers may argue") || lower.includes("critics argue") || lower.includes("however")) return "counterargument";
   if (/^[-*]?\s*(conclusion|conclusion plan|rephrased thesis|so what|implication)\b/i.test(trimmed) || lower.includes("in conclusion") || lower.includes("overall") || lower.includes("to conclude")) return "conclusion";
@@ -235,7 +312,7 @@ export function guessLabel(text: string, index = 0): SegmentLabel {
 }
 
 export function relabelCitationIfOverbroad(annotation: Annotation): Annotation {
-  if (annotation.label !== "citation" || isPrimaryCitationSignal(annotation.text)) return annotation;
+  if (annotation.label !== "citation" || isPrimaryCitationSignal(annotation.text) || isSourceSignalSentence(annotation.text)) return annotation;
   const nextLabel = guessLabelWithoutCitation(annotation.text);
   return {
     ...annotation,
@@ -250,6 +327,7 @@ export function isPrimaryCitationSignal(value: string) {
   const trimmed = value.trim();
   if (!trimmed) return false;
   if (/^[-*]?\s*(in-text citation|citation|reference entry|reference list|references|works cited)\s*:/i.test(trimmed)) return true;
+  if (/^[-*]?\s*(source card|source details|source metadata|student-supplied source|manual source)\s*:/i.test(trimmed)) return true;
   if (/^[-*]?\s*(references|works cited)$/i.test(trimmed)) return true;
   if (/^[-*]?\s*(doi|url)\s*:/i.test(trimmed)) return true;
   if (/^(https?:\/\/|doi:|https?:\/\/doi\.org\/)/i.test(trimmed)) return true;
@@ -279,6 +357,10 @@ function containsInTextCitation(value: string) {
   return /\([A-Z][A-Za-z' .&-]+,\s*\d{4}[a-z]?\)/.test(value);
 }
 
+function isSourceSignalSentence(value: string) {
+  return /^(according to|as [A-Z][A-Za-z' -]+(?: et al\.)?\s+(?:argues?|notes?|explains?|reports?|shows?)|the (?:study|report|survey|article|source) (?:argues?|notes?|explains?|reports?|shows?)|data from|a \d{4} (?:study|report|survey))/i.test(value.trim());
+}
+
 function citationOverlabelDetected(text: string, annotations: Annotation[]) {
   const meaningfulLength = text.replace(/\s/g, "").length;
   if (!meaningfulLength) return false;
@@ -290,7 +372,7 @@ function citationOverlabelDetected(text: string, annotations: Annotation[]) {
   if (citationChars / meaningfulLength <= 0.6) return false;
 
   const primaryCitationChars = annotations
-    .filter((annotation) => annotation.label === "citation" && isPrimaryCitationSignal(annotation.text))
+    .filter((annotation) => annotation.label === "citation" && (isPrimaryCitationSignal(annotation.text) || isSourceSignalSentence(annotation.text)))
     .reduce((sum, annotation) => sum + annotation.text.replace(/\s/g, "").length, 0);
   return primaryCitationChars / meaningfulLength <= 0.6;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMockAnnotations, normalizeAnnotations } from "./annotations";
+import { buildMockAnnotations, normalizeAnnotations, rhetoricalUnitRanges } from "./annotations";
 
 function labelFor(text: string, needle: string) {
   const annotation = buildMockAnnotations(text).find((item) => item.text.includes(needle));
@@ -78,7 +78,60 @@ Conclusion plan
   it("reserves citation labels for citation or reference signals", () => {
     expect(labelFor("In-text citation: (Rivera, 2024)", "In-text citation")).toBe("citation");
     expect(labelFor("Reference list: Rivera. (2024). Student focus survey.", "Reference list")).toBe("citation");
+    expect(labelFor("Source card: Rivera, 2024, Student focus survey.", "Source card")).toBe("citation");
+    expect(labelFor("Source status: source needed", "Source status")).toBe("plain");
     expect(labelFor("The reference list should be checked during final review.", "reference list")).not.toBe("citation");
+  });
+
+  it("splits paragraph prose into sentence-level fallback annotations", () => {
+    const text = "Technology can support learning when students keep control. Research on attention can help the essay define the problem. This matters because the argument is about human judgment, not just tools.";
+    const annotations = buildMockAnnotations(text);
+
+    expect(annotations).toHaveLength(3);
+    expect(annotations.map((annotation) => annotation.text)).toEqual([
+      "Technology can support learning when students keep control.",
+      "Research on attention can help the essay define the problem.",
+      "This matters because the argument is about human judgment, not just tools."
+    ]);
+  });
+
+  it("keeps fallback annotation ranges under the long-range limit", () => {
+    const longSentence = `Analysis: ${Array.from({ length: 90 }, (_, index) => `reason${index}`).join(" ")}`;
+    const ranges = rhetoricalUnitRanges(longSentence);
+
+    expect(ranges.length).toBeGreaterThan(1);
+    expect(Math.max(...ranges.map((range) => range.text.length))).toBeLessThanOrEqual(350);
+  });
+
+  it("splits mixed paragraphs into sentence-level rhetorical labels", () => {
+    const text = "Technology has always changed the way human beings live. According to Stanford's 2025 AI Index Report, AI investment is increasing quickly. This evidence suggests that students need humanities-based judgment. This essay argues that technology needs human guidance.";
+    const annotations = buildMockAnnotations(text);
+
+    expect(annotations.length).toBeGreaterThanOrEqual(4);
+    expect(annotations.some((annotation) => annotation.label === "background" && annotation.text.includes("Technology has always"))).toBe(true);
+    expect(annotations.some((annotation) => annotation.label === "citation" && annotation.text.includes("According to Stanford"))).toBe(true);
+    expect(annotations.some((annotation) => annotation.label === "analysis" && annotation.text.includes("This evidence suggests"))).toBe(true);
+    expect(annotations.some((annotation) => annotation.label === "thesis" && annotation.text.includes("This essay argues"))).toBe(true);
+  });
+
+  it("does not create long paragraph-sized fallback annotations", () => {
+    const longSentence = `This paragraph starts with context about technology and human learning, then adds multiple connected details about classroom practice, institutional responsibility, platform design, student judgment, ethical reasoning, and civic consequences, while continuing long enough that the fallback splitter should divide it into shorter rhetorical units instead of painting the whole paragraph one color for the student editor to review carefully and practically.`;
+    const annotations = buildMockAnnotations(longSentence);
+
+    expect(annotations.length).toBeGreaterThan(1);
+    expect(Math.max(...annotations.map((annotation) => annotation.text.length))).toBeLessThanOrEqual(350);
+  });
+
+  it("does not let one citation cue color an entire paragraph as citation", () => {
+    const text = "The draft begins by explaining why technology changes human habits. According to Stanford's 2025 AI Index Report, AI systems are being adopted quickly. This shows why the essay needs analysis of human judgment rather than a simple technology narrative. In conclusion, the final review should return to the thesis.";
+    const annotations = buildMockAnnotations(text);
+    const labels = new Set(annotations.map((annotation) => annotation.label));
+    const citationChars = annotations
+      .filter((annotation) => annotation.label === "citation")
+      .reduce((sum, annotation) => sum + annotation.text.length, 0);
+
+    expect(labels.size).toBeGreaterThan(2);
+    expect(citationChars / text.length).toBeLessThan(0.6);
   });
 
   it("drops stale or whitespace-only annotation ranges before rendering", () => {
