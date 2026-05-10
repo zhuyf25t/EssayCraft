@@ -35,6 +35,22 @@ test("student can edit paragraphs and preview locked source controls", async ({ 
   await h.expectEditorText(page, /Campus phone habits/);
 });
 
+test("editor preserves a normal trailing space while typing", async ({ page }) => {
+  await h.setupPage({ page });
+  const text = "Topic: Technology";
+  await h.setEditorText(page, text);
+  await h.selectEditorRange(page, text.length, text.length);
+  await page.keyboard.press(" ");
+
+  await expect.poll(async () => h.canonicalModuleText(page)).toBe(`${text} `);
+  await expect.poll(async () => h.editor(page).evaluate((node) => {
+    const selection = window.getSelection();
+    if (!selection?.rangeCount) return -1;
+    const range = selection.getRangeAt(0);
+    return node.contains(range.startContainer) ? range.startOffset : -1;
+  })).toBeGreaterThan(0);
+});
+
 test("source needs controls are preview-only while source editing is locked", async ({ page }) => {
   await page.getByRole("tab", { name: /Sources/i }).click();
   await expect(page.getByTestId("sources-locked-warning")).toBeVisible();

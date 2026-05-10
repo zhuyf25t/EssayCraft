@@ -40,4 +40,10 @@ describe("noteKernel", () => {
     expect(normalizedForNoopCompare("Question NOTE:patch-abc123")).toBe("question");
     expect(normalizedForNoopCompare("Question")).toBe("question");
   });
+
+  it("preserves ordinary typing whitespace while stripping internal markers", () => {
+    expect(protectModuleText("Topic: Technology ")).toBe("Topic: Technology ");
+    expect(protectModuleText("Topic: Technology  and humanity")).toBe("Topic: Technology  and humanity");
+    expect(stripEditorKernelMarkers("Topic: Technology \u2063NOTE:patch-123456\u2064hidden\u2063/NOTE\u2064 ")).toBe("Topic: Technology  ");
+  });
 });

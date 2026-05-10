@@ -23,12 +23,7 @@ export function stripEditorKernelMarkers(value: string) {
     .replace(RAW_NOTE_ID_FRAGMENT, "")
     .replace(RAW_PATCH_ID_FRAGMENT, "")
     .replace(UUID_LIKE_NOTE_ID, "")
-    .replace(OBJECT_LEAK, "")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n[ \t]+/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trimEnd();
+    .replace(OBJECT_LEAK, "");
 }
 
 export function hasEditorKernelMarkers(value: string) {
