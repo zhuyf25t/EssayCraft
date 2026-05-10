@@ -2,6 +2,8 @@ import { defineConfig, devices } from "@playwright/test";
 
 const port = process.env.PLAYWRIGHT_PORT ?? "3210";
 const baseURL = `http://127.0.0.1:${port}`;
+const webServerCommand = process.env.PLAYWRIGHT_WEB_SERVER_COMMAND ??
+  `npm run build && npm run start -- --port ${port}`;
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -10,10 +12,10 @@ export default defineConfig({
     timeout: 10_000
   },
   webServer: {
-    command: `npm run dev -- --port ${port}`,
+    command: webServerCommand,
     url: baseURL,
     reuseExistingServer: false,
-    timeout: 120_000,
+    timeout: 180_000,
     env: {
       ...process.env,
       ESSAYCRAFT_FORCE_MOCK_AI: "1"
