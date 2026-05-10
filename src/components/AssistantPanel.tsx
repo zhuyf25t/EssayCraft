@@ -216,7 +216,7 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
           <button aria-label="Rewrite" className="btn-primary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => runInstruction("Rewrite selected passage")}>Rewrite</button>
           <button aria-label="Make academic" className="rounded-lg border border-blue-500 bg-blue-50 px-1.5 py-1.5 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>Academic</button>
           <button aria-label="Translate" className="btn-secondary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onSelectionAction("Translate selected text")}>Translate</button>
-          <button aria-label="Explain highlight" className="btn-secondary px-1.5 py-1.5" disabled={!props.activeAnnotation || props.loading} onClick={() => props.onInspectAction("Explain this highlight")}>Explain</button>
+          <button aria-label="Explain highlight" className="btn-secondary px-1.5 py-1.5" disabled={!canEdit || props.loading} onClick={() => props.onInspectAction(props.activeAnnotation ? "Explain this highlight" : "Explain this sentence")}>Explain</button>
         </div>
       </div>
     </div>
