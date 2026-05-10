@@ -327,7 +327,7 @@ test("right panel tabs keep secondary work organized and toolbar clutter is redu
   await expect(rail.getByRole("tabpanel", { name: "Export" })).toContainText("Export & Project Files");
   await expect(page.getByTestId("editor-shell")).not.toContainText("AI diagnostics");
   await rail.getByRole("tabpanel", { name: "Export" }).getByRole("button", { name: /AI diagnostics/ }).click();
-  await expect(page.getByTestId("ai-diagnostics")).toContainText(/Interactive timeout|Provider configured/i);
+  await expect(page.getByTestId("ai-diagnostics")).toContainText(/Assist timeout|Provider configured/i);
 
   await rail.getByRole("tab", { name: /Assistant/i }).click();
   await expect(rail.getByRole("tabpanel", { name: "Assistant" })).toContainText("Chat");
@@ -633,7 +633,8 @@ test("Translate preview shows Chinese mock output without changing the document"
   await expect(translation).not.toContainText("How can schools reduce distraction");
   await expect(translation).toContainText("[citation needed]");
   await expect(translation).toContainText("[source needed]");
-  await expect(dialog).not.toContainText(/DeepSeek|provider|fallback|debug|AI returned|no API key/i);
+  await expect(dialog).not.toContainText(/DeepSeek|debug|AI returned|no API key/i);
+  await expect(dialog.getByTestId("translate-provider-badge")).toContainText(/provider|mock|fallback/i);
   for (const banned of ["中文参考翻译：", "这句话讨论了", "这句话强调", "核心论点是", "本地参考翻译", "译文:"]) {
     await expect(translation).not.toContainText(banned);
   }
@@ -946,7 +947,8 @@ test("selected text translation is read-only in Edit mode", async ({ page }) => 
   await page.getByRole("button", { name: "Translate" }).click();
   await expect(page.getByTestId("assistant-edit-preview")).toContainText("Translation preview", { timeout: 20_000 });
   await expect(page.getByTestId("assistant-edit-preview")).toContainText(/[\u4e00-\u9fff]/);
-  await expect(page.getByTestId("assistant-edit-preview")).not.toContainText(/DeepSeek|provider|fallback|debug|AI returned|no API key/i);
+  await expect(page.getByTestId("assistant-edit-preview")).not.toContainText(/DeepSeek|debug|AI returned|no API key/i);
+  await expect(page.getByTestId("assistant-edit-preview").getByTestId("provider-mode-badge")).toContainText(/provider|mock|fallback/i);
   await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Accept" })).toHaveCount(0);
   await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Copy" })).toBeVisible();
   await expect(page.getByTestId("assistant-edit-preview")).not.toContainText("requires intentional habits");
@@ -1384,6 +1386,25 @@ Evidence needed: academic integrity source`,
     expect(annotation.end).toBeLessThanOrEqual(body.text.length);
     expect(body.text.slice(annotation.start, annotation.end)).toBe(annotation.text);
   }
+});
+
+test("diagnostics API exposes provider metadata without secrets", async ({ request }) => {
+  const response = await request.get("/api/diagnostics");
+
+  expect(response.status()).toBe(200);
+  const body = await response.json();
+  expect(typeof body.providerConfigured).toBe("boolean");
+  expect(typeof body.forceMock).toBe("boolean");
+  expect(typeof body.model).toBe("string");
+  expect(typeof body.fastModel).toBe("string");
+  expect(typeof body.highQualityModel).toBe("string");
+  expect(typeof body.interactiveTimeoutMs).toBe("number");
+  expect(body.assistTimeoutMs).toBeGreaterThan(2500);
+  expect(body.refreshTimeoutMs).toBeGreaterThan(2500);
+  expect(body.translateTimeoutMs).toBeGreaterThan(2500);
+  expect(body.generateTimeoutMs).toBeGreaterThanOrEqual(30000);
+  expect(typeof body.baseUrlConfigured).toBe("boolean");
+  expect(JSON.stringify(body)).not.toMatch(/DEEPSEEK_API_KEY|NEXT_PUBLIC|api[_-]?key|sk-[A-Za-z0-9]/i);
 });
 
 test("refresh API mock visibly revises naturalness notes", async ({ request }) => {
