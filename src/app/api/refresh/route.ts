@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import type { Annotation, Patch, RefreshRequest, RefreshResponse, SourceCard } from "@/types/essaycraft";
 import { createAiClient, AI_FAST_MODEL, hasAiKey, withAiTimeout } from "@/lib/ai-client";
-import { buildMockAnnotations, exactAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
+import { buildMockAnnotations, findIssueRanges, guardAgainstCitationOverlabeling, normalizeAnnotations } from "@/lib/annotations";
 import { normalizedForNoopCompare, protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { buildRefreshMessages } from "@/lib/prompts";
+import { validateProviderRefreshAnnotations } from "@/lib/refreshValidation";
 import { applyNotesFallback } from "@/lib/rewriteFallback";
 import { refreshRequestSchema, refreshResponseSchema } from "@/lib/schemas";
 
@@ -54,12 +55,23 @@ export async function POST(request: Request) {
         return NextResponse.json(mockPatchRevision(input.text, openPatches, input.projectTitle || input.topic));
       }
 
-      const exact = exactAnnotations(input.text, parsed.annotations);
+      const validation = validateProviderRefreshAnnotations(input.text, parsed.annotations, input.moduleNumber);
+      const providerWarnings = [...(parsed.warnings ?? []), ...validation.warnings];
+      if (validation.usedFallback) {
+        return NextResponse.json(addModuleReviewIfNeeded(input, {
+          kind: "annotations",
+          annotations: validation.annotations,
+          globalFeedback: ["Highlights refreshed. Text was not rewritten.", moduleRefreshSuggestion(input, validation.annotations)].filter(Boolean),
+          warnings: providerWarnings,
+          providerMode: "fallback"
+        }));
+      }
+
       const normalized: RefreshResponse = addModuleReviewIfNeeded(input, {
         kind: "annotations",
-        annotations: exact.annotations,
-        globalFeedback: parsed.globalFeedback?.length ? parsed.globalFeedback : [moduleRefreshSuggestion(input, exact.annotations)],
-        warnings: [...(parsed.warnings ?? []), ...exact.warnings],
+        annotations: validation.annotations,
+        globalFeedback: parsed.globalFeedback?.length ? parsed.globalFeedback : [moduleRefreshSuggestion(input, validation.annotations)],
+        warnings: providerWarnings,
         providerMode: "deepseek"
       });
 
@@ -80,7 +92,7 @@ export async function POST(request: Request) {
 
 function mockRefresh(input: RefreshRequest, message: string): RefreshResponse {
   const patchAnnotations = annotationsFromPatches(input.text, input.patches);
-  const annotations = normalizeAnnotations(input.text, [...patchAnnotations, ...buildMockAnnotations(input.text), ...findIssueRanges(input.text)]);
+  const annotations = guardAgainstCitationOverlabeling(input.text, [...patchAnnotations, ...buildMockAnnotations(input.text), ...findIssueRanges(input.text)]);
 
   return addModuleReviewIfNeeded(input, {
     kind: "annotations",
@@ -93,7 +105,7 @@ function mockRefresh(input: RefreshRequest, message: string): RefreshResponse {
 
 function mockPatchRevision(text: string, patches: Patch[], projectTitle = ""): RefreshResponse {
   const proposedText = applyNotesFallback(text, patches, projectTitle);
-  const annotations = normalizeAnnotations(proposedText, buildMockAnnotations(proposedText));
+  const annotations = guardAgainstCitationOverlabeling(proposedText, buildMockAnnotations(proposedText));
   return {
     kind: "revision",
     annotations: [],

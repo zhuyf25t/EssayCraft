@@ -8,7 +8,6 @@ const LABEL_SEQUENCE: SegmentLabel[] = [
   "evidence",
   "analysis",
   "counterargument",
-  "citation",
   "conclusion"
 ];
 
@@ -39,6 +38,13 @@ export function normalizeAnnotations(text: string, annotations: Annotation[]) {
   }
 
   return result;
+}
+
+export function guardAgainstCitationOverlabeling(text: string, annotations: Annotation[]) {
+  const normalizedText = normalizeText(text);
+  const normalized = normalizeAnnotations(normalizedText, annotations).map(relabelCitationIfOverbroad);
+  if (!citationOverlabelDetected(normalizedText, normalized)) return normalized;
+  return normalizeAnnotations(normalizedText, [...buildMockAnnotations(normalizedText), ...findIssueRanges(normalizedText)]).map(relabelCitationIfOverbroad);
 }
 
 export function exactAnnotations(text: string, annotations: Annotation[]) {
@@ -217,13 +223,74 @@ export function guessLabel(text: string, index = 0): SegmentLabel {
   if (/^[-*]?\s*(possible source type|suggested source type|search keywords|source status|cars check)\s*:/i.test(trimmed)) return "plain";
   if (/\[source needed(?::[^\]]*)?\]/i.test(trimmed)) return "evidence";
   if (/^[-*]?\s*(evidence needed|evidence to look for|evidence to use|evidence to find|evidence)\s*:/i.test(trimmed)) return "evidence";
-  if (/\([a-z][a-z\s&.,-]+,\s*\d{4}[a-z]?\)/i.test(text) || lower.includes("reference list") || lower.includes("doi:")) return "citation";
+  if (isPrimaryCitationSignal(trimmed)) return "citation";
   if (/^[-*]?\s*(analysis|analysis purpose|response)\s*:/i.test(trimmed)) return "analysis";
   if (/^[-*]?\s*(counterargument|opposing view)\b/i.test(trimmed) || lower.includes("some readers may argue") || lower.includes("critics argue") || lower.includes("however")) return "counterargument";
   if (/^[-*]?\s*(conclusion|conclusion plan|rephrased thesis|so what|implication)\b/i.test(trimmed) || lower.includes("in conclusion") || lower.includes("overall") || lower.includes("to conclude")) return "conclusion";
   if (lower.includes("this essay argues") || lower.includes("this paper argues")) return "thesis";
   if (lower.includes("because") || lower.includes("therefore") || lower.includes("this means") || lower.includes("suggests") || lower.includes("as a result")) return "analysis";
-  if (lower.includes("research") || lower.includes("study") || lower.includes("data") || lower.includes("for example")) return "evidence";
+  if (lower.includes("research") || lower.includes("study") || lower.includes("data") || lower.includes("for example") || containsInTextCitation(trimmed)) return "evidence";
   if (index === 0) return "background";
   return LABEL_SEQUENCE[index % LABEL_SEQUENCE.length] ?? "plain";
+}
+
+export function relabelCitationIfOverbroad(annotation: Annotation): Annotation {
+  if (annotation.label !== "citation" || isPrimaryCitationSignal(annotation.text)) return annotation;
+  const nextLabel = guessLabelWithoutCitation(annotation.text);
+  return {
+    ...annotation,
+    label: nextLabel === "citation" ? "evidence" : nextLabel,
+    comment: annotation.comment
+      ? `${annotation.comment} Rebalanced locally because this range uses citation as support rather than acting as a citation entry.`
+      : "Rebalanced locally because this range uses citation as support rather than acting as a citation entry."
+  };
+}
+
+export function isPrimaryCitationSignal(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/^[-*]?\s*(in-text citation|citation|reference entry|reference list|references|works cited)\s*:/i.test(trimmed)) return true;
+  if (/^[-*]?\s*(references|works cited)$/i.test(trimmed)) return true;
+  if (/^[-*]?\s*(doi|url)\s*:/i.test(trimmed)) return true;
+  if (/^(https?:\/\/|doi:|https?:\/\/doi\.org\/)/i.test(trimmed)) return true;
+  if (/^[-*]?\s*(?:\([A-Z][A-Za-z' .&-]+,\s*\d{4}[a-z]?\)[,;.\s]*)+$/i.test(trimmed)) return true;
+  if (/^[A-Z][A-Za-z' -]+,\s*[A-Z](?:\.[,\s]*)?\s*\(\d{4}[a-z]?\)\./.test(trimmed)) return true;
+  return false;
+}
+
+function guessLabelWithoutCitation(text: string): SegmentLabel {
+  const trimmed = text.trim();
+  if (!trimmed) return "plain";
+  const lower = trimmed.toLowerCase();
+  if (/\[citation needed\]/i.test(trimmed) || lower.includes("missing citation")) return "issue";
+  if (/^(topic|research question|question|hook|background|context|introduction(?: plan)?)\b/i.test(trimmed)) return "background";
+  if (/^[-*]?\s*(working thesis|thesis|thesis map|reason\s*\d+|argument branch|argument|branch|claim|topic sentence)\b/i.test(trimmed)) return "thesis";
+  if (/\[source needed(?::[^\]]*)?\]/i.test(trimmed) || /^[-*]?\s*(evidence needed|evidence to look for|evidence to use|evidence to find|evidence)\s*:/i.test(trimmed)) return "evidence";
+  if (/^[-*]?\s*(analysis|analysis purpose|response)\s*:/i.test(trimmed)) return "analysis";
+  if (/^[-*]?\s*(counterargument|opposing view)\b/i.test(trimmed) || lower.includes("some readers may argue") || lower.includes("critics argue") || lower.includes("however")) return "counterargument";
+  if (/^[-*]?\s*(conclusion|conclusion plan|rephrased thesis|so what|implication)\b/i.test(trimmed) || lower.includes("in conclusion") || lower.includes("overall") || lower.includes("to conclude")) return "conclusion";
+  if (lower.includes("this essay argues") || lower.includes("this paper argues")) return "thesis";
+  if (lower.includes("because") || lower.includes("therefore") || lower.includes("this means") || lower.includes("suggests") || lower.includes("as a result")) return "analysis";
+  if (lower.includes("research") || lower.includes("study") || lower.includes("data") || lower.includes("for example") || containsInTextCitation(trimmed)) return "evidence";
+  return "plain";
+}
+
+function containsInTextCitation(value: string) {
+  return /\([A-Z][A-Za-z' .&-]+,\s*\d{4}[a-z]?\)/.test(value);
+}
+
+function citationOverlabelDetected(text: string, annotations: Annotation[]) {
+  const meaningfulLength = text.replace(/\s/g, "").length;
+  if (!meaningfulLength) return false;
+  if (/(^|\n)\s*(references|reference list|works cited)\b/i.test(text)) return false;
+
+  const citationChars = annotations
+    .filter((annotation) => annotation.label === "citation")
+    .reduce((sum, annotation) => sum + annotation.text.replace(/\s/g, "").length, 0);
+  if (citationChars / meaningfulLength <= 0.6) return false;
+
+  const primaryCitationChars = annotations
+    .filter((annotation) => annotation.label === "citation" && isPrimaryCitationSignal(annotation.text))
+    .reduce((sum, annotation) => sum + annotation.text.replace(/\s/g, "").length, 0);
+  return primaryCitationChars / meaningfulLength <= 0.6;
 }

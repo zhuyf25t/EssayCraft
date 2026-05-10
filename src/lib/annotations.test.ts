@@ -70,6 +70,17 @@ Conclusion plan
     expect(labelFor(text, "[citation needed]")).toBe("issue");
   });
 
+  it("does not turn cited evidence sentences into citation labels", () => {
+    const text = "Research shows that structured notification limits can improve student attention (Rivera, 2024).";
+    expect(labelFor(text, "Research shows")).toBe("evidence");
+  });
+
+  it("reserves citation labels for citation or reference signals", () => {
+    expect(labelFor("In-text citation: (Rivera, 2024)", "In-text citation")).toBe("citation");
+    expect(labelFor("Reference list: Rivera. (2024). Student focus survey.", "Reference list")).toBe("citation");
+    expect(labelFor("The reference list should be checked during final review.", "reference list")).not.toBe("citation");
+  });
+
   it("drops stale or whitespace-only annotation ranges before rendering", () => {
     const text = "Topic: Social media balance\n\nWorking thesis: Balance is possible.";
     const annotations = normalizeAnnotations(text, [
