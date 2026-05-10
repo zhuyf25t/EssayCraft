@@ -1,5 +1,6 @@
 import type { Annotation, Patch, TextRange } from "@/types/essaycraft";
 import { LABELS } from "@/lib/labels";
+import { normalizeAnnotations } from "@/lib/annotations";
 import { stripEditorKernelMarkers } from "@/lib/noteKernel";
 
 export type InlinePatchEditorState = {
@@ -25,13 +26,7 @@ export function renderEditorContent(root: HTMLElement, options: {
   root.dataset.cleanText = text;
   root.replaceChildren();
 
-  const sorted = annotations
-    .filter((annotation) => {
-      if (annotation.end <= annotation.start || annotation.start < 0 || annotation.end > text.length) return false;
-      const segment = text.slice(annotation.start, annotation.end);
-      return segment === annotation.text && segment.trim().length > 0;
-    })
-    .sort((a, b) => a.start - b.start || a.end - b.end);
+  const sorted = normalizeAnnotations(text, annotations);
 
   const openPatches = patches
     .filter((patch) => !patch.resolved && !patch.stale && stripEditorKernelMarkers(patch.text).trim() && patch.anchorStart >= 0 && patch.anchorStart <= text.length && patch.anchorEnd >= patch.anchorStart && patch.anchorEnd <= text.length)

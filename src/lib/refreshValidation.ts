@@ -35,6 +35,16 @@ export function validateProviderRefreshAnnotations(
   }
 
   const granular = splitOverbroadProviderAnnotations(text, relabeled, warnings);
+  const coverageWarning = insufficientLongTextCoverage(text, granular);
+  if (coverageWarning) {
+    return {
+      annotations: granular,
+      warnings: [...warnings, coverageWarning],
+      usedFallback: true,
+      reason: coverageWarning
+    };
+  }
+
   if (citationOverlabelDetected(text, granular)) {
     return {
       annotations: granular,
@@ -113,4 +123,22 @@ function lacksUsefulLabelMix(annotations: Annotation[]) {
   if (labels.size > 1) return false;
   const [onlyLabel] = labels;
   return onlyLabel === "citation" || onlyLabel === "plain" || onlyLabel === "background";
+}
+
+function insufficientLongTextCoverage(text: string, annotations: Annotation[]) {
+  const units = rhetoricalUnitRanges(text)
+    .filter((unit) => unit.text.trim().length >= 24);
+  if (text.trim().length < 1200 || units.length < 8) return "";
+
+  const coveredUnits = units.filter((unit) =>
+    annotations.some((annotation) => rangeOverlap(unit.start, unit.end, annotation.start, annotation.end) / (unit.end - unit.start) >= 0.6)
+  ).length;
+  const minimumCovered = Math.max(8, Math.ceil(units.length * 0.55));
+  if (coveredUnits >= minimumCovered) return "";
+
+  return `Provider returned too few sentence-level annotations for this long text (${coveredUnits}/${units.length} units covered; need at least ${minimumCovered}).`;
+}
+
+function rangeOverlap(startA: number, endA: number, startB: number, endB: number) {
+  return Math.max(0, Math.min(endA, endB) - Math.max(startA, startB));
 }

@@ -95,4 +95,34 @@ Overall, the final version should return to the thesis and check references.`;
     expect(labels.size).toBe(1);
     expect(result.warnings.join(" ")).toMatch(/label variety/i);
   });
+
+  it("rejects sparse provider labels on long text so refresh cannot silently keep only a few highlights", () => {
+    const sentences = Array.from({ length: 18 }, (_, index) =>
+      `Sentence ${index + 1} explains a distinct part of the final essay about technology, humanities, evidence, and interpretation.`
+    );
+    const text = sentences.join(" ");
+    const first = sentences[0];
+    const second = sentences[1];
+    const result = validateProviderRefreshAnnotations(text, [
+      {
+        id: "sparse-1",
+        start: 0,
+        end: first.length,
+        text: first,
+        label: "background",
+        confidence: 0.8
+      },
+      {
+        id: "sparse-2",
+        start: text.indexOf(second),
+        end: text.indexOf(second) + second.length,
+        text: second,
+        label: "analysis",
+        confidence: 0.8
+      }
+    ], 6);
+
+    expect(result.usedFallback).toBe(true);
+    expect(result.reason).toMatch(/too few sentence-level annotations/i);
+  });
 });

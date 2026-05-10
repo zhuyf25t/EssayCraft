@@ -90,6 +90,10 @@ export function repairAnnotation(text: string, annotation: Annotation): Annotati
   const quote = annotation.text.trim();
   if (!quote) return null;
 
+  if (slice.trim() && looselySameAnnotationText(slice, quote)) {
+    return { ...annotation, start, end, text: slice };
+  }
+
   const found = text.indexOf(quote);
   if (found >= 0) {
     return {
@@ -101,6 +105,38 @@ export function repairAnnotation(text: string, annotation: Annotation): Annotati
   }
 
   return null;
+}
+
+function looselySameAnnotationText(slice: string, quote: string) {
+  const left = normalizeForAnnotationCompare(slice);
+  const right = normalizeForAnnotationCompare(quote);
+  if (!left || !right) return false;
+  if (left === right) return true;
+  if (left.includes(right) || right.includes(left)) {
+    return Math.min(left.length, right.length) / Math.max(left.length, right.length) >= 0.72;
+  }
+  return characterSimilarity(left, right) >= 0.82;
+}
+
+function normalizeForAnnotationCompare(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[“”]/g, "\"")
+    .replace(/[‘’]/g, "'")
+    .replace(/\s+/g, " ")
+    .replace(/[^\p{L}\p{N}\s'"%.,()$-]/gu, "")
+    .trim();
+}
+
+function characterSimilarity(left: string, right: string) {
+  const max = Math.max(left.length, right.length);
+  if (!max) return 1;
+  const min = Math.min(left.length, right.length);
+  let same = 0;
+  for (let index = 0; index < min; index += 1) {
+    if (left[index] === right[index]) same += 1;
+  }
+  return same / max;
 }
 
 export function buildMockAnnotations(text: string): Annotation[] {

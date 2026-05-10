@@ -386,12 +386,14 @@ export default function Home() {
         return;
       }
 
-      updateCurrentModule((doc) => ({
-        ...doc,
-        annotations: normalizeAnnotations(doc.text, data.annotations),
-        globalFeedback: data.globalFeedback,
-        updatedAt: nowIso()
-      }));
+      if (data.providerMode !== "unavailable") {
+        updateCurrentModule((doc) => ({
+          ...doc,
+          annotations: normalizeAnnotations(doc.text, data.annotations),
+          globalFeedback: data.globalFeedback,
+          updatedAt: nowIso()
+        }));
+      }
       setRefreshResult({ ...data, kind: data.kind ?? "annotations" });
       setAssistantSuggestion(undefined);
       setRightTab("assistant");

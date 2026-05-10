@@ -218,4 +218,21 @@ Conclusion plan
     expect(annotations).toHaveLength(1);
     expect(annotations[0].id).toBe("valid");
   });
+
+  it("repairs AI annotation text with minor quote or whitespace differences when the range is correct", () => {
+    const text = "According to Stanford’s 2025 AI Index Report, investment reached 33.9 billion dollars.";
+    const annotations = normalizeAnnotations(text, [
+      {
+        id: "ai-range",
+        start: 0,
+        end: text.length,
+        text: "According to Stanford's 2025 AI Index Report, investment reached 33.9 billion dollars.",
+        label: "evidence",
+        confidence: 0.8
+      }
+    ]);
+
+    expect(annotations).toHaveLength(1);
+    expect(annotations[0].text).toBe(text);
+  });
 });
