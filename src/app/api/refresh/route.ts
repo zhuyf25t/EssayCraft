@@ -1,111 +1,88 @@
 import { NextResponse } from "next/server";
-import type { RefreshResponse } from "@/types/essaycraft";
-import {
-  addAiMetadata,
-  aiMetadata,
-  AI_FAST_MODEL,
-  AI_MOCK_MODEL,
-  createAiClient,
-  fallbackReasonFromError,
-  providerSkipReason,
-  REFRESH_TIMEOUT_MS,
-  withAiTimeout
-} from "@/lib/ai-client";
-import { buildMockAnnotations, normalizeAnnotations } from "@/lib/annotations";
+import type { RefreshRequest, RefreshResponse } from "@/types/essaycraft";
+import { normalizeAnnotations } from "@/lib/annotations";
 import { normalizedForNoopCompare, protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { buildRefreshMessages } from "@/lib/prompts";
 import { validateProviderRefreshAnnotations } from "@/lib/refreshValidation";
-import { addModuleReviewIfNeeded, mockPatchRevision, mockRefresh, moduleRefreshSuggestion } from "@/lib/refreshFallback";
+import { addModuleReviewIfNeeded, moduleRefreshSuggestion } from "@/lib/refreshFallback";
+import { mockPatchRevision, mockRefresh } from "@/lib/ai/mockProvider";
+import { runJsonAiTask } from "@/lib/ai/taskRouter";
 import { refreshRequestSchema, refreshResponseSchema } from "@/lib/schemas";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const startedAt = performance.now();
   try {
     const json = await request.json();
     const parsedInput = refreshRequestSchema.parse(json);
     const input = { ...parsedInput, text: protectModuleText(parsedInput.text) };
     const openPatches = input.patches.filter((patch) => !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim());
 
-    const skipReason = providerSkipReason();
-    if (skipReason) {
-      const mock = openPatches.length
+    const result = await runJsonAiTask({
+      taskType: openPatches.length ? "applyNotesRevision" : input.moduleNumber === 6 ? "finalReview" : input.moduleNumber === 5 ? "citationReview" : "refreshAnnotations",
+      messages: buildRefreshMessages(input),
+      schema: refreshResponseSchema,
+      mock: () => openPatches.length
         ? mockPatchRevision(input.text, openPatches, input.projectTitle || input.topic)
-        : mockRefresh(input, "Highlights refreshed. Text was not rewritten.");
-      return NextResponse.json(addAiMetadata(mock, aiMetadata(startedAt, "mock", AI_MOCK_MODEL, skipReason)));
-    }
-
-    try {
-      const client = createAiClient(REFRESH_TIMEOUT_MS);
-      const completion = await withAiTimeout(
-        client.chat.completions.create({
-          model: AI_FAST_MODEL,
-          messages: buildRefreshMessages(input),
-          response_format: { type: "json_object" },
-          max_tokens: 4096,
-          temperature: 0.1
-        }),
-        REFRESH_TIMEOUT_MS
-      );
-
-      const raw = completion.choices[0]?.message?.content;
-      if (!raw) throw new Error("AI returned empty content.");
-
-      const parsed = refreshResponseSchema.parse(JSON.parse(raw));
-      if (openPatches.length && parsed.kind === "revision" && parsed.proposedText?.trim()) {
-        const proposedText = stripEditorKernelMarkers(parsed.proposedText);
-        if (normalizedForNoopCompare(proposedText) === normalizedForNoopCompare(input.text)) {
-          throw new Error("Provider returned an unchanged note revision.");
-        }
-        return NextResponse.json(addAiMetadata({
-          ...parsed,
-          proposedText,
+        : mockRefresh(input, "Highlights refreshed. Text was not rewritten."),
+      unavailable: (reason) => unavailableRefresh(input, reason),
+      parseProvider: (parsed) => {
+        if (openPatches.length && parsed.kind === "revision" && parsed.proposedText?.trim()) {
+          const proposedText = stripEditorKernelMarkers(parsed.proposedText);
+          if (normalizedForNoopCompare(proposedText) === normalizedForNoopCompare(input.text)) {
+            throw new Error("Provider returned an unchanged note revision.");
+          }
+          return {
+            ...parsed,
+            proposedText,
           providerMode: "deepseek",
           sourceText: input.text,
-          proposedAnnotations: normalizeAnnotations(proposedText, parsed.proposedAnnotations ?? buildMockAnnotations(proposedText)),
-          patchResolutionPlan: (parsed.patchResolutionPlan ?? []).filter((patchId) => openPatches.some((patch) => patch.id === patchId))
-        }, aiMetadata(startedAt, "deepseek", AI_FAST_MODEL)));
-      }
-      if (openPatches.length) {
-        const fallback = mockPatchRevision(input.text, openPatches, input.projectTitle || input.topic);
-        return NextResponse.json(addAiMetadata(
-          fallback,
-          aiMetadata(startedAt, "fallback", AI_MOCK_MODEL, "provider-returned-non-revision-for-notes")
-        ));
-      }
+          proposedAnnotations: normalizeAnnotations(proposedText, parsed.proposedAnnotations ?? parsed.annotations ?? []),
+          patchResolutionPlan: (parsed.patchResolutionPlan ?? []).filter((patchId) => openPatches.some((patch) => patch.id === patchId)),
+          globalFeedback: parsed.globalFeedback ?? [],
+          warnings: parsed.warnings ?? []
+        } satisfies RefreshResponse;
+        }
+        if (openPatches.length) {
+          throw new Error("Provider returned non-revision output for open notes.");
+        }
 
-      const validation = validateProviderRefreshAnnotations(input.text, parsed.annotations, input.moduleNumber);
-      const providerWarnings = [...(parsed.warnings ?? []), ...validation.warnings];
-      if (validation.usedFallback) {
-        return NextResponse.json(addAiMetadata(addModuleReviewIfNeeded(input, {
+        const validation = validateProviderRefreshAnnotations(input.text, parsed.annotations, input.moduleNumber);
+        const providerWarnings = [...(parsed.warnings ?? []), ...validation.warnings];
+        if (validation.usedFallback) {
+          throw new Error(validation.reason ?? "Provider returned invalid annotation output.");
+        }
+
+        return addModuleReviewIfNeeded(input, {
           kind: "annotations",
           annotations: validation.annotations,
-          globalFeedback: ["Highlights refreshed. Text was not rewritten.", moduleRefreshSuggestion(input, validation.annotations)].filter(Boolean),
+          globalFeedback: parsed.globalFeedback?.length ? parsed.globalFeedback : [moduleRefreshSuggestion(input, validation.annotations)],
           warnings: providerWarnings,
-          providerMode: "fallback"
-        }), aiMetadata(startedAt, "fallback", AI_MOCK_MODEL, validation.reason ?? "provider-refresh-validation-fallback")));
-      }
-
-      const normalized: RefreshResponse = addModuleReviewIfNeeded(input, {
-        kind: "annotations",
-        annotations: validation.annotations,
-        globalFeedback: parsed.globalFeedback?.length ? parsed.globalFeedback : [moduleRefreshSuggestion(input, validation.annotations)],
-        warnings: providerWarnings,
-        providerMode: "deepseek"
-      });
-
-      return NextResponse.json(addAiMetadata(normalized, aiMetadata(startedAt, "deepseek", AI_FAST_MODEL)));
-    } catch (aiError) {
-      const fallback = openPatches.length
-        ? mockPatchRevision(input.text, openPatches, input.projectTitle || input.topic)
-        : mockRefresh(input, "Highlights refreshed. Text was not rewritten.");
-      fallback.providerMode = "fallback";
-      fallback.warnings.push("Refresh used a local fallback. Text was not rewritten.");
-      return NextResponse.json(addAiMetadata(fallback, aiMetadata(startedAt, "fallback", AI_MOCK_MODEL, fallbackReasonFromError(aiError, AI_FAST_MODEL))));
-    }
+          providerMode: "deepseek"
+        }) satisfies RefreshResponse;
+      },
+      maxTokens: 4096,
+      temperature: 0.1
+    });
+    return NextResponse.json(result);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 400 });
   }
+}
+
+function unavailableRefresh(input: Pick<RefreshRequest, "text" | "annotations">, reason: string): RefreshResponse {
+  return {
+    kind: "annotations",
+    annotations: normalizeAnnotations(input.text, input.annotations ?? []),
+    globalFeedback: ["AI unavailable. Existing text and highlights were preserved."],
+    warnings: [safeUnavailableReason(reason)],
+    providerMode: "unavailable"
+  };
+}
+
+function safeUnavailableReason(reason: string) {
+  if (reason === "missing-api-key") return "DeepSeek API key is not configured.";
+  if (reason === "forced-mock") return "Mock mode was explicitly enabled.";
+  return "Provider request did not complete successfully.";
 }

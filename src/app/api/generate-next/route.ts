@@ -3,14 +3,14 @@ import type { Annotation, GenerateNextResponse, ModuleNumber, SourceCard } from 
 import {
   addAiMetadata,
   aiMetadata,
-  AI_MODEL,
   AI_MOCK_MODEL,
   createAiClient,
   fallbackReasonFromError,
-  GENERATE_TIMEOUT_MS,
-  providerSkipReason,
+  forceMockEnabled,
+  hasAiKey,
   withAiTimeout
 } from "@/lib/ai-client";
+import { AI_TASKS } from "@/lib/ai/tasks";
 import { buildMockAnnotations, exactAnnotations, findIssueRanges, normalizeAnnotations } from "@/lib/annotations";
 import { buildCitationAudit } from "@/lib/citationAudit";
 import { getTransitionPrompt } from "@/lib/moduleTransitionPrompts";
@@ -36,25 +36,28 @@ export async function POST(request: Request) {
       );
     }
 
-    const skipReason = providerSkipReason();
-    if (skipReason) {
+    const task = AI_TASKS.generateNextModule;
+    if (forceMockEnabled()) {
       return NextResponse.json(addAiMetadata(
         mockGenerate(input.topic, input.sourceModuleNumber, input.sourceText, input.sourceSources, input.sourceAnnotations),
-        aiMetadata(startedAt, "mock", AI_MOCK_MODEL, skipReason)
+        aiMetadata(startedAt, "mock", AI_MOCK_MODEL, "forced-mock")
       ));
+    }
+    if (!hasAiKey()) {
+      return NextResponse.json(unavailableGenerate(startedAt, "missing-api-key"), { status: 503 });
     }
 
     try {
-      const client = createAiClient(GENERATE_TIMEOUT_MS);
+      const client = createAiClient(task.timeoutMs);
       const completion = await withAiTimeout(
         client.chat.completions.create({
-          model: AI_MODEL,
+          model: task.model,
           messages: buildGenerateNextMessages(input),
           response_format: { type: "json_object" },
           max_tokens: 7000,
           temperature: 0.25
         }),
-        GENERATE_TIMEOUT_MS
+        task.timeoutMs
       );
 
       const raw = completion.choices[0]?.message?.content;
@@ -87,18 +90,28 @@ export async function POST(request: Request) {
         providerMode: "deepseek"
       };
 
-      return NextResponse.json(addAiMetadata(normalized, aiMetadata(startedAt, "deepseek", AI_MODEL)));
+      return NextResponse.json(addAiMetadata(normalized, aiMetadata(startedAt, "deepseek", task.model)));
     } catch (aiError) {
-      console.warn("Generate Next AI fallback:", aiError);
-      const fallback = mockGenerate(input.topic, input.sourceModuleNumber, input.sourceText, input.sourceSources, input.sourceAnnotations);
-      fallback.providerMode = "fallback";
-      fallback.warnings.push(`Live AI was unavailable, so EssayCraft used local deterministic guidance for Module ${expectedTarget}. Review source and citation markers before submission.`);
-      return NextResponse.json(addAiMetadata(fallback, aiMetadata(startedAt, "fallback", AI_MOCK_MODEL, fallbackReasonFromError(aiError, AI_MODEL))));
+      console.warn("Generate Next AI unavailable:", aiError);
+      return NextResponse.json(unavailableGenerate(startedAt, fallbackReasonFromError(aiError, task.model)), { status: 503 });
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 400 });
   }
+}
+
+function unavailableGenerate(startedAt: number, reason: string) {
+  return addAiMetadata({
+    error: "AI unavailable. Check DeepSeek settings or retry. Enable ESSAYCRAFT_FORCE_MOCK_AI=1 only for an offline demo.",
+    providerMode: "unavailable" as const,
+    warnings: [safeUnavailableReason(reason)]
+  }, aiMetadata(startedAt, "unavailable", "none", reason));
+}
+
+function safeUnavailableReason(reason: string) {
+  if (reason === "missing-api-key") return "DeepSeek API key is not configured.";
+  return "Provider request did not complete successfully.";
 }
 
 function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6>, sourceText: string, sourceSources: SourceCard[] = [], sourceAnnotations: Annotation[] = []): GenerateNextResponse {

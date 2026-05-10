@@ -1,57 +1,33 @@
 ﻿import { NextResponse } from "next/server";
 import type { AssistRequest, AssistResponse, AssistResponseLegacy } from "@/types/essaycraft";
-import {
-  addAiMetadata,
-  aiMetadata,
-  AI_FAST_MODEL,
-  AI_MOCK_MODEL,
-  ASSIST_TIMEOUT_MS,
-  createAiClient,
-  fallbackReasonFromError,
-  providerSkipReason,
-  withAiTimeout
-} from "@/lib/ai-client";
 import { exactAnnotations } from "@/lib/annotations";
 import { normalizedForNoopCompare, protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { buildAssistMessages } from "@/lib/prompts";
 import { changeRequested } from "@/lib/rewriteFallback";
-import { mockAssist, sanitizeReplacement } from "@/lib/assistMock";
+import { sanitizeReplacement } from "@/lib/assistMock";
+import { mockAssist } from "@/lib/ai/mockProvider";
+import { runJsonAiTask } from "@/lib/ai/taskRouter";
+import type { AiTaskType } from "@/lib/ai/tasks";
 import { assistRequestSchema, assistResponseSchema } from "@/lib/schemas";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
-  const startedAt = performance.now();
   try {
     const json = await request.json();
     const input = normalizeAssistInput(assistRequestSchema.parse(json));
-
-    const skipReason = providerSkipReason();
-    if (skipReason) {
-      return NextResponse.json(addAiMetadata(mockAssist(input), aiMetadata(startedAt, "mock", AI_MOCK_MODEL, skipReason)));
-    }
-
-    try {
-      const client = createAiClient(ASSIST_TIMEOUT_MS);
-      const completion = await withAiTimeout(
-        client.chat.completions.create({
-          model: AI_FAST_MODEL,
-          messages: buildAssistMessages(input),
-          response_format: { type: "json_object" },
-          max_tokens: 3500,
-          temperature: 0.2
-        }),
-        ASSIST_TIMEOUT_MS
-      );
-
-      const raw = completion.choices[0]?.message?.content;
-      if (!raw) throw new Error("AI returned empty content.");
-
-      const parsed = coerceAssistResponse(input, JSON.parse(raw), "deepseek");
+    const result = await runJsonAiTask({
+      taskType: assistTaskType(input),
+      messages: buildAssistMessages(input),
+      schema: assistResponseSchema,
+      mock: () => mockAssist(input),
+      unavailable: (reason) => unavailableAssist(input, reason),
+      parseProvider: (raw) => {
+        const parsed = coerceAssistResponse(input, raw, "deepseek");
       const exact = exactAnnotations(input.text, parsed.annotations ?? []);
       const rangeWarning = validateAssistReplaceRange(input, parsed);
       if (rangeWarning && parsed.kind === "edit") {
-        return NextResponse.json(addAiMetadata({
+        return {
           kind: "inspect",
           title: "Selection changed",
           actionType: parsed.actionType,
@@ -61,23 +37,19 @@ export async function POST(request: Request) {
           annotations: exact.annotations,
           warnings: exact.warnings,
           providerMode: "deepseek"
-        } satisfies AssistResponse, aiMetadata(startedAt, "deepseek", AI_FAST_MODEL)));
+        } satisfies AssistResponse;
       }
-      const normalized: AssistResponse = {
+      return {
         ...parsed,
         providerMode: "deepseek",
         annotations: exact.annotations,
         warnings: [...(parsed.warnings ?? []), ...exact.warnings]
-      };
-
-      return NextResponse.json(addAiMetadata(normalized, aiMetadata(startedAt, "deepseek", AI_FAST_MODEL)));
-    } catch (aiError) {
-      const fallback = mockAssist(input);
-      console.warn("DeepSeek assistant fallback:", aiError);
-      fallback.providerMode = "fallback";
-      fallback.warnings.push("Local fallback suggestion used.");
-      return NextResponse.json(addAiMetadata(fallback, aiMetadata(startedAt, "fallback", AI_MOCK_MODEL, fallbackReasonFromError(aiError, AI_FAST_MODEL))));
-    }
+      } satisfies AssistResponse;
+      },
+      maxTokens: 3500,
+      temperature: 0.2
+    });
+    return NextResponse.json(result);
   } catch (error) {
     console.warn("Invalid assistant request:", error);
     return NextResponse.json({ error: "Assistant could not use that request." }, { status: 400 });
@@ -125,7 +97,7 @@ function validateAssistReplaceRange(input: AssistRequest, response: AssistRespon
   return "";
 }
 
-function coerceAssistResponse(input: AssistRequest, raw: unknown, providerMode: "deepseek" | "mock" | "fallback"): AssistResponse {
+function coerceAssistResponse(input: AssistRequest, raw: unknown, providerMode: "deepseek" | "mock" | "unavailable"): AssistResponse {
   const parsed = assistResponseSchema.parse(raw) as AssistResponseLegacy;
   const expectedKind = expectedAssistKind(input);
   const kind = expectedKind !== "edit" ? expectedKind : parsed.kind ?? expectedKind;
@@ -195,4 +167,46 @@ function isEditAction(action: string) {
 
 function isAnalyzeAction(action: string) {
   return /(analy[sz]e|critique|comment|grammar|rhetorical role|\u5206\u6790|\u8bc4\u4ef7|\u70b9\u8bc4|\u7528\u4e2d\u6587)/i.test(action);
+}
+
+function assistTaskType(input: AssistRequest): AiTaskType {
+  const normalized = normalizedActionType(input);
+  if (normalized === "academic-rewrite") return "academicRewrite";
+  if (normalized === "rewrite-selection") return "rewriteSelection";
+  if (normalized === "translate-selection") return "translateSelection";
+  if (normalized === "highlight-explanation") return "explainHighlight";
+  if (normalized === "analyze-selection") return "analyzeSelection";
+  return "chatModule";
+}
+
+function unavailableAssist(input: AssistRequest, reason: string): AssistResponse {
+  const expectedKind = expectedAssistKind(input);
+  const reply = "AI unavailable. Check DeepSeek settings or retry. Enable ESSAYCRAFT_FORCE_MOCK_AI=1 only for an offline demo.";
+  const warnings = [safeUnavailableReason(reason)];
+  if (expectedKind === "chat") {
+    return {
+      kind: "chat",
+      reply,
+      annotations: [],
+      warnings,
+      providerMode: "unavailable"
+    };
+  }
+  return {
+    kind: "inspect",
+    title: "AI unavailable",
+    actionType: "ai-unavailable",
+    originalExcerpt: input.selectedText,
+    reply,
+    explanation: "No document text was changed.",
+    annotations: [],
+    warnings,
+    providerMode: "unavailable"
+  };
+}
+
+function safeUnavailableReason(reason: string) {
+  if (reason === "missing-api-key") return "DeepSeek API key is not configured.";
+  if (reason === "forced-mock") return "Mock mode was explicitly enabled.";
+  return "Provider request did not complete successfully.";
 }

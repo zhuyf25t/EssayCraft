@@ -368,10 +368,11 @@ function RefreshResultCard({ result, onDismiss }: { result: RefreshResponse; onD
 
 function InspectCard({ suggestion, onDismiss }: { suggestion: AssistResponse; onDismiss: () => void }) {
   const isAnalyze = suggestion.actionType === "analyze-selection" || /analysis/i.test(suggestion.title ?? "");
+  const title = suggestion.title || (isAnalyze ? "Analysis" : "Highlight explanation");
   return (
     <article data-testid={isAnalyze ? "assistant-analysis-result" : "assistant-highlight-explanation"} className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="font-semibold text-slate-800">{isAnalyze ? "Analysis" : "Highlight explanation"}</span>
+        <span className="font-semibold text-slate-800">{title}</span>
         <ProviderBadge mode={suggestion.providerMode} />
       </div>
       <p className="whitespace-pre-wrap">{suggestion.reply}</p>
@@ -395,11 +396,11 @@ function friendlyAnnotationComment(comment: string | undefined, fallback: string
   return comment;
 }
 
-function ProviderBadge({ mode }: { mode?: "deepseek" | "mock" | "fallback" }) {
+function ProviderBadge({ mode }: { mode?: "deepseek" | "mock" | "unavailable" }) {
   if (!mode) return null;
-  const label = mode === "deepseek" ? "provider" : mode;
-  const classes = mode === "fallback"
-    ? "border-amber-200 bg-amber-50 text-amber-700"
+  const label = mode === "deepseek" ? "DeepSeek" : mode === "mock" ? "Mock" : "AI unavailable";
+  const classes = mode === "unavailable"
+    ? "border-rose-200 bg-rose-50 text-rose-700"
     : mode === "deepseek"
       ? "border-blue-200 bg-blue-50 text-blue-700"
       : "border-slate-200 bg-slate-50 text-slate-500";

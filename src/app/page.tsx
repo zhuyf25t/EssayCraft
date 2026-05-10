@@ -480,7 +480,7 @@ export default function Home() {
         ...(data.globalFeedback ?? [])
       ].filter(Boolean);
       setStatus(message);
-      setLastAction({ tone: data.providerMode === "fallback" ? "warning" : "success", message, details });
+      setLastAction({ tone: data.providerMode === "unavailable" ? "warning" : "success", message, details });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Generate Next failed.";
       setStatus(message);
@@ -493,8 +493,8 @@ export default function Home() {
 
 function aiModeDetail(mode: GenerateNextResponse["providerMode"]) {
   if (mode === "deepseek") return "AI completed with the live server model.";
-  if (mode === "mock") return "AI completed with local demo logic.";
-  return "Live AI was unavailable; local demo logic completed the request.";
+  if (mode === "mock") return "Mock mode produced this result.";
+  return "AI unavailable. No offline mock result was used.";
 }
 
 function handleSaveSnapshot() {
@@ -790,8 +790,8 @@ function handleSaveSnapshot() {
       if (intent === "chat") {
         appendAssistantHistory([{
           role: "assistant",
-          text: `${message} Try again or use local module feedback after refreshing the page.`,
-          providerMode: "fallback",
+          text: `${message} AI unavailable. Check provider settings or retry.`,
+          providerMode: "unavailable",
           warnings: [error instanceof Error ? error.message : "Unknown assistant error."]
         }]);
       }

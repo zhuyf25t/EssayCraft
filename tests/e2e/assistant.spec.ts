@@ -272,7 +272,7 @@ test("selected text translation is read-only in Edit mode", async ({ page }) => 
   await expect(page.getByTestId("assistant-edit-preview")).toContainText("Translation preview", { timeout: 20_000 });
   await expect(page.getByTestId("assistant-edit-preview")).toContainText(/[\u4e00-\u9fff]/);
   await expect(page.getByTestId("assistant-edit-preview")).not.toContainText(/DeepSeek|debug|AI returned|no API key/i);
-  await expect(page.getByTestId("assistant-edit-preview").getByTestId("provider-mode-badge")).toContainText(/provider|mock|fallback/i);
+  await expect(page.getByTestId("assistant-edit-preview").getByTestId("provider-mode-badge")).toContainText(/deepseek|mock|unavailable/i);
   await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Accept" })).toHaveCount(0);
   await expect(page.getByTestId("assistant-edit-preview").getByRole("button", { name: "Copy" })).toBeVisible();
   await expect(page.getByTestId("assistant-edit-preview")).not.toContainText("requires intentional habits");

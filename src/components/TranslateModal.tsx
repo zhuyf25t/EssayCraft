@@ -48,8 +48,8 @@ export function TranslateModal({
           </select>
           <button className="btn-primary" onClick={onRequest} disabled={loading}>{loading ? "Translating..." : "Create preview"}</button>
           {preview ? (
-            <span data-testid="translate-provider-badge" className={`rounded-full px-2 py-1 text-xs font-semibold ${preview.providerMode === "deepseek" ? "bg-blue-50 text-blue-700" : preview.providerMode === "fallback" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
-              {preview.providerMode === "deepseek" ? "provider" : preview.providerMode}
+            <span data-testid="translate-provider-badge" className={`rounded-full px-2 py-1 text-xs font-semibold ${preview.providerMode === "deepseek" ? "bg-blue-50 text-blue-700" : preview.providerMode === "unavailable" ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-600"}`}>
+              {preview.providerMode === "deepseek" ? "DeepSeek" : preview.providerMode === "mock" ? "Mock" : "AI unavailable"}
             </span>
           ) : null}
         </div>

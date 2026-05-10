@@ -73,7 +73,7 @@ test("Translate preview shows Chinese mock output without changing the document"
   await expect(translation).toContainText("[citation needed]");
   await expect(translation).toContainText("[source needed]");
   await expect(dialog).not.toContainText(/DeepSeek|debug|AI returned|no API key/i);
-  await expect(dialog.getByTestId("translate-provider-badge")).toContainText(/provider|mock|fallback/i);
+  await expect(dialog.getByTestId("translate-provider-badge")).toContainText(/deepseek|mock|unavailable/i);
   for (const banned of ["中文参考翻译：", "这句话讨论了", "这句话强调", "核心论点是", "本地参考翻译", "译文:"]) {
     await expect(translation).not.toContainText(banned);
   }
