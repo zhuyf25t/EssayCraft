@@ -139,7 +139,9 @@ function ChatMode({
       >
         {messages.length ? messages.map((message) => (
           <article key={message.id} className={`max-w-[92%] rounded-xl px-3 py-2 text-sm ${message.role === "user" ? "ml-auto bg-blue-600 text-white" : "bg-white text-slate-700 shadow-sm"}`}>
-            {message.role === "assistant" && message.providerMode ? <ProviderBadge mode={message.providerMode} /> : null}
+            {message.role === "assistant" && message.providerMode ? (
+              <ProviderBadge mode={message.providerMode} latencyMs={message.latencyMs} totalTokens={message.totalTokens} />
+            ) : null}
             <p className="whitespace-pre-wrap">{message.text}</p>
           </article>
         )) : (
@@ -175,6 +177,7 @@ function ChatMode({
 
 function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   const [instruction, setInstruction] = useState("");
+  const [instructionLocked, setInstructionLocked] = useState(false);
   const instructionRef = useRef<HTMLTextAreaElement>(null);
   const contextRange = props.hasSelection ? props.selectedRange : props.activeAnnotation
     ? { start: props.activeAnnotation.start, end: props.activeAnnotation.end }
@@ -237,14 +240,29 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
       </div>
 
       <div className="mt-1.5 shrink-0 rounded-lg border border-slate-200 bg-white p-1.5">
-        <textarea
-          ref={instructionRef}
-          value={instruction}
-          onChange={(event) => setInstruction(event.target.value)}
-          placeholder="Tell EssayCraft what you want to change"
-          className="min-h-9 w-full resize-none border-0 bg-transparent text-[13px] leading-snug outline-none"
-          disabled={!canEdit}
-        />
+        <div className="relative">
+          <textarea
+            ref={instructionRef}
+            value={instruction}
+            onChange={(event) => setInstruction(event.target.value)}
+            placeholder="Tell EssayCraft what you want to change"
+            className="min-h-9 w-full resize-none border-0 bg-transparent pr-8 text-[13px] leading-snug outline-none"
+            disabled={!canEdit}
+          />
+          <button
+            type="button"
+            data-testid="edit-instruction-lock"
+            aria-label={instructionLocked ? "Unlock instruction" : "Lock instruction"}
+            aria-pressed={instructionLocked}
+            title={instructionLocked ? "Instruction locked: keep text after sending" : "Instruction unlocked: clear text after sending"}
+            className={`absolute right-0 top-0 inline-flex h-6 w-6 items-center justify-center rounded-md border text-slate-500 transition ${
+              instructionLocked ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-200 bg-white hover:bg-slate-50"
+            }`}
+            onClick={() => setInstructionLocked((value) => !value)}
+          >
+            {instructionLocked ? <ClosedLockIcon /> : <OpenLockIcon />}
+          </button>
+        </div>
         <div className="grid grid-cols-6 gap-1 text-[11px]">
           <button aria-label="Rewrite" className="btn-primary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => runInstruction("Rewrite selected passage")}>Rewrite</button>
           <button aria-label="Academic" className="btn-primary h-6 min-h-0 whitespace-nowrap rounded-md px-1 py-0 text-[10.5px] leading-none shadow-none" disabled={!canEdit || props.loading} onClick={() => runInstruction("Make more academic")}>Academic</button>
@@ -268,32 +286,54 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   function runInstruction(baseAction: string) {
     const text = (instructionRef.current?.value ?? instruction).trim();
     props.onSelectionAction(text ? `${baseAction}: ${text}` : baseAction);
-    setInstruction("");
+    clearInstructionIfUnlocked();
   }
 
   function runAnalyze() {
     const text = (instructionRef.current?.value ?? instruction).trim();
     props.onInspectAction(text ? `Analyze selected text: ${text}` : "Analyze selected text");
-    setInstruction("");
+    clearInstructionIfUnlocked();
   }
 
   function runLocalRefresh() {
     const text = (instructionRef.current?.value ?? instruction).trim();
     props.onLocalRefresh(text);
-    setInstruction("");
+    clearInstructionIfUnlocked();
   }
 
   function runTranslate() {
     const text = (instructionRef.current?.value ?? instruction).trim();
     props.onInspectAction(text ? `Translate selected text: ${text}` : "Translate selected text");
-    setInstruction("");
+    clearInstructionIfUnlocked();
   }
 
   function runExplain() {
     const text = (instructionRef.current?.value ?? instruction).trim();
     props.onInspectAction(text ? `Explain this highlight: ${text}` : "Explain this highlight");
-    setInstruction("");
+    clearInstructionIfUnlocked();
   }
+
+  function clearInstructionIfUnlocked() {
+    if (!instructionLocked) setInstruction("");
+  }
+}
+
+function ClosedLockIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="10" width="14" height="10" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
+
+function OpenLockIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="5" y="10" width="14" height="10" rx="2" />
+      <path d="M8 10V7a4 4 0 0 1 7.5-2" />
+    </svg>
+  );
 }
 
 function EditPreview({
@@ -310,7 +350,7 @@ function EditPreview({
     <article data-testid="assistant-edit-preview" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-950">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold">{readOnly ? "Translation preview" : "Revision preview"}</span>
-        <ProviderBadge mode={suggestion.providerMode} />
+        <ProviderBadge mode={suggestion.providerMode} latencyMs={suggestion.latencyMs} totalTokens={suggestion.totalTokens} />
       </div>
       <div className="space-y-2">
         <div>
@@ -345,7 +385,7 @@ function RevisionPreview({
     <article data-testid="apply-notes-preview" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold">Apply notes preview</span>
-        <ProviderBadge mode={preview.providerMode} />
+        <ProviderBadge mode={preview.providerMode} latencyMs={preview.latencyMs} totalTokens={preview.totalTokens} />
       </div>
       {preview.originalSummary ? <p className="mb-2 text-amber-900/80">{preview.originalSummary}</p> : null}
       <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-md bg-white p-2 font-sans text-slate-800">{preview.proposedText}</pre>
@@ -369,7 +409,7 @@ function RefreshResultCard({ result, onDismiss }: { result: RefreshResponse; onD
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="font-semibold">{title}</div>
         <div className="flex items-center gap-2">
-          <ProviderBadge mode={result.providerMode} />
+          <ProviderBadge mode={result.providerMode} latencyMs={result.latencyMs} totalTokens={result.totalTokens} />
           <button className="btn-secondary px-2 py-1 text-[11px]" onClick={onDismiss}>Dismiss</button>
         </div>
       </div>
@@ -417,7 +457,7 @@ function InspectCard({ suggestion, onDismiss }: { suggestion: AssistResponse; on
     <article data-testid={isLocalRefresh ? "assistant-local-refresh-result" : isTranslate ? "assistant-translation-result" : isAnalyze ? "assistant-analysis-result" : "assistant-highlight-explanation"} className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
       <div className="mb-1 flex items-center justify-between gap-2">
         <span className="font-semibold text-slate-800">{title}</span>
-        <ProviderBadge mode={suggestion.providerMode} />
+        <ProviderBadge mode={suggestion.providerMode} latencyMs={suggestion.latencyMs} totalTokens={suggestion.totalTokens} />
       </div>
       <p className="whitespace-pre-wrap">{suggestion.reply}</p>
       <div className="mt-2 flex gap-2">
@@ -440,7 +480,15 @@ function friendlyAnnotationComment(comment: string | undefined, fallback: string
   return comment;
 }
 
-function ProviderBadge({ mode }: { mode?: "deepseek" | "mock" | "unavailable" }) {
+function ProviderBadge({
+  mode,
+  latencyMs,
+  totalTokens
+}: {
+  mode?: "deepseek" | "mock" | "unavailable";
+  latencyMs?: number;
+  totalTokens?: number;
+}) {
   if (!mode) return null;
   const label = mode === "deepseek" ? "DeepSeek" : mode === "mock" ? "Mock" : "AI unavailable";
   const classes = mode === "unavailable"
@@ -449,10 +497,25 @@ function ProviderBadge({ mode }: { mode?: "deepseek" | "mock" | "unavailable" })
       ? "border-blue-200 bg-blue-50 text-blue-700"
       : "border-slate-200 bg-slate-50 text-slate-500";
   return (
-    <span data-testid="provider-mode-badge" className={`mb-1 inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${classes}`}>
-      {label}
+    <span className="mb-1 inline-flex flex-wrap items-center gap-1.5">
+      <span data-testid="provider-mode-badge" className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${classes}`}>
+        {label}
+      </span>
+      <span data-testid="ai-response-metadata" className="text-[10px] font-medium normal-case tracking-normal text-slate-500">
+        {formatAiMetadata(latencyMs, totalTokens)}
+      </span>
     </span>
   );
+}
+
+function formatAiMetadata(latencyMs: number | undefined, totalTokens: number | undefined) {
+  const seconds = typeof latencyMs === "number" && Number.isFinite(latencyMs)
+    ? (latencyMs / 1000).toFixed(2)
+    : "--";
+  const tokens = typeof totalTokens === "number" && Number.isFinite(totalTokens)
+    ? Math.max(0, Math.round(totalTokens)).toLocaleString()
+    : "--";
+  return `(${seconds}s, ${tokens} tokens)`;
 }
 
 function firstSentence(value: string) {

@@ -88,6 +88,9 @@ export type AssistantMessage = {
   text: string;
   createdAt: string;
   providerMode?: "deepseek" | "mock" | "unavailable";
+  modelUsed?: string;
+  latencyMs?: number;
+  totalTokens?: number;
   warnings?: string[];
 };
 
@@ -147,6 +150,7 @@ export type RefreshResponse = {
   providerMode?: "deepseek" | "mock" | "unavailable";
   modelUsed?: string;
   latencyMs?: number;
+  totalTokens?: number;
   fallbackReason?: string;
 };
 
@@ -171,6 +175,7 @@ export type GenerateNextResponse = {
   providerMode: "deepseek" | "mock" | "unavailable";
   modelUsed?: string;
   latencyMs?: number;
+  totalTokens?: number;
   fallbackReason?: string;
 };
 
@@ -199,6 +204,7 @@ type AssistResponseBase = {
   providerMode?: "deepseek" | "mock" | "unavailable";
   modelUsed?: string;
   latencyMs?: number;
+  totalTokens?: number;
   fallbackReason?: string;
   annotations: Annotation[];
   warnings: string[];
@@ -240,6 +246,7 @@ export type AssistResponseLegacy = {
   providerMode?: "deepseek" | "mock" | "unavailable";
   modelUsed?: string;
   latencyMs?: number;
+  totalTokens?: number;
   fallbackReason?: string;
   proposedText?: string;
   replaceRange?: TextRange;
@@ -264,5 +271,6 @@ export type TranslateResponse = {
   providerMode: "deepseek" | "mock" | "unavailable";
   modelUsed?: string;
   latencyMs?: number;
+  totalTokens?: number;
   fallbackReason?: string;
 };

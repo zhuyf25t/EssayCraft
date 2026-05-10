@@ -83,7 +83,9 @@ export function SourceWorkbench({
     <section className="panel">
       <div data-testid="sources-locked-warning" className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800">
         <div className="font-semibold">Source editing is temporarily locked.</div>
-        <p className="mt-1">事实上，由于检查文件来源是否正确太过困难，这一部分暂时不开放编辑。下面的控件可以点击和填写，但不会保存到项目。</p>
+        <p className="mt-1">
+          Source verification is still being prepared. You can explore and fill these controls, but source edits are preview-only and will not be saved to the project yet.
+        </p>
       </div>
 
       {lockedNotice ? (

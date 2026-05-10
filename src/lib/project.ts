@@ -294,6 +294,13 @@ function normalizeAssistantHistory(history: unknown): AssistantMessage[] {
       };
       const providerMode = normalizeProviderMode(message.providerMode);
       if (providerMode) normalized.providerMode = providerMode;
+      if (typeof message.modelUsed === "string") normalized.modelUsed = message.modelUsed;
+      if (typeof message.latencyMs === "number" && Number.isFinite(message.latencyMs)) {
+        normalized.latencyMs = Math.max(0, Math.round(message.latencyMs));
+      }
+      if (typeof message.totalTokens === "number" && Number.isFinite(message.totalTokens)) {
+        normalized.totalTokens = Math.max(0, Math.round(message.totalTokens));
+      }
       return normalized;
     });
 }

@@ -8,6 +8,7 @@ export type AiResponseMetadata = {
   providerMode: AiProviderMode;
   modelUsed: string;
   latencyMs: number;
+  totalTokens?: number;
   fallbackReason?: string;
 };
 
@@ -73,12 +74,23 @@ export function elapsedMs(startedAt: number) {
   return Math.max(0, Math.round(performance.now() - startedAt));
 }
 
-export function aiMetadata(startedAt: number, providerMode: AiProviderMode, modelUsed: string, fallbackReason?: string): AiResponseMetadata {
+export function aiMetadata(
+  startedAt: number,
+  providerMode: AiProviderMode,
+  modelUsed: string,
+  fallbackReason?: string,
+  totalTokens?: number
+): AiResponseMetadata {
   const metadata: AiResponseMetadata = {
     providerMode,
     modelUsed,
     latencyMs: elapsedMs(startedAt)
   };
+  if (typeof totalTokens === "number") {
+    metadata.totalTokens = Math.max(0, Math.round(totalTokens));
+  } else if (providerMode !== "deepseek") {
+    metadata.totalTokens = 0;
+  }
   if (fallbackReason) metadata.fallbackReason = fallbackReason;
   return metadata;
 }

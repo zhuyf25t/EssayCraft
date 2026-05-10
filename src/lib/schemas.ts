@@ -123,6 +123,7 @@ export const refreshResponseSchema = z.object({
   providerMode: providerModeSchema.optional(),
   modelUsed: z.string().optional(),
   latencyMs: z.number().int().min(0).optional(),
+  totalTokens: z.number().int().min(0).optional(),
   fallbackReason: z.string().optional(),
   globalFeedback: z.array(z.string()).default([]),
   warnings: z.array(z.string()).default([])
@@ -161,6 +162,7 @@ export const generateNextResponseSchema = z.object({
   providerMode: providerModeSchema.default("deepseek"),
   modelUsed: z.string().optional(),
   latencyMs: z.number().int().min(0).optional(),
+  totalTokens: z.number().int().min(0).optional(),
   fallbackReason: z.string().optional()
 });
 
@@ -170,6 +172,9 @@ export const assistantMessageSchema = z.object({
   text: z.string(),
   createdAt: z.string(),
   providerMode: providerModeSchema.optional(),
+  modelUsed: z.string().optional(),
+  latencyMs: z.number().int().min(0).optional(),
+  totalTokens: z.number().int().min(0).optional(),
   warnings: z.array(z.string()).optional()
 });
 
@@ -202,6 +207,7 @@ export const assistResponseSchema = z.object({
   providerMode: providerModeSchema.optional(),
   modelUsed: z.string().optional(),
   latencyMs: z.number().int().min(0).optional(),
+  totalTokens: z.number().int().min(0).optional(),
   fallbackReason: z.string().optional(),
   proposedText: nullableString,
   replaceRange: nullableRange,
@@ -226,5 +232,6 @@ export const translateResponseSchema = z.object({
   providerMode: providerModeSchema.default("deepseek"),
   modelUsed: z.string().optional(),
   latencyMs: z.number().int().min(0).optional(),
+  totalTokens: z.number().int().min(0).optional(),
   fallbackReason: z.string().optional()
 });

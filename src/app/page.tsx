@@ -476,6 +476,7 @@ export default function Home() {
         providerMode: data.providerMode,
         modelUsed: data.modelUsed,
         latencyMs: data.latencyMs,
+        totalTokens: data.totalTokens,
         fallbackReason: data.fallbackReason
       });
       setRightTab("assistant");
@@ -828,6 +829,7 @@ function handleSaveSnapshot() {
       requestAssistantMode("edit");
     }
 
+    const requestStartedAt = performance.now();
     setLoading(true);
     setBusyAction("assist");
     try {
@@ -864,6 +866,9 @@ function handleSaveSnapshot() {
           role: "assistant",
           text: anchoredData.reply,
           providerMode: anchoredData.providerMode,
+          modelUsed: anchoredData.modelUsed,
+          latencyMs: anchoredData.latencyMs,
+          totalTokens: anchoredData.totalTokens,
           warnings: anchoredData.warnings
         }]);
         setAssistantSuggestion(undefined);
@@ -881,6 +886,8 @@ function handleSaveSnapshot() {
           role: "assistant",
           text: `${message} AI unavailable. Check provider settings or retry.`,
           providerMode: "unavailable",
+          latencyMs: Math.max(0, Math.round(performance.now() - requestStartedAt)),
+          totalTokens: 0,
           warnings: [error instanceof Error ? error.message : "Unknown assistant error."]
         }]);
       }
@@ -920,7 +927,10 @@ function handleSaveSnapshot() {
       annotations: normalizeAnnotations(protectModuleText(normalizeText(revisionPreview.proposedText ?? activeDoc.text)), revisionPreview.proposedAnnotations ?? revisionPreview.annotations),
       globalFeedback: ["Notes applied and highlights refreshed."],
       warnings: [],
-      providerMode: revisionPreview.providerMode
+      providerMode: revisionPreview.providerMode,
+      modelUsed: revisionPreview.modelUsed,
+      latencyMs: revisionPreview.latencyMs,
+      totalTokens: revisionPreview.totalTokens
     });
     setRightTab("assistant");
     requestAssistantMode("edit");
@@ -1052,6 +1062,9 @@ function handleSaveSnapshot() {
       role: "assistant",
       text: `Reference translation\n\n${translatePreview.translatedText}\n\nThis is a reading aid only. Select text and use Selection mode if you want a preview/apply replacement.`,
       providerMode: translatePreview.providerMode,
+      modelUsed: translatePreview.modelUsed,
+      latencyMs: translatePreview.latencyMs,
+      totalTokens: translatePreview.totalTokens,
       warnings: translatePreview.warnings
     }]);
     setAssistantSuggestion(undefined);

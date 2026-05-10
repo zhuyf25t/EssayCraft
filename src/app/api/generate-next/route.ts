@@ -90,7 +90,10 @@ export async function POST(request: Request) {
         providerMode: "deepseek"
       };
 
-      return NextResponse.json(addAiMetadata(normalized, aiMetadata(startedAt, "deepseek", task.model)));
+      return NextResponse.json(addAiMetadata(
+        normalized,
+        aiMetadata(startedAt, "deepseek", task.model, undefined, completion.usage?.total_tokens ?? 0)
+      ));
     } catch (aiError) {
       console.warn("Generate Next AI unavailable:", aiError);
       return NextResponse.json(unavailableGenerate(startedAt, fallbackReasonFromError(aiError, task.model)), { status: 503 });

@@ -18,6 +18,7 @@ export type AiTaskResult<T> = T & {
   providerMode: "deepseek" | "mock" | "unavailable";
   modelUsed: string;
   latencyMs: number;
+  totalTokens?: number;
   fallbackReason?: string;
 };
 
@@ -65,25 +66,25 @@ export async function runJsonAiTask<TRaw, TOutput extends object>({
 
   try {
     const client = createAiClient(task.timeoutMs);
-    const raw = await requestJsonText(client, messages, task.model, task.timeoutMs, maxTokens, temperature);
+    const completion = await requestJsonText(client, messages, task.model, task.timeoutMs, maxTokens, temperature);
     try {
       return addAiMetadata(
-        parseProvider(schema.parse(JSON.parse(raw))),
-        aiMetadata(startedAt, "deepseek", task.model)
+        parseProvider(schema.parse(JSON.parse(completion.raw))),
+        aiMetadata(startedAt, "deepseek", task.model, undefined, completion.totalTokens)
       ) as AiTaskResult<TOutput>;
     } catch (parseError) {
       if (!task.retryInvalidJson) throw parseError;
       const repaired = await requestJsonText(
         client,
-        buildRepairMessages(raw, parseError, messages),
+        buildRepairMessages(completion.raw, parseError, messages),
         task.model,
         task.timeoutMs,
         maxTokens,
         0
       );
       return addAiMetadata(
-        parseProvider(schema.parse(JSON.parse(repaired))),
-        aiMetadata(startedAt, "deepseek", task.model)
+        parseProvider(schema.parse(JSON.parse(repaired.raw))),
+        aiMetadata(startedAt, "deepseek", task.model, undefined, completion.totalTokens + repaired.totalTokens)
       ) as AiTaskResult<TOutput>;
     }
   } catch (error) {
@@ -123,7 +124,10 @@ async function requestJsonText(
   );
   const raw = completion.choices[0]?.message?.content;
   if (!raw) throw new Error("AI returned empty content.");
-  return raw;
+  return {
+    raw,
+    totalTokens: completion.usage?.total_tokens ?? 0
+  };
 }
 
 function buildRepairMessages(
