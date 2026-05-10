@@ -126,6 +126,18 @@ export const refreshResponseSchema = z.object({
   warnings: z.array(z.string()).default([])
 });
 
+export const refreshUnitResponseSchema = refreshResponseSchema.omit({
+  annotations: true,
+  proposedAnnotations: true
+}).extend({
+  unitLabels: z.array(z.object({
+    index: z.number().int().min(0),
+    label: segmentLabelSchema,
+    confidence: z.number().min(0).max(1).optional(),
+    comment: z.string().optional()
+  }))
+});
+
 export const generateNextRequestSchema = z.object({
   topic: z.string(),
   sourceModuleNumber: sourceModuleNumberSchema,

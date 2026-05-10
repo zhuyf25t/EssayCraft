@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
-import type { RefreshRequest, RefreshResponse } from "@/types/essaycraft";
-import { normalizeAnnotations } from "@/lib/annotations";
+import type { Annotation, RefreshRequest, RefreshResponse } from "@/types/essaycraft";
+import { normalizeAnnotations, rhetoricalUnitRanges } from "@/lib/annotations";
 import { normalizedForNoopCompare, protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
-import { buildRefreshMessages } from "@/lib/prompts";
+import { buildRefreshMessages, buildRefreshUnitMessages } from "@/lib/prompts";
 import { validateProviderRefreshAnnotations } from "@/lib/refreshValidation";
 import { addModuleReviewIfNeeded, moduleRefreshSuggestion } from "@/lib/refreshFallback";
 import { mockPatchRevision, mockRefresh } from "@/lib/ai/mockProvider";
 import { runJsonAiTask } from "@/lib/ai/taskRouter";
-import { refreshRequestSchema, refreshResponseSchema } from "@/lib/schemas";
+import { refreshRequestSchema, refreshResponseSchema, refreshUnitResponseSchema } from "@/lib/schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +18,50 @@ export async function POST(request: Request) {
     const input = { ...parsedInput, text: protectModuleText(parsedInput.text) };
     const openPatches = input.patches.filter((patch) => !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim());
 
+    if (!openPatches.length) {
+      const units = buildRefreshUnits(input.text);
+      const result = await runJsonAiTask({
+        taskType: "refreshAnnotations",
+        messages: buildRefreshUnitMessages(input, units),
+        schema: refreshUnitResponseSchema,
+        mock: () => mockRefresh(input, "Highlights refreshed. Text was not rewritten."),
+        unavailable: (reason) => unavailableRefresh(input, reason),
+        parseProvider: (parsed) => {
+          const annotations = annotationsFromUnitLabels(units, parsed.unitLabels);
+          const validation = validateProviderRefreshAnnotations(input.text, annotations, input.moduleNumber);
+          const warnings = [...(parsed.warnings ?? []), ...validation.warnings];
+          if (validation.usedFallback) {
+            throw new Error(validation.reason ?? "Provider returned invalid unit labels.");
+          }
+
+          return addModuleReviewIfNeeded(input, {
+            kind: parsed.kind ?? "annotations",
+            annotations: validation.annotations,
+            globalFeedback: parsed.globalFeedback?.length ? parsed.globalFeedback : [moduleRefreshSuggestion(input, validation.annotations)],
+            warnings,
+            reviewSummary: parsed.reviewSummary,
+            reviewChecklist: parsed.reviewChecklist,
+            reviewSuggestions: parsed.reviewSuggestions,
+            issueCount: parsed.issueCount,
+            citationGaps: parsed.citationGaps,
+            inTextCitations: parsed.inTextCitations,
+            realSourceCards: parsed.realSourceCards,
+            referenceStatus: parsed.referenceStatus,
+            nextStep: parsed.nextStep,
+            providerMode: "deepseek"
+          }) satisfies RefreshResponse;
+        },
+        maxTokens: 16384,
+        temperature: 0.1
+      });
+      return NextResponse.json(result);
+    }
+
     const result = await runJsonAiTask({
-      taskType: openPatches.length ? "applyNotesRevision" : input.moduleNumber === 6 ? "finalReview" : input.moduleNumber === 5 ? "citationReview" : "refreshAnnotations",
+      taskType: "applyNotesRevision",
       messages: buildRefreshMessages(input),
       schema: refreshResponseSchema,
-      mock: () => openPatches.length
-        ? mockPatchRevision(input.text, openPatches, input.projectTitle || input.topic)
-        : mockRefresh(input, "Highlights refreshed. Text was not rewritten."),
+      mock: () => mockPatchRevision(input.text, openPatches, input.projectTitle || input.topic),
       unavailable: (reason) => unavailableRefresh(input, reason),
       parseProvider: (parsed) => {
         if (openPatches.length && parsed.kind === "revision" && parsed.proposedText?.trim()) {
@@ -51,23 +88,7 @@ export async function POST(request: Request) {
             warnings: [...(parsed.warnings ?? []), ...proposedValidation.warnings]
           } satisfies RefreshResponse;
         }
-        if (openPatches.length) {
-          throw new Error("Provider returned non-revision output for open notes.");
-        }
-
-        const validation = validateProviderRefreshAnnotations(input.text, parsed.annotations, input.moduleNumber);
-        const providerWarnings = [...(parsed.warnings ?? []), ...validation.warnings];
-        if (validation.usedFallback) {
-          throw new Error(validation.reason ?? "Provider returned invalid annotation output.");
-        }
-
-        return addModuleReviewIfNeeded(input, {
-          kind: "annotations",
-          annotations: validation.annotations,
-          globalFeedback: parsed.globalFeedback?.length ? parsed.globalFeedback : [moduleRefreshSuggestion(input, validation.annotations)],
-          warnings: providerWarnings,
-          providerMode: "deepseek"
-        }) satisfies RefreshResponse;
+        throw new Error("Provider returned non-revision output for open notes.");
       },
       maxTokens: 16384,
       temperature: 0.1
@@ -77,6 +98,37 @@ export async function POST(request: Request) {
     const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json({ error: message }, { status: 400 });
   }
+}
+
+function buildRefreshUnits(text: string) {
+  const units = rhetoricalUnitRanges(text)
+    .filter((unit) => unit.text.trim().length > 0);
+  return units.map((unit, index) => ({
+    index,
+    start: unit.start,
+    end: unit.end,
+    text: unit.text
+  }));
+}
+
+function annotationsFromUnitLabels(
+  units: ReturnType<typeof buildRefreshUnits>,
+  labels: Array<{ index: number; label: Annotation["label"]; confidence?: number; comment?: string }>
+): Annotation[] {
+  const byIndex = new Map(labels.map((item) => [item.index, item]));
+  return units.flatMap((unit) => {
+    const labeled = byIndex.get(unit.index);
+    if (!labeled || labeled.label === "plain") return [];
+    return [{
+      id: `unit-${unit.index}`,
+      start: unit.start,
+      end: unit.end,
+      text: unit.text,
+      label: labeled.label,
+      confidence: labeled.confidence,
+      comment: labeled.comment
+    }];
+  });
 }
 
 function unavailableRefresh(input: Pick<RefreshRequest, "text" | "annotations">, reason: string): RefreshResponse {

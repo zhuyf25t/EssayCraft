@@ -14,6 +14,13 @@ Module 6: edit and proofread for content, structure, clarity, style, grammar, pu
 
 const LABEL_RULES = "background, thesis, evidence, analysis, counterargument, citation, conclusion, issue, plain";
 
+type RefreshUnitPromptItem = {
+  index: number;
+  start: number;
+  end: number;
+  text: string;
+};
+
 export function buildRefreshMessages(input: RefreshRequest) {
   const openPatches = input.patches.filter((patch) => !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim());
   const projectTitle = input.projectTitle || input.topic;
@@ -107,6 +114,46 @@ ${JSON.stringify(input.patches, null, 2)}
 
 User source cards:
 ${JSON.stringify(input.sources, null, 2)}
+
+Return json only.`;
+
+  return [
+    { role: "system" as const, content: system },
+    { role: "user" as const, content: user }
+  ];
+}
+
+export function buildRefreshUnitMessages(input: RefreshRequest, units: RefreshUnitPromptItem[]) {
+  const projectTitle = input.projectTitle || input.topic;
+  const system = `You are EssayCraft's academic writing annotation engine. Return strict json only.
+
+Task:
+Label every provided sentence/rhetorical unit by academic function. Engineering already provides exact text ranges; you decide the semantic label and concise reason.
+
+Allowed labels:
+${LABEL_RULES}
+
+Rules:
+- Return one unitLabels item for every provided unit index unless the unit is pure whitespace.
+- Do not rewrite the user's text.
+- Do not invent citations, sources, authors, years, titles, URLs, or DOIs.
+- Use evidence for source-based facts, data, examples, findings, or source claims.
+- Use citation only when the unit's primary function is a source signal/citation/reference entry, not for a whole paragraph.
+- Use analysis for interpretation, reasoning, explanation, or "so what" connections.
+- Use thesis for the central arguable claim or thesis map.
+- Use conclusion for closing synthesis or final implications.
+- Use issue for unclear function, unsupported source need, or citation-needed problems.
+- Output valid json matching this shape:
+{"kind":"annotations","unitLabels":[{"index":0,"label":"background","confidence":0.9,"comment":"brief reason for this exact unit"}],"globalFeedback":["short refresh summary"],"warnings":[]}
+
+${COURSE_WORKFLOW_CONTEXT}`;
+
+  const user = `Project title: ${projectTitle}
+Topic/context: ${input.topic}
+Current module: ${input.moduleNumber}
+
+Sentence/rhetorical units to label:
+${JSON.stringify(units, null, 2)}
 
 Return json only.`;
 

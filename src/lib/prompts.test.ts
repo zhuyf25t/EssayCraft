@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AssistRequest } from "@/types/essaycraft";
-import { buildAssistMessages } from "./prompts";
+import type { AssistRequest, RefreshRequest } from "@/types/essaycraft";
+import { buildAssistMessages, buildRefreshUnitMessages } from "./prompts";
 
 function request(action: string): AssistRequest {
   const text = "Research question: How can social media be healthier?";
@@ -69,5 +69,29 @@ describe("assistant prompts", () => {
     const relevantSection = messages[1].content.split("Relevant open notes for the submitted selection/module:")[1].split("Sources:")[0];
     expect(relevantSection).toContain("p-selected");
     expect(relevantSection).not.toContain("p-other");
+  });
+
+  it("asks refresh to label pre-segmented units instead of returning fragile offsets", () => {
+    const refresh: RefreshRequest = {
+      topic: "Technology vs. Humanity.",
+      projectTitle: "Technology vs. Humanity.",
+      moduleNumber: 6,
+      text: "Technology changes society. This essay argues that humanities guidance matters.",
+      annotations: [],
+      patches: [],
+      sources: []
+    };
+    const messages = buildRefreshUnitMessages(refresh, [
+      { index: 0, start: 0, end: 27, text: "Technology changes society." },
+      { index: 1, start: 28, end: 80, text: "This essay argues that humanities guidance matters." }
+    ]);
+
+    expect(messages[0].content).toContain("Label every provided sentence/rhetorical unit");
+    expect(messages[0].content).toContain("unitLabels");
+    expect(messages[0].content).not.toContain("\"start\":0,\"end\":20");
+    expect(messages[0].content).not.toContain("final review checklist");
+    expect(messages[1].content).toContain("\"index\": 0");
+    expect(messages[1].content).toContain("Technology changes society.");
+    expect(messages[1].content).not.toContain("Full clean text");
   });
 });
