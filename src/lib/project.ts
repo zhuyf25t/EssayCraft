@@ -1,5 +1,6 @@
 import type {
   Annotation,
+  AssistantMessage,
   ModuleDocument,
   ModuleNumber,
   Patch,
@@ -272,10 +273,35 @@ export function normalizeProject(project: Project): Project {
     topic: project.topic || initial.topic,
     currentModule: isModuleNumber(project.currentModule) ? project.currentModule : 1,
     modules,
-    assistantHistory: Array.isArray(project.assistantHistory) ? project.assistantHistory : [],
+    assistantHistory: normalizeAssistantHistory(project.assistantHistory),
     createdAt: project.createdAt || nowIso(),
     updatedAt: project.updatedAt || nowIso()
   };
+}
+
+function normalizeAssistantHistory(history: unknown): AssistantMessage[] {
+  if (!Array.isArray(history)) return [];
+  return history
+    .map((message) => message as Partial<AssistantMessage> & { providerMode?: string })
+    .filter((message) => (message.role === "user" || message.role === "assistant") && typeof message.text === "string")
+    .map((message) => {
+      const normalized: AssistantMessage = {
+        id: message.id || id("msg"),
+        role: message.role as "user" | "assistant",
+        text: message.text ?? "",
+        createdAt: message.createdAt || nowIso(),
+        warnings: Array.isArray(message.warnings) ? message.warnings : undefined
+      };
+      const providerMode = normalizeProviderMode(message.providerMode);
+      if (providerMode) normalized.providerMode = providerMode;
+      return normalized;
+    });
+}
+
+function normalizeProviderMode(value: unknown): AssistantMessage["providerMode"] | undefined {
+  if (value === "fallback") return "unavailable";
+  if (value === "deepseek" || value === "mock" || value === "unavailable") return value;
+  return undefined;
 }
 
 function normalizeSnapshots(snapshots: Snapshot[], fallbackText: string): Snapshot[] {

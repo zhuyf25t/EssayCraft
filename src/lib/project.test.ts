@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addSnapshot, clearModule, createInitialProject, importProject, replaceModuleContent } from "./project";
+import { addSnapshot, clearModule, createInitialProject, importProject, migrateProject, replaceModuleContent } from "./project";
 import { moduleDisplayStatus, moduleStatus } from "./moduleStatus";
 
 describe("project model", () => {
@@ -49,5 +49,22 @@ describe("project model", () => {
     expect(moduleDisplayStatus(moduleOne, 1)).toBe("current");
     expect(moduleDisplayStatus(moduleOne, 4)).toBe("done");
     expect(moduleDisplayStatus(project.modules[5], 4)).toBe("empty");
+  });
+
+  it("migrates legacy fallback assistant history to unavailable", () => {
+    const project = createInitialProject();
+    const migrated = migrateProject({
+      ...project,
+      assistantHistory: [
+        {
+          id: "legacy",
+          role: "assistant",
+          text: "Old fallback message",
+          createdAt: "2026-05-10T00:00:00.000Z",
+          providerMode: "fallback"
+        }
+      ]
+    });
+    expect(migrated.assistantHistory[0].providerMode).toBe("unavailable");
   });
 });

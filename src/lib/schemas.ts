@@ -25,6 +25,11 @@ export const segmentLabelSchema = z.enum([
   "plain"
 ]);
 
+export const providerModeSchema = z.preprocess(
+  (value) => value === "fallback" ? "unavailable" : value,
+  z.enum(["deepseek", "mock", "unavailable"])
+);
+
 export const rangeSchema = z
   .object({
     start: z.number().int().min(0),
@@ -113,7 +118,7 @@ export const refreshResponseSchema = z.object({
   realSourceCards: z.number().int().min(0).optional(),
   referenceStatus: z.string().optional(),
   nextStep: z.string().optional(),
-  providerMode: z.enum(["deepseek", "mock", "unavailable"]).optional(),
+  providerMode: providerModeSchema.optional(),
   modelUsed: z.string().optional(),
   latencyMs: z.number().int().min(0).optional(),
   fallbackReason: z.string().optional(),
@@ -139,7 +144,7 @@ export const generateNextResponseSchema = z.object({
   sources: z.array(sourceCardSchema).default([]),
   globalFeedback: z.array(z.string()).default([]),
   warnings: z.array(z.string()).default([]),
-  providerMode: z.enum(["deepseek", "mock", "unavailable"]).default("deepseek"),
+  providerMode: providerModeSchema.default("deepseek"),
   modelUsed: z.string().optional(),
   latencyMs: z.number().int().min(0).optional(),
   fallbackReason: z.string().optional()
@@ -150,7 +155,7 @@ export const assistantMessageSchema = z.object({
   role: z.enum(["user", "assistant"]),
   text: z.string(),
   createdAt: z.string(),
-  providerMode: z.enum(["deepseek", "mock", "unavailable"]).optional(),
+  providerMode: providerModeSchema.optional(),
   warnings: z.array(z.string()).optional()
 });
 
@@ -180,7 +185,7 @@ export const assistResponseSchema = z.object({
   actionType: nullableString,
   originalExcerpt: nullableString,
   explanation: nullableString,
-  providerMode: z.enum(["deepseek", "mock", "unavailable"]).optional(),
+  providerMode: providerModeSchema.optional(),
   modelUsed: z.string().optional(),
   latencyMs: z.number().int().min(0).optional(),
   fallbackReason: z.string().optional(),
@@ -204,7 +209,7 @@ export const translateResponseSchema = z.object({
   mode: z.enum(["en-to-zh", "zh-to-en", "auto-to-zh"]),
   annotations: z.array(annotationSchema).default([]),
   warnings: z.array(z.string()).default([]),
-  providerMode: z.enum(["deepseek", "mock", "unavailable"]).default("deepseek"),
+  providerMode: providerModeSchema.default("deepseek"),
   modelUsed: z.string().optional(),
   latencyMs: z.number().int().min(0).optional(),
   fallbackReason: z.string().optional()
