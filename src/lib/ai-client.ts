@@ -58,11 +58,11 @@ export function createAiClient(timeoutMs = ASSIST_TIMEOUT_MS) {
 }
 
 export function deepSeekRequestBody<T extends object>(body: T): T & {
-  extra_body: { thinking: { type: "disabled" } };
+  thinking: { type: "disabled" };
 } {
   return {
     ...body,
-    extra_body: { thinking: { type: "disabled" } }
+    thinking: { type: "disabled" }
   };
 }
 
