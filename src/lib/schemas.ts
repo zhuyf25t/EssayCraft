@@ -157,6 +157,11 @@ export const generateNextResponseSchema = z.object({
   text: z.string().min(1),
   annotations: z.array(annotationSchema).default([]),
   sources: z.array(sourceCardSchema).default([]),
+  contractCheck: z.object({
+    passed: z.boolean(),
+    missingItems: z.array(z.string()).default([]),
+    notes: z.array(z.string()).default([])
+  }).optional(),
   globalFeedback: z.array(z.string()).default([]),
   warnings: z.array(z.string()).default([]),
   providerMode: providerModeSchema.default("deepseek"),

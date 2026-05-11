@@ -31,6 +31,12 @@ AI result cards in the Assistant, Refresh, and Translate flows show a compact ba
 - `Mock`: deterministic mock, only when `ESSAYCRAFT_FORCE_MOCK_AI=1`.
 - `AI unavailable`: no semantic output was generated.
 
+## Generate Next Contract Checking
+
+Generate Next uses DeepSeek to produce the next module and to self-check whether the result satisfies the module transition contract. The server validates engineering constraints such as JSON shape, target module number, clean text, citation-safety cleanup, and annotation ranges. It does not decide academic contract satisfaction through local keyword matching in the provider path.
+
+If DeepSeek returns valid JSON but marks `contractCheck.passed` as false, or omits the self-check, EssayCraft asks DeepSeek to repair the same response against the contract once. If the repaired provider response still fails its own contract check, the UI reports `AI unavailable` rather than pretending local keyword logic can judge or rewrite the essay.
+
 ## Offline Demo Mode
 
 For deterministic offline demos and e2e tests:

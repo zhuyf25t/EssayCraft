@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { AssistRequest, RefreshRequest } from "@/types/essaycraft";
-import { buildAssistMessages, buildRefreshUnitMessages } from "./prompts";
+import type { AssistRequest, GenerateNextRequest, RefreshRequest } from "@/types/essaycraft";
+import { buildAssistMessages, buildGenerateNextMessages, buildRefreshUnitMessages } from "./prompts";
 
 function request(action: string): AssistRequest {
   const text = "Research question: How can social media be healthier?";
@@ -103,5 +103,22 @@ describe("assistant prompts", () => {
     expect(messages[1].content).toContain("Full essay context");
     expect(messages[1].content).toContain("\"index\": 0");
     expect(messages[1].content).toContain("Technology changes society.");
+  });
+
+  it("asks Generate Next to run an AI-native contract self-check", () => {
+    const request: GenerateNextRequest = {
+      topic: "Technology and humanity",
+      sourceModuleNumber: 1,
+      sourceTitle: "Topic & Question",
+      sourceText: "Topic: Technology and humanity\n\nResearch question: How should AI be guided?",
+      sourceAnnotations: [],
+      sourcePatches: [],
+      sourceSources: []
+    };
+
+    const messages = buildGenerateNextMessages(request);
+    expect(messages[0].content).toContain("AI-native contract self-check");
+    expect(messages[0].content).toContain("Do not rely on exact heading wording");
+    expect(messages[0].content).toContain("contractCheck");
   });
 });

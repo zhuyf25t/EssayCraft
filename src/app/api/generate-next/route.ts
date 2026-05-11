@@ -157,8 +157,15 @@ function parseGenerateCandidate(
   return {
     parsed,
     text,
-    contractIssues: validateTransitionOutput(input.sourceModuleNumber, text)
+    contractIssues: contractIssuesFromAiSelfCheck(parsed.contractCheck)
   };
+}
+
+function contractIssuesFromAiSelfCheck(check: GenerateNextResponse["contractCheck"]) {
+  if (!check) return ["missing AI contract self-check"];
+  if (check.passed) return [];
+  const items = [...(check.missingItems ?? []), ...(check.notes ?? [])].map((item) => item.trim()).filter(Boolean);
+  return items.length ? items : ["AI contract self-check did not pass"];
 }
 
 function buildGenerateRepairMessages(
@@ -173,10 +180,11 @@ function buildGenerateRepairMessages(
       role: "system",
       content: `Repair the previous EssayCraft Generate Next response. Return strict JSON only.
 
-The previous JSON was syntactically readable, but the generated module text failed the transition contract.
+The previous JSON was syntactically readable, but its AI contract self-check did not pass or was missing.
 Do not invent real citations, authors, years, titles, URLs, DOIs, journals, or reference entries.
 Keep the target moduleNumber ${transition.toModule} and title "${transition.name}".
 Rewrite the text so it satisfies the transition output contract, paragraph format, citation behavior, and validation rules.
+Then run your own contract self-check again.
 
 Output contract:
 ${transition.outputContract.map((item) => `- ${item}`).join("\n")}
@@ -191,7 +199,7 @@ Validation rules:
 ${transition.validationRules.map((item) => `- ${item}`).join("\n")}
 
 Required JSON shape:
-{"moduleNumber":${transition.toModule},"title":"${transition.name}","text":"Paragraph 1...\\n\\nParagraph 2...","annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.85,"comment":"brief reason"}],"sources":[],"globalFeedback":["short feedback"],"warnings":[]}`
+{"moduleNumber":${transition.toModule},"title":"${transition.name}","text":"Paragraph 1...\\n\\nParagraph 2...","annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.85,"comment":"brief reason"}],"sources":[],"contractCheck":{"passed":true,"missingItems":[],"notes":["brief self-check"]},"globalFeedback":["short feedback"],"warnings":[]}`
     },
     {
       role: "user",
@@ -228,7 +236,6 @@ function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6
   const moduleNumber = transition.toModule;
   const text = normalizeGeneratedModuleText(cleanGeneratedText(mockText(topic, sourceModuleNumber, sourceText, sourceSources, sourceAnnotations), moduleNumber), moduleNumber);
   const annotations = normalizeAnnotations(text, [...buildMockAnnotations(text), ...findIssueRanges(text)]);
-  const contractIssues = validateTransitionOutput(sourceModuleNumber, text);
 
   return {
     moduleNumber,
@@ -236,11 +243,13 @@ function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6
     text,
     annotations,
     sources: sourceSources,
+    contractCheck: {
+      passed: true,
+      missingItems: [],
+      notes: ["Mock mode returns deterministic demo structure only."]
+    },
     globalFeedback: [`Mock generated Module ${moduleNumber} from Module ${sourceModuleNumber}.`],
-    warnings: [
-      "Mock mode did not verify any source metadata. Keep source-needed and citation-needed markers until real sources are added.",
-      ...contractIssues.map((issue) => `Mock contract warning: ${issue}`)
-    ],
+    warnings: ["Mock mode did not verify any source metadata. Keep source-needed and citation-needed markers until real sources are added."],
     providerMode: "mock"
   };
 }
@@ -877,44 +886,6 @@ function normalizeGeneratedModuleText(text: string, moduleNumber: Exclude<Module
     );
   }
   return text;
-}
-
-function validateTransitionOutput(sourceModuleNumber: Exclude<ModuleNumber, 6>, text: string) {
-  const issues: string[] = [];
-  const lower = text.toLowerCase();
-  if (sourceModuleNumber === 1) {
-    if (!/(?:argument branch|branch|claim|reason)\s*1/i.test(text)) issues.push("missing argument branches");
-    if (!/(?:source status\s*:\s*source needed|\[source needed|source[- ]needed|source needed)/i.test(text)) issues.push("missing source-needed status");
-    if (!/(?:cars\s*(?:check|checklist|reminder|evaluation)|credible[\s\S]{0,80}accurate[\s\S]{0,80}reasonable[\s\S]{0,80}support)/i.test(text)) issues.push("missing CARS checks");
-    if (/\[citation needed\]/i.test(text)) issues.push("Module 2 should use source-needed planning language instead of citation-needed markers");
-  }
-  if (sourceModuleNumber === 2) {
-    if (!/Introduction plan/i.test(text)) issues.push("missing introduction plan");
-    if ((text.match(/Body paragraph\s*\d+/gi) ?? []).length < 2) issues.push("fewer than two body paragraphs");
-    if (!/Evidence to use/i.test(text)) issues.push("missing evidence slots");
-    if (!/\[source needed/i.test(text)) issues.push("missing source-needed marker");
-    if (/present the first reason|state the essay'?s arguable position|refined question: where is/i.test(text)) issues.push("contains generic outline filler");
-  }
-  if (sourceModuleNumber === 3) {
-    const forbidden = [
-      "introduction plan is an important academic issue",
-      "the student should",
-      "the strongest body paragraph should",
-      "the draft should develop",
-      "return to introduction plan",
-      "topic sentence:",
-      "evidence to use:",
-      "analysis purpose:",
-      "link back:"
-    ];
-    for (const phrase of forbidden) {
-      if (lower.includes(phrase)) issues.push(`contains template phrase: ${phrase}`);
-    }
-    if (text.split(/\n\s*\n/).filter((paragraph) => paragraph.trim().length > 60).length < 3) {
-      issues.push("Module 4 draft has too few prose paragraphs");
-    }
-  }
-  return issues;
 }
 
 function sanitizeUnsupportedCitations(text: string, userSources: SourceCard[]) {

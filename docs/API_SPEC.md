@@ -60,6 +60,8 @@ Task ids:
 
 Engineering validates ranges, schemas, previews, snapshots, and metadata. Semantic writing, analysis, translation, annotation, and generation must come from DeepSeek or explicit mock mode.
 
+Generate Next responses include an optional `contractCheck` object produced by the provider. In provider mode, EssayCraft uses that AI self-check to determine whether the transition output satisfies the academic module contract. Local code still enforces engineering safety only: JSON/schema shape, target module number, clean text, citation-safety cleanup, and valid annotation ranges. Local keyword matching is not used as the product-path judge of transition semantics.
+
 ## POST /api/refresh
 
 Purpose: classify existing text ranges. When unresolved inline notes are present, return a revision preview that uses those notes as instructions. The route never directly mutates project state.

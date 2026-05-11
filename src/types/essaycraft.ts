@@ -170,6 +170,11 @@ export type GenerateNextResponse = {
   text: string;
   annotations: Annotation[];
   sources: SourceCard[];
+  contractCheck?: {
+    passed: boolean;
+    missingItems: string[];
+    notes: string[];
+  };
   globalFeedback: string[];
   warnings: string[];
   providerMode: "deepseek" | "mock" | "unavailable";
