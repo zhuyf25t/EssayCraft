@@ -1,6 +1,10 @@
 # EssayCraft
 
-EssayCraft is an AI-assisted academic essay workflow editor. It guides a student through six modules:
+EssayCraft is a local-first AI writing workspace for academic essays. It helps students move through a six-module writing process while keeping the student's own text as the source of truth.
+
+## What EssayCraft Does
+
+EssayCraft supports six course modules:
 
 1. Topic & Question
 2. Research & Evidence
@@ -9,28 +13,72 @@ EssayCraft is an AI-assisted academic essay workflow editor. It guides a student
 5. Referencing / Citation Check
 6. Final Review / Conclusion / Export
 
-The project goal is not a black-box essay generator. EssayCraft should help users see, edit, annotate, and improve the structure of academic writing using color-coded rhetorical functions, module-to-module generation, patch notes, snapshots, citation-gap checking, and AI assistant previews.
+The app provides:
 
-## Start for Codex
+- a central writing canvas with paragraph-preserving plain text
+- color-coded rhetorical highlights
+- Chat and Edit assistant modes
+- Rewrite, Academic, Refresh, Analyze, Translate, and Explain actions
+- Generate Next module workflow
+- citation-gap checking without inventing sources
+- snapshots before AI text-changing operations
+- full project JSON export/import
+- final HTML export
 
-Read:
+EssayCraft is not a black-box essay generator. The student writes and decides; AI helps review, revise, classify, explain, and generate previews.
+
+## One-Click Local Setup
+
+You need Node.js 20 or newer installed first.
+
+### Windows
+
+Double-click:
 
 ```text
-AGENTS.md
-CODEX_AUTONOMOUS_EVOLUTION_PROMPT.md
-docs/SELF_EVOLUTION_PROTOCOL.md
-docs/ACCEPTANCE_CRITERIA.md
+setup-windows.bat
 ```
 
-Then follow the prompt. Codex should run autonomously, use subagents when available, experience the app like a student, and keep improving until acceptance criteria pass.
+The script will:
 
-## Local setup
+1. install dependencies with `npm install`
+2. create `.env.local` from `.env.example` if needed
+3. start EssayCraft with `npm run dev`
+
+When the terminal shows a line like this, open that URL:
+
+```text
+Local: http://localhost:3000
+```
+
+If port 3000 is already busy, Next.js may show a different port such as `http://localhost:3001`.
+
+### macOS
+
+Double-click:
+
+```text
+setup-mac.command
+```
+
+If macOS blocks it the first time, run:
+
+```bash
+chmod +x setup-mac.command
+./setup-mac.command
+```
+
+Then open the `Local:` URL shown in the terminal.
+
+## Manual Setup
 
 ```bash
 npm install
 cp .env.example .env.local
 npm run dev
 ```
+
+## AI Provider Setup
 
 Edit `.env.local`:
 
@@ -40,49 +88,93 @@ DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_FAST_MODEL=deepseek-v4-flash
 DEEPSEEK_HIGH_QUALITY_MODEL=deepseek-v4-flash
+
+ESSAYCRAFT_FORCE_MOCK_AI=0
+ESSAYCRAFT_ALLOW_OFFLINE_MOCK=0
+ESSAYCRAFT_DEEPSEEK_THINKING=disabled
+
 ESSAYCRAFT_CHAT_TIMEOUT_MS=60000
 ESSAYCRAFT_EDIT_TIMEOUT_MS=60000
 ESSAYCRAFT_REFRESH_TIMEOUT_MS=300000
 ESSAYCRAFT_TRANSLATE_TIMEOUT_MS=60000
 ESSAYCRAFT_GENERATE_TIMEOUT_MS=300000
+
 ESSAYCRAFT_REFRESH_MAX_TOKENS=32768
 ESSAYCRAFT_TRANSLATE_MAX_TOKENS=32768
 ESSAYCRAFT_GENERATE_MAX_TOKENS=32768
-ESSAYCRAFT_DEEPSEEK_THINKING=disabled
-ESSAYCRAFT_FORCE_MOCK_AI=0
-ESSAYCRAFT_ALLOW_OFFLINE_MOCK=0
 ```
 
-Do not commit `.env.local`.
+Do not commit `.env.local`. API keys must stay server-side only and must never use `NEXT_PUBLIC_`.
 
-For normal use, configure `DEEPSEEK_API_KEY`. For deterministic demos and tests, set `ESSAYCRAFT_FORCE_MOCK_AI=1`; only then does the app use the server-side mock provider even if `.env.local` contains a DeepSeek key.
+Provider behavior:
 
-EssayCraft is provider-first. When `DEEPSEEK_API_KEY` is configured and `ESSAYCRAFT_FORCE_MOCK_AI` is not `1`, Chat, Edit, Refresh, Translate, and Generate Next call DeepSeek. If the provider is missing, times out, or returns invalid semantic output, the UI reports `AI unavailable` instead of silently producing local keyword/template content. Keep `DEEPSEEK_HIGH_QUALITY_MODEL` available for slower quality passes, but do not expose any key through `NEXT_PUBLIC_`.
+- If `ESSAYCRAFT_FORCE_MOCK_AI=1`, EssayCraft uses mock mode for offline demos and labels results as Mock.
+- If `DEEPSEEK_API_KEY` is configured and force mock is off, Chat, Edit, Refresh, Translate, and Generate Next call DeepSeek.
+- If the provider is unavailable, EssayCraft reports AI unavailable instead of silently pretending local keyword logic is AI.
 
-Default AI timeouts and max-token limits live in `prompts/ai-runtime.json` so product testing can tune them without editing code. Values in `.env.local` still override that file. During any AI request, the bottom toolbar exposes `Details` with the start time and a compact `Stop` button.
+Runtime timeout and max-token defaults live in:
 
-Next.js dev-server messages such as `Compiled /api/refresh` are normal local compile logs, not EssayCraft product errors. If DeepSeek is unreachable because of proxy/network latency, the result is marked unavailable unless explicit mock mode is enabled.
+```text
+prompts/ai-runtime.json
+```
 
-Do not run multiple manual Next processes against the same cache directory. Next rewrites server chunks during build/start, which can make an already-running dev server report errors like `Cannot find module './331.js'`. `npm run dev` now starts through `scripts/dev-server.mjs`, uses an isolated `.next-dev` cache, clears that cache before startup, and writes a workspace lock so a second dev server does not corrupt the same chunk cache. `npm run build` keeps using the normal `.next` production build directory. If a dev server is already corrupted, stop every `next dev`/`node` process for this repo and restart `npm run dev`.
+Values in `.env.local` override that file.
+
+## Development Notes
+
+Use:
+
+```bash
+npm run dev
+```
+
+`npm run dev` starts through `scripts/dev-server.mjs`, uses an isolated `.next-dev` cache, clears it before startup, and writes a workspace lock. This avoids common Next.js dev-cache errors such as:
+
+```text
+Cannot find module './331.js'
+Cannot find module './611.js'
+```
+
+`npm run build` still uses the normal `.next` production build directory.
+
+If a local dev server is already corrupted, stop all `next dev` / `node` processes for this repo and run `npm run dev` again.
 
 ## Validation
 
+Run these before release:
+
 ```bash
+npm install
 npm run typecheck
 npm run lint
 npm run test
 npm run smoke
-npm run test:e2e
+ESSAYCRAFT_FORCE_MOCK_AI=1 npm run test:e2e
 npm run build
 ```
 
-## Important product rules
+## Product Rules
 
-- Store writing as canonical plain text with paragraph breaks (`\n\n`).
+- Store essay text as canonical plain text with `\n\n` paragraph breaks.
 - Store highlights as annotation ranges, not inline colored text.
-- Preserve paragraphs in editor, AI generation, copy, HTML export, JSON export/import.
-- Snapshot before destructive operations.
-- Each module saves independently.
-- Clear/Delete Current Module affects only the current module and snapshots first.
-- AI must never invent citations. Use `[citation needed]` and source cards.
-- API keys stay server-side only.
+- Preserve paragraph breaks in editing, generation, export, and import.
+- Snapshot before AI text-changing operations.
+- Keep each module independent.
+- Never invent real citations, authors, years, titles, DOIs, URLs, journals, or reference entries.
+- Use `[citation needed]` or source cards when source support is missing.
+- Normal HTML export excludes temporary notes.
+- Full project JSON includes project data, modules, annotations, snapshots, sources, and assistant history, but never API keys.
+
+## Final Export
+
+Module 6 final HTML export uses a clean project filename:
+
+```text
+project-title.html
+```
+
+Earlier module HTML exports keep module numbers:
+
+```text
+project-title-module-3.html
+```
