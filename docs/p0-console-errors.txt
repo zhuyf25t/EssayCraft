@@ -1,1 +1,0 @@
-No browser console errors captured during screenshot run.
