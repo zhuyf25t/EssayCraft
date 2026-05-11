@@ -181,12 +181,17 @@ describe("assistant prompts", () => {
       sourceText: "Topic: Technology and humanity\n\nResearch question: How should AI be guided?",
       sourceAnnotations: [],
       sourcePatches: [],
-      sourceSources: []
+      sourceSources: [],
+      instruction: "Preserve existing citations and references."
     };
 
     const messages = buildGenerateNextMessages(request);
     expect(messages[0].content).toContain("AI-native contract self-check");
     expect(messages[0].content).toContain("Do not rely on exact heading wording");
+    expect(messages[0].content).toContain("Do not use Markdown heading markers");
+    expect(messages[0].content).toContain("Do not replace existing concrete citations or references");
+    expect(messages[1].content).toContain("User generation instruction from the Edit box");
+    expect(messages[1].content).toContain("Preserve existing citations and references.");
     expect(messages[0].content).toContain("contractCheck");
   });
 });

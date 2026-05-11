@@ -7,6 +7,7 @@ import { changeRequested } from "@/lib/rewriteFallback";
 import { sanitizeReplacement } from "@/lib/assistMock";
 import { mockAssist } from "@/lib/ai/mockProvider";
 import { runJsonAiTask } from "@/lib/ai/taskRouter";
+import { readAiRuntimeMaxTokens } from "@/lib/ai-client";
 import type { AiTaskType } from "@/lib/ai/tasks";
 import { assistRequestSchema, assistResponseSchema } from "@/lib/schemas";
 
@@ -59,13 +60,13 @@ export async function POST(request: Request) {
 
 function assistMaxTokens(input: AssistRequest) {
   if (isTranslateAction(input.action)) return assistTranslateMaxTokens();
-  if (isAnalyzeAction(input.action)) return 6000;
-  return 3500;
+  if (isAnalyzeAction(input.action)) return readAiRuntimeMaxTokens("assistAnalyze", 6000);
+  return readAiRuntimeMaxTokens("assist", 6000);
 }
 
 function assistTranslateMaxTokens() {
   const configured = Number(process.env.ESSAYCRAFT_TRANSLATE_MAX_TOKENS ?? process.env.ESSAYCRAFT_MAX_TOKENS);
-  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 32768;
+  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : readAiRuntimeMaxTokens("translateSelection", 32768);
 }
 
 function validateAssistCompleteness(input: AssistRequest, response: AssistResponse) {

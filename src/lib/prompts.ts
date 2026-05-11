@@ -142,6 +142,9 @@ ${JSON.stringify(input.sourcePatches, null, 2)}
 Source cards:
 ${JSON.stringify(input.sourceSources, null, 2)}
 
+User generation instruction from the Edit box:
+${JSON.stringify(input.instruction?.trim() || "")}
+
 Teacher-editable transition instruction:
 ${transition.userPromptTemplate}
 

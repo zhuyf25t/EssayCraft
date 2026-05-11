@@ -162,6 +162,7 @@ export type GenerateNextRequest = {
   sourceAnnotations: Annotation[];
   sourcePatches: Patch[];
   sourceSources: SourceCard[];
+  instruction?: string;
 };
 
 export type GenerateNextResponse = {

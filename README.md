@@ -58,6 +58,8 @@ For normal use, configure `DEEPSEEK_API_KEY`. For deterministic demos and tests,
 
 EssayCraft is provider-first. When `DEEPSEEK_API_KEY` is configured and `ESSAYCRAFT_FORCE_MOCK_AI` is not `1`, Chat, Edit, Refresh, Translate, and Generate Next call DeepSeek. If the provider is missing, times out, or returns invalid semantic output, the UI reports `AI unavailable` instead of silently producing local keyword/template content. Keep `DEEPSEEK_HIGH_QUALITY_MODEL` available for slower quality passes, but do not expose any key through `NEXT_PUBLIC_`.
 
+Default AI timeouts and max-token limits live in `prompts/ai-runtime.json` so product testing can tune them without editing code. Values in `.env.local` still override that file. During any AI request, the bottom toolbar exposes `Details` with the start time and a compact `Stop` button.
+
 Next.js dev-server messages such as `Compiled /api/refresh` are normal local compile logs, not EssayCraft product errors. If DeepSeek is unreachable because of proxy/network latency, the result is marked unavailable unless explicit mock mode is enabled.
 
 Do not run multiple manual Next processes against the same cache directory. Next rewrites server chunks during build/start, which can make an already-running dev server report errors like `Cannot find module './331.js'`. EssayCraft's smoke and e2e scripts isolate their temporary servers with `NEXT_DIST_DIR` (`.next-smoke-*` and `.next-playwright-*`) and restore Next's generated TypeScript references afterward, so validation can run beside a normal dev server. If a dev server is already corrupted, stop it, remove `.next`, and restart `npm run dev`.

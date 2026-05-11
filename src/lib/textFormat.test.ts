@@ -14,6 +14,10 @@ describe("textFormat", () => {
     expect(cleanGeneratedText("```html\n<p>One</p><p>Two</p>\n```")).toBe("One\n\nTwo");
   });
 
+  it("removes markdown heading markers from generated plain text", () => {
+    expect(cleanGeneratedText("##\n\n### Conclusion Check\n- Keep the thesis.")).toBe("Conclusion Check\n- Keep the thesis.");
+  });
+
   it("splits an overlong Module 4 draft into readable paragraphs", () => {
     const text = cleanGeneratedText("One sentence. Two sentence. Three sentence. Four sentence. Five sentence. Six sentence.", 4);
     expect(text).toContain("\n\n");

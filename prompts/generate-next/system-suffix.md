@@ -10,8 +10,18 @@ Paragraph format:
 Citation behavior:
 {{citationBehavior}}
 
+Citation/reference preservation:
+- If the source module already contains concrete in-text citations, reference-list entries, source names, years, or user-supplied source cards, preserve and carry them forward when they support the generated target module.
+- Do not replace existing concrete citations or references with `[citation needed]`.
+- Use `[citation needed]` only for claims that still lack supplied or verifiable source support.
+
 Validation rules:
 {{validationRules}}
+
+Plain-text formatting:
+- Return clean plain text only inside the `text` field.
+- Do not use Markdown heading markers such as `#`, `##`, or `###`.
+- Use readable plain headings like `Editing checklist` or `Conclusion check` when headings are needed.
 
 Failure behavior:
 {{failureBehavior}}

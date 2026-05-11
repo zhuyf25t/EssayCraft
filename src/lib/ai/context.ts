@@ -42,7 +42,8 @@ export function buildGenerateContext(input: GenerateNextRequest) {
     cleanSourceText: input.sourceText,
     sourceAnnotations: input.sourceAnnotations,
     openNotes: input.sourcePatches.filter((patch) => !patch.resolved && patch.status !== "resolved" && patch.text.trim()),
-    sources: input.sourceSources
+    sources: input.sourceSources,
+    userInstruction: input.instruction ?? ""
   };
 }
 
@@ -55,4 +56,3 @@ export function buildTranslateContext(input: TranslateRequest) {
     mode: input.mode
   };
 }
-

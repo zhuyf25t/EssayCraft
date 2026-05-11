@@ -164,6 +164,7 @@ function ChatMode({
           contentEditable
           suppressContentEditableWarning
           data-placeholder="Ask EssayCraft about this module..."
+          {...editablePlaceholder("Ask EssayCraft about this module...")}
           className="assistant-native-input min-h-12 w-full text-[13px] leading-snug outline-none"
           onCompositionStart={() => {
             composingRef.current = true;
@@ -269,6 +270,7 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
             contentEditable
             suppressContentEditableWarning
             data-placeholder="Tell EssayCraft what you want to change"
+            {...editablePlaceholder("Tell EssayCraft what you want to change")}
             className="assistant-native-input min-h-9 w-full pr-8 text-[13px] leading-snug outline-none"
             onPaste={pastePlainText}
           />
@@ -351,6 +353,10 @@ function isNativeImeEvent(event: ReactKeyboardEvent<HTMLElement>, composingRefVa
     event.key === "Process" ||
     (event.key === "Enter" && compositionEndedAt > 0 && Date.now() - compositionEndedAt < 800)
   );
+}
+
+function editablePlaceholder(value: string) {
+  return { placeholder: value } as unknown as Record<string, string>;
 }
 
 function readEditableText(node: HTMLElement | null) {

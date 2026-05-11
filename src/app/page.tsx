@@ -48,6 +48,7 @@ type LastAction = {
 };
 
 type AssistIntent = "chat" | "edit" | "inspect";
+type BusyAction = "generate" | "refresh" | "assist" | "translate";
 
 type AiUndoEntry = {
   id: string;
@@ -55,6 +56,13 @@ type AiUndoEntry = {
   doc: ModuleDocument;
   label: string;
   createdAt: string;
+};
+
+type ActiveAiRun = {
+  action: BusyAction;
+  label: string;
+  startedAt: string;
+  startedAtMs: number;
 };
 
 export default function Home() {
@@ -76,10 +84,12 @@ export default function Home() {
   const [assistantModeRequest, setAssistantModeRequest] = useState<{ mode: "chat" | "edit"; id: number }>({ mode: "chat", id: 0 });
   const [revisionPreview, setRevisionPreview] = useState<RefreshResponse | undefined>();
   const [refreshResult, setRefreshResult] = useState<RefreshResponse | undefined>();
-  const [busyAction, setBusyAction] = useState<"generate" | "refresh" | "assist" | "translate" | null>(null);
+  const [busyAction, setBusyAction] = useState<BusyAction | null>(null);
+  const [activeAiRun, setActiveAiRun] = useState<ActiveAiRun | null>(null);
   const [toastVisible, setToastVisible] = useState(false);
   const [undoStack, setUndoStack] = useState<AiUndoEntry[]>([]);
   const editorAiUndoReadyRef = useRef(false);
+  const aiAbortControllerRef = useRef<AbortController | null>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const currentModuleNumber = project?.currentModule;
 
@@ -100,40 +110,6 @@ export default function Home() {
     const timeout = window.setTimeout(() => setToastVisible(false), undoStack.length ? 6000 : 2800);
     return () => window.clearTimeout(timeout);
   }, [status, undoStack.length]);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== "z") return;
-      if (!undoStack.length || !editorAiUndoReadyRef.current) return;
-      event.preventDefault();
-      const entry = undoStack.at(-1);
-      if (!entry) return;
-      setProject((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          currentModule: entry.moduleNumber,
-          modules: {
-            ...prev.modules,
-            [entry.moduleNumber]: cloneModuleDocument(entry.doc)
-          },
-          updatedAt: nowIso()
-        };
-      });
-      setUndoStack((prev) => prev.slice(0, -1));
-      editorAiUndoReadyRef.current = undoStack.length > 1;
-      setSelectedRange(EMPTY_RANGE);
-      setActiveSentenceRange(undefined);
-      setAssistantSuggestion(undefined);
-      setRevisionPreview(undefined);
-      setRefreshResult(undefined);
-      setEditorResetKey((value) => value + 1);
-      setStatus("Undid last AI edit.");
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [undoStack]);
 
   useEffect(() => {
     if (!currentModuleNumber) return;
@@ -222,6 +198,44 @@ export default function Home() {
 
   function requestAssistantMode(mode: "chat" | "edit") {
     setAssistantModeRequest((request) => ({ mode, id: request.id + 1 }));
+  }
+
+  function beginAiRun(action: BusyAction, label: string) {
+    const controller = new AbortController();
+    aiAbortControllerRef.current = controller;
+    setActiveAiRun({
+      action,
+      label,
+      startedAt: nowIso(),
+      startedAtMs: performance.now()
+    });
+    return controller;
+  }
+
+  function finishAiRun(controller: AbortController) {
+    if (aiAbortControllerRef.current !== controller) return;
+    aiAbortControllerRef.current = null;
+    setActiveAiRun(null);
+  }
+
+  function stopAiRun() {
+    const controller = aiAbortControllerRef.current;
+    if (!controller) return;
+    controller.abort();
+    aiAbortControllerRef.current = null;
+    setActiveAiRun(null);
+    setLoading(false);
+    setBusyAction(null);
+    const message = "AI request stopped.";
+    setStatus(message);
+    setLastAction({ tone: "warning", message, details: [`Stopped at ${formatClock(new Date())}.`] });
+  }
+
+  function assistantEditInstruction() {
+    const node = typeof document === "undefined"
+      ? null
+      : document.querySelector<HTMLElement>('[data-testid="assistant-edit-instruction"]');
+    return readEditableDomText(node).trim();
   }
 
   function pushAiUndo(moduleNumber: ModuleNumber, doc: ModuleDocument, label: string) {
@@ -373,10 +387,12 @@ export default function Home() {
     setLoading(true);
     setBusyAction("refresh");
     setRefreshResult(undefined);
+    const controller = beginAiRun("refresh", "Refresh Highlighting");
     try {
       const response = await fetch("/api/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           topic: activeProject.topic,
           projectTitle: activeProject.title,
@@ -420,8 +436,13 @@ export default function Home() {
           ? "Citation review ready."
           : data.globalFeedback?.[0] ?? "Highlights refreshed.");
     } catch (error) {
+      if (isAbortError(error)) {
+        setStatus("AI request stopped.");
+        return;
+      }
       setStatus(error instanceof Error ? error.message : "Refresh failed.");
     } finally {
+      finishAiRun(controller);
       setLoading(false);
       setBusyAction(null);
     }
@@ -442,10 +463,12 @@ export default function Home() {
     setBusyAction("refresh");
     setAssistantSuggestion(undefined);
     setRefreshResult(undefined);
+    const controller = beginAiRun("refresh", "Refresh selected labels");
     try {
       const response = await fetch("/api/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           topic: activeProject.topic,
           projectTitle: activeProject.title,
@@ -492,8 +515,13 @@ export default function Home() {
       requestAssistantMode("edit");
       setStatus(data.providerMode === "unavailable" ? "Local refresh unavailable." : "Local labels updated.");
     } catch (error) {
+      if (isAbortError(error)) {
+        setStatus("AI request stopped.");
+        return;
+      }
       setStatus(error instanceof Error ? error.message : "Local refresh failed.");
     } finally {
+      finishAiRun(controller);
       setLoading(false);
       setBusyAction(null);
     }
@@ -519,7 +547,16 @@ export default function Home() {
     setBusyAction("generate");
     setStatus(`Generating Module ${target} from Module ${sourceModuleNumber}...`);
     setLastAction({ tone: "info", message: `Generating Module ${target} from Module ${sourceModuleNumber}...` });
+    updateProject((prev) => ({
+      ...prev,
+      modules: {
+        ...prev.modules,
+        [sourceModuleNumber]: addSnapshot(prev.modules[sourceModuleNumber], `Before Generate Module ${target} from Module ${sourceModuleNumber}`)
+      }
+    }));
+    const controller = beginAiRun("generate", `Generate Module ${target} from Module ${sourceModuleNumber}`);
     try {
+      const instruction = assistantEditInstruction();
       const payload = generateNextRequestSchema.parse({
         topic: activeProject.topic,
         sourceModuleNumber,
@@ -527,11 +564,13 @@ export default function Home() {
         sourceText: activeDoc.text,
         sourceAnnotations: activeDoc.annotations,
         sourcePatches: INLINE_NOTES_ENABLED ? activeDoc.patches : [],
-        sourceSources: activeDoc.sources
+        sourceSources: activeDoc.sources,
+        instruction
       });
       const response = await fetch("/api/generate-next", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify(payload)
       });
 
@@ -547,18 +586,21 @@ export default function Home() {
         if (!prev) return prev;
         const sourceDoc = prev.modules[sourceModuleNumber];
         const targetDoc = prev.modules[target];
-        const snapTargetDoc = addSnapshot(targetDoc, `Before overwrite from Module ${sourceModuleNumber}`);
+        const snapTargetDoc = targetDoc.text.trim()
+          ? addSnapshot(targetDoc, `Before overwrite from Module ${sourceModuleNumber}`)
+          : targetDoc;
         const sources = data.sources.length ? mergeSources(data.sources, snapTargetDoc.sources) : mergeSources(sourceDoc.sources, snapTargetDoc.sources);
+        const generatedDoc = {
+          ...replaceModuleContent(snapTargetDoc, data.text, normalizedAnnotations, sources),
+          title: data.title || snapTargetDoc.title,
+          globalFeedback: data.globalFeedback
+        };
         const next = {
           ...prev,
           currentModule: target,
           modules: {
             ...prev.modules,
-            [target]: {
-              ...replaceModuleContent(snapTargetDoc, data.text, normalizedAnnotations, sources),
-              title: data.title || snapTargetDoc.title,
-              globalFeedback: data.globalFeedback
-            }
+            [target]: addSnapshot(generatedDoc, `After Generate Module ${target} from Module ${sourceModuleNumber}`)
           },
           updatedAt: nowIso()
         };
@@ -572,7 +614,7 @@ export default function Home() {
       setRevisionPreview(undefined);
       setRefreshResult(undefined);
       resetEditorViewport();
-      const message = `Module ${target} generated and opened. Previous Module ${target} saved as a snapshot.`;
+      const message = `Module ${target} generated and opened. Snapshots saved for Module ${sourceModuleNumber} and Module ${target}.`;
       const details = [
         aiModeDetail(data.providerMode),
         ...data.warnings,
@@ -581,10 +623,17 @@ export default function Home() {
       setStatus(message);
       setLastAction({ tone: data.providerMode === "unavailable" ? "warning" : "success", message, details });
     } catch (error) {
+      if (isAbortError(error)) {
+        const message = "AI request stopped.";
+        setStatus(message);
+        setLastAction({ tone: "warning", message, details: ["No module was overwritten."] });
+        return;
+      }
       const message = error instanceof Error ? error.message : "Generate Next failed.";
       setStatus(message);
       setLastAction({ tone: "error", message, details: ["No module was overwritten."], retryGenerate: true });
     } finally {
+      finishAiRun(controller);
       setLoading(false);
       setBusyAction(null);
     }
@@ -841,11 +890,13 @@ function handleSaveSnapshot() {
     const requestStartedAt = performance.now();
     setLoading(true);
     setBusyAction("assist");
+    const controller = beginAiRun("assist", intent === "chat" ? "Assistant chat" : "Assistant edit");
     try {
       const response = await fetch("/api/assist", {
         method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
           topic: activeProject.topic,
           projectTitle: activeProject.title,
           moduleNumber: activeProject.currentModule,
@@ -889,6 +940,10 @@ function handleSaveSnapshot() {
         setStatus(anchoredData.kind === "inspect" ? "Highlight explanation ready." : "Edit preview ready.");
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        setStatus("AI request stopped.");
+        return;
+      }
       const message = "Copilot could not complete that request.";
       if (intent === "chat") {
         appendAssistantHistory([{
@@ -902,6 +957,7 @@ function handleSaveSnapshot() {
       }
       setStatus(message);
     } finally {
+      finishAiRun(controller);
       setLoading(false);
       setBusyAction(null);
     }
@@ -966,9 +1022,10 @@ function handleSaveSnapshot() {
       setStatus("Assistant replacement was blocked because the selected text changed after the preview was created.");
       return;
     }
-    pushAiUndo(activeProject.currentModule, activeDoc, "Before applying assistant edit");
+    const snapshotReason = assistantApplySnapshotReason(assistantSuggestion);
+    pushAiUndo(activeProject.currentModule, activeDoc, snapshotReason);
     updateCurrentModule((doc) => {
-      const snapDoc = addSnapshot(doc, "Before applying assistant suggestion");
+      const snapDoc = addSnapshot(doc, snapshotReason);
       const text = protectModuleText(`${snapDoc.text.slice(0, range.start)}${assistantSuggestion.proposedText}${snapDoc.text.slice(range.end)}`);
       const annotations = assistantSuggestion.annotations.length ? assistantSuggestion.annotations : snapDoc.annotations;
       const resolvedPatchIds = new Set(snapDoc.patches
@@ -1030,11 +1087,13 @@ function handleSaveSnapshot() {
   async function requestTranslatePreview() {
     setLoading(true);
     setBusyAction("translate");
+    const controller = beginAiRun("translate", "Reference translation");
     try {
       const useSelection = selectedRange.end > selectedRange.start;
       const response = await fetch("/api/translate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           topic: activeProject.topic,
           moduleNumber: activeProject.currentModule,
@@ -1048,8 +1107,13 @@ function handleSaveSnapshot() {
       setTranslatePreview(data);
       setStatus("Translation preview ready.");
     } catch (error) {
+      if (isAbortError(error)) {
+        setStatus("AI request stopped.");
+        return;
+      }
       setStatus(error instanceof Error ? error.message : "Translate failed.");
     } finally {
+      finishAiRun(controller);
       setLoading(false);
       setBusyAction(null);
     }
@@ -1248,6 +1312,7 @@ function handleSaveSnapshot() {
             currentModule={activeProject.currentModule}
             loading={loading}
             busyAction={busyAction}
+            activeRun={activeAiRun}
             status={status}
             toastVisible={toastVisible}
             canUndo={undoStack.length > 0 && /Undo is available|AI edit applied|Notes applied/.test(status)}
@@ -1260,6 +1325,7 @@ function handleSaveSnapshot() {
             onRefresh={handleRefresh}
             onSaveSnapshot={handleSaveSnapshot}
             onUndo={undoLastAiEdit}
+            onStopAi={stopAiRun}
           />
         </section>
       </div>
@@ -1406,4 +1472,27 @@ function hasBlockingIssues(doc: ModuleDocument) {
 
 function cloneModuleDocument(doc: ModuleDocument): ModuleDocument {
   return JSON.parse(JSON.stringify(doc)) as ModuleDocument;
+}
+
+function readEditableDomText(node: HTMLElement | null) {
+  if (!node) return "";
+  return (node.innerText || node.textContent || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/\n$/u, "");
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError" ||
+    error instanceof Error && error.name === "AbortError";
+}
+
+function formatClock(date: Date) {
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function assistantApplySnapshotReason(suggestion: AssistResponse) {
+  if (suggestion.actionType === "academic-rewrite") return "Before AI assistant Academic apply";
+  if (suggestion.actionType === "rewrite-selection") return "Before AI assistant Rewrite apply";
+  return `Before AI assistant ${suggestion.actionType || "edit"} apply`;
 }

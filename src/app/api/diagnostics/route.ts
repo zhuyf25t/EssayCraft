@@ -11,6 +11,7 @@ import {
   GENERATE_TIMEOUT_MS,
   REFRESH_TIMEOUT_MS,
   TRANSLATE_TIMEOUT_MS,
+  aiRuntimeConfigSource,
   hasAiKey,
   interactiveTimeoutMs,
   offlineMockAllowed
@@ -33,6 +34,7 @@ export function GET() {
     refreshTimeoutMs: REFRESH_TIMEOUT_MS,
     translateTimeoutMs: TRANSLATE_TIMEOUT_MS,
     generateTimeoutMs: GENERATE_TIMEOUT_MS,
+    runtimeConfigFile: aiRuntimeConfigSource(),
     baseUrlConfigured: Boolean(process.env.DEEPSEEK_BASE_URL?.trim()),
     note: "No silent semantic fallback: mock output is used only when ESSAYCRAFT_FORCE_MOCK_AI=1. Next dev compile logs are normal."
   });

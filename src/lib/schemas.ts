@@ -148,7 +148,8 @@ export const generateNextRequestSchema = z.object({
   sourceText: z.string(),
   sourceAnnotations: z.array(annotationSchema).default([]),
   sourcePatches: z.array(patchSchema).default([]),
-  sourceSources: z.array(sourceCardSchema).default([])
+  sourceSources: z.array(sourceCardSchema).default([]),
+  instruction: z.string().optional()
 });
 
 export const generateNextResponseSchema = z.object({

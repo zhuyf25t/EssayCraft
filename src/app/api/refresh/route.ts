@@ -7,6 +7,7 @@ import { validateProviderRefreshAnnotations } from "@/lib/refreshValidation";
 import { addModuleReviewIfNeeded, moduleRefreshSuggestion } from "@/lib/refreshFallback";
 import { mockPatchRevision, mockRefresh } from "@/lib/ai/mockProvider";
 import { runJsonAiTask } from "@/lib/ai/taskRouter";
+import { readAiRuntimeMaxTokens } from "@/lib/ai-client";
 import { refreshRequestSchema, refreshResponseSchema, refreshUnitResponseSchema } from "@/lib/schemas";
 
 export const dynamic = "force-dynamic";
@@ -224,7 +225,7 @@ function issueCountFromAnnotations(annotations: Annotation[], providerIssueCount
 
 function refreshMaxTokens() {
   const configured = Number(process.env.ESSAYCRAFT_REFRESH_MAX_TOKENS ?? process.env.ESSAYCRAFT_MAX_TOKENS);
-  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 32768;
+  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : readAiRuntimeMaxTokens("refreshAnnotations", 32768);
 }
 
 function safeUnavailableReason(reason: string) {

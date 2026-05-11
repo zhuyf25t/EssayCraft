@@ -3,6 +3,7 @@ import type { TranslateRequest, TranslateResponse } from "@/types/essaycraft";
 import { buildMockAnnotations, exactAnnotations, normalizeAnnotations } from "@/lib/annotations";
 import { buildTranslateMessages } from "@/lib/prompts";
 import { runJsonAiTask } from "@/lib/ai/taskRouter";
+import { readAiRuntimeMaxTokens } from "@/lib/ai-client";
 import { translateRequestSchema, translateResponseSchema } from "@/lib/schemas";
 import { cleanGeneratedText } from "@/lib/textFormat";
 
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
           providerMode: "deepseek"
         } satisfies TranslateResponse;
       },
-      maxTokens: 4500,
+      maxTokens: readAiRuntimeMaxTokens("translateSelection", 32768),
       temperature: 0.1
     });
     return NextResponse.json(result);

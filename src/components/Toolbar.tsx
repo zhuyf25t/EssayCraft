@@ -7,6 +7,12 @@ type ToolbarProps = {
   currentModule: ModuleNumber;
   loading: boolean;
   busyAction?: "generate" | "refresh" | "assist" | "translate" | null;
+  activeRun?: {
+    action: "generate" | "refresh" | "assist" | "translate";
+    label: string;
+    startedAt: string;
+    startedAtMs: number;
+  } | null;
   status: string;
   toastVisible: boolean;
   canUndo: boolean;
@@ -24,12 +30,13 @@ type ToolbarProps = {
   onRefresh: () => void;
   onSaveSnapshot: () => void;
   onUndo: () => void;
+  onStopAi: () => void;
 };
 
 export function Toolbar(props: ToolbarProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const finalModule = props.currentModule >= 6;
-  const hasDetails = Boolean(props.lastAction.details?.length || props.lastAction.retryGenerate);
+  const hasDetails = Boolean(props.activeRun || props.lastAction.details?.length || props.lastAction.retryGenerate);
   const statusText = props.loading ? busyStatus(props.busyAction) : compactStatus(props.status, props.lastAction.message);
 
   return (
@@ -95,6 +102,14 @@ export function Toolbar(props: ToolbarProps) {
       {detailsOpen && hasDetails ? (
         <div data-testid="status-details-popover" className="absolute bottom-[calc(100%+0.35rem)] right-4 w-[min(26rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-lg">
           <div className="mb-1 font-semibold text-slate-800">{props.lastAction.message}</div>
+          {props.activeRun ? (
+            <div className="mb-2 rounded-lg border border-slate-200 bg-slate-50 p-2">
+              <div className="font-semibold text-slate-800">{props.activeRun.label}</div>
+              <div>Started: {formatStartedAt(props.activeRun.startedAt)}</div>
+              <div>Action: {props.activeRun.action}</div>
+              <button className="btn-secondary mt-2 px-2 py-1 text-xs" onClick={props.onStopAi} disabled={!props.loading}>Stop</button>
+            </div>
+          ) : null}
           {props.lastAction.details?.length ? (
             <ul className="space-y-1">
               {props.lastAction.details.slice(0, 5).map((detail, index) => <li key={`${index}-${detail.slice(0, 48)}`}>- {detail}</li>)}
@@ -127,4 +142,10 @@ function statusClasses(tone: ToolbarProps["lastAction"]["tone"]) {
   if (tone === "warning") return "border-amber-200 bg-amber-50 text-amber-800";
   if (tone === "error") return "border-red-200 bg-red-50 text-red-700";
   return "border-slate-200 bg-slate-50 text-slate-600";
+}
+
+function formatStartedAt(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }

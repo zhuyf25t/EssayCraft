@@ -111,7 +111,7 @@ ${Array.from({ length: 28 }, (_, index) => `Planning note ${index + 1}: AI study
   await expect(page.getByText(/Module 2 of 6/)).toBeVisible({ timeout: 20_000 });
   await h.expectEditorAtTop(page);
   await h.expectEditorText(page, /Research plan for: AI study tools[\s\S]*Argument branch 1[\s\S]*\n\nArgument branch 2/);
-  await expect(page.getByTestId("toolbar-status")).toContainText("Module 2 generated and opened. Previous Module 2 saved as a snapshot.");
+  await expect(page.getByTestId("toolbar-status")).toContainText("Module 2 generated and opened. Snapshots saved for Module 1 and Module 2.");
 });
 
 test("Module 2 to Module 3 creates a coherent branch-specific outline and opens at top", async ({ page }) => {
@@ -253,7 +253,7 @@ Conclusion plan
   ]) {
     expect(value).not.toContain(forbidden);
   }
-  await expect(page.getByTestId("toolbar-status")).toContainText("Module 4 generated and opened. Previous Module 4 saved as a snapshot.");
+  await expect(page.getByTestId("toolbar-status")).toContainText("Module 4 generated and opened. Snapshots saved for Module 3 and Module 4.");
 });
 
 test("empty source module shows a friendly Generate Next error", async ({ page }) => {

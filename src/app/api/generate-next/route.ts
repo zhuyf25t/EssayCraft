@@ -10,6 +10,7 @@ import {
   fallbackReasonFromError,
   forceMockEnabled,
   hasAiKey,
+  readAiRuntimeMaxTokens,
   withAiTimeout
 } from "@/lib/ai-client";
 import { AI_TASKS } from "@/lib/ai/tasks";
@@ -195,7 +196,7 @@ function parseGenerateCandidate(
   }
 
   const text = normalizeGeneratedModuleText(
-    sanitizeUnsupportedCitations(cleanGeneratedText(parsed.text, parsed.moduleNumber), input.sourceSources),
+    sanitizeUnsupportedCitations(cleanGeneratedText(parsed.text, parsed.moduleNumber), input.sourceSources, input.sourceText),
     parsed.moduleNumber
   );
   if (!text.trim()) {
@@ -287,6 +288,9 @@ ${input.topic}
 Source module ${input.sourceModuleNumber}: ${input.sourceTitle}
 ${JSON.stringify(input.sourceText)}
 
+User generation instruction from the Edit box:
+${JSON.stringify(input.instruction?.trim() || "")}
+
 Teacher-editable transition instruction:
 ${transition.userPromptTemplate}
 
@@ -303,7 +307,7 @@ Return corrected JSON only.`
 
 function generateMaxTokens() {
   const configured = Number(process.env.ESSAYCRAFT_GENERATE_MAX_TOKENS ?? process.env.ESSAYCRAFT_MAX_TOKENS);
-  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 32768;
+  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : readAiRuntimeMaxTokens("generateNextModule", 32768);
 }
 
 function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6>, sourceText: string, sourceSources: SourceCard[] = [], sourceAnnotations: Annotation[] = []): GenerateNextResponse {
@@ -963,14 +967,20 @@ function normalizeGeneratedModuleText(text: string, moduleNumber: Exclude<Module
   return text;
 }
 
-function sanitizeUnsupportedCitations(text: string, userSources: SourceCard[]) {
-  const allowed = userSources.map(sourceCitation).filter(Boolean);
+function sanitizeUnsupportedCitations(text: string, userSources: SourceCard[], sourceText = "") {
+  const allowed = [...userSources.map(sourceCitation).filter(Boolean), ...extractInlineCitations(sourceText)];
   if (!allowed.length) {
     return text.replace(/\(([A-Z][A-Za-z' -]+(?:\s*&\s*[A-Z][A-Za-z' -]+)?),\s*\d{4}[a-z]?\)/g, "[citation needed]");
   }
   return text.replace(/\(([A-Z][A-Za-z' -]+(?:\s*&\s*[A-Z][A-Za-z' -]+)?),\s*\d{4}[a-z]?\)/g, (citation) =>
     allowed.some((allowedCitation) => allowedCitation.toLowerCase() === citation.toLowerCase()) ? citation : "[citation needed]"
   );
+}
+
+function extractInlineCitations(text: string) {
+  return Array.from(text.matchAll(/\(([A-Z][A-Za-z' -]+(?:\s*&\s*[A-Z][A-Za-z' -]+)?),\s*\d{4}[a-z]?\)/g))
+    .map((match) => match[0])
+    .filter(Boolean);
 }
 
 function isSocialMediaTopic(value: string) {

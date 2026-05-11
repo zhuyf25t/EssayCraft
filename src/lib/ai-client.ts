@@ -1,5 +1,7 @@
 import "server-only";
 
+import fs from "node:fs";
+import path from "node:path";
 import OpenAI from "openai";
 
 export type AiProviderMode = "deepseek" | "mock" | "unavailable";
@@ -12,15 +14,22 @@ export type AiResponseMetadata = {
   fallbackReason?: string;
 };
 
+type AiRuntimeConfig = {
+  timeoutsMs?: Record<string, number>;
+  maxTokens?: Record<string, number>;
+};
+
+let runtimeConfigCache: AiRuntimeConfig | undefined;
+
 export const AI_HIGH_QUALITY_MODEL = process.env.DEEPSEEK_HIGH_QUALITY_MODEL || "deepseek-v4-pro";
 export const AI_MODEL = process.env.DEEPSEEK_MODEL || AI_HIGH_QUALITY_MODEL;
 export const AI_FAST_MODEL = process.env.DEEPSEEK_FAST_MODEL || process.env.DEEPSEEK_MODEL || "deepseek-v4-flash";
 export const AI_MOCK_MODEL = "deterministic-mock";
-export const CHAT_TIMEOUT_MS = readTimeout("ESSAYCRAFT_CHAT_TIMEOUT_MS", readTimeout("ESSAYCRAFT_ASSIST_TIMEOUT_MS", 60000));
-export const EDIT_TIMEOUT_MS = readTimeout("ESSAYCRAFT_EDIT_TIMEOUT_MS", readTimeout("ESSAYCRAFT_ASSIST_TIMEOUT_MS", 60000));
-export const REFRESH_TIMEOUT_MS = readTimeout("ESSAYCRAFT_REFRESH_TIMEOUT_MS", 120000);
-export const TRANSLATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_TRANSLATE_TIMEOUT_MS", 60000);
-export const GENERATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_GENERATE_TIMEOUT_MS", 120000);
+export const CHAT_TIMEOUT_MS = readTimeout("ESSAYCRAFT_CHAT_TIMEOUT_MS", readTimeout("ESSAYCRAFT_ASSIST_TIMEOUT_MS", readAiRuntimeTimeout("chatModule", 60000)));
+export const EDIT_TIMEOUT_MS = readTimeout("ESSAYCRAFT_EDIT_TIMEOUT_MS", readTimeout("ESSAYCRAFT_ASSIST_TIMEOUT_MS", readAiRuntimeTimeout("editActions", 60000)));
+export const REFRESH_TIMEOUT_MS = readTimeout("ESSAYCRAFT_REFRESH_TIMEOUT_MS", readAiRuntimeTimeout("refreshAnnotations", 120000));
+export const TRANSLATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_TRANSLATE_TIMEOUT_MS", readAiRuntimeTimeout("translateSelection", 60000));
+export const GENERATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_GENERATE_TIMEOUT_MS", readAiRuntimeTimeout("generateNextModule", 120000));
 export const ASSIST_TIMEOUT_MS = EDIT_TIMEOUT_MS;
 export const FAST_FALLBACK_MS = readTimeout("ESSAYCRAFT_FAST_FALLBACK_MS", process.env.NODE_ENV === "development" ? 2500 : 8000);
 export const interactiveTimeoutMs = EDIT_TIMEOUT_MS;
@@ -115,7 +124,37 @@ export function fallbackReasonFromError(error: unknown, model: string) {
   return `provider-error:${model}:${safeMessage.slice(0, 240)}`;
 }
 
+export function readAiRuntimeTimeout(taskId: string, fallback: number) {
+  return readPositiveRuntimeNumber(runtimeConfig().timeoutsMs?.[taskId], fallback);
+}
+
+export function readAiRuntimeMaxTokens(key: string, fallback: number) {
+  const config = runtimeConfig().maxTokens ?? {};
+  return readPositiveRuntimeNumber(config[key], readPositiveRuntimeNumber(config.default, fallback));
+}
+
+export function aiRuntimeConfigSource() {
+  return path.join(process.cwd(), "prompts", "ai-runtime.json");
+}
+
+function runtimeConfig(): AiRuntimeConfig {
+  if (runtimeConfigCache) return runtimeConfigCache;
+  const filePath = aiRuntimeConfigSource();
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8")) as AiRuntimeConfig;
+    runtimeConfigCache = parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    runtimeConfigCache = {};
+  }
+  return runtimeConfigCache;
+}
+
 function readTimeout(name: string, fallback: number) {
   const value = Number(process.env[name]?.trim());
-  return Number.isFinite(value) && value > 0 ? Math.round(value) : fallback;
+  return readPositiveRuntimeNumber(value, fallback);
+}
+
+function readPositiveRuntimeNumber(value: unknown, fallback: number) {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback;
 }

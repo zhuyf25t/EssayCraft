@@ -1,0 +1,24 @@
+{
+  "timeoutsMs": {
+    "chatModule": 60000,
+    "editActions": 60000,
+    "rewriteSelection": 60000,
+    "academicRewrite": 60000,
+    "analyzeSelection": 60000,
+    "translateSelection": 60000,
+    "explainHighlight": 60000,
+    "refreshAnnotations": 120000,
+    "applyNotesRevision": 120000,
+    "generateNextModule": 120000,
+    "citationReview": 120000,
+    "finalReview": 120000
+  },
+  "maxTokens": {
+    "default": 32768,
+    "assist": 6000,
+    "assistAnalyze": 6000,
+    "translateSelection": 32768,
+    "refreshAnnotations": 32768,
+    "generateNextModule": 32768
+  }
+}

@@ -11,6 +11,7 @@ export function cleanGeneratedText(value: string, moduleNumber?: ModuleNumber) {
   text = stripHtml(text);
   text = decodeEscapedNewlinesWhenSafe(text);
   text = normalizeLineEndings(text);
+  text = stripMarkdownHeadingMarkers(text);
   text = text.replace(/[ \t]+\n/g, "\n").replace(/\n[ \t]+/g, "\n");
   text = text.replace(/\n{3,}/g, "\n\n");
 
@@ -41,6 +42,12 @@ function stripCodeFences(value: string) {
 
 function stripHtml(value: string) {
   return value.replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>\s*<p[^>]*>/gi, "\n\n").replace(/<\/?[^>]+>/g, "");
+}
+
+function stripMarkdownHeadingMarkers(value: string) {
+  return value
+    .replace(/^\s{0,3}#{1,6}\s*$/gm, "")
+    .replace(/^\s{0,3}#{1,6}[ \t]+(?=\S)/gm, "");
 }
 
 function decodeEscapedNewlinesWhenSafe(value: string) {
