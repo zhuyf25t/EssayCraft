@@ -95,6 +95,8 @@ describe("assistant prompts", () => {
     ]);
 
     expect(messages[0].content).toContain("Label every provided sentence/rhetorical unit");
+    expect(messages[0].content).toContain("exactly 2 unitLabels");
+    expect(messages[0].content).toContain("Required unit indexes: 0, 1");
     expect(messages[0].content).toContain("First read the full essay context");
     expect(messages[0].content).toContain("Do not label a unit in isolation");
     expect(messages[0].content).toContain("unitLabels");

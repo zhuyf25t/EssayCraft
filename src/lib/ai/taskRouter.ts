@@ -7,6 +7,7 @@ import {
   aiMetadata,
   AI_MOCK_MODEL,
   createAiClient,
+  deepSeekRequestBody,
   fallbackReasonFromError,
   forceMockEnabled,
   hasAiKey,
@@ -74,14 +75,19 @@ export async function runJsonAiTask<TRaw, TOutput extends object>({
       ) as AiTaskResult<TOutput>;
     } catch (parseError) {
       if (!task.retryInvalidJson) throw parseError;
-      const repaired = await requestJsonText(
-        client,
-        buildRepairMessages(completion.raw, parseError, messages),
-        task.model,
-        task.timeoutMs,
-        maxTokens,
-        0
-      );
+      let repaired: Awaited<ReturnType<typeof requestJsonText>>;
+      try {
+        repaired = await requestJsonText(
+          client,
+          buildRepairMessages(completion.raw, parseError, messages),
+          task.model,
+          task.timeoutMs,
+          maxTokens,
+          0
+        );
+      } catch (repairError) {
+        throw new Error(`AI schema repair failed after first response: ${errorMessage(parseError)}; repair error: ${errorMessage(repairError)}`);
+      }
       return addAiMetadata(
         parseProvider(schema.parse(JSON.parse(repaired.raw))),
         aiMetadata(startedAt, "deepseek", task.model, undefined, completion.totalTokens + repaired.totalTokens)
@@ -113,13 +119,13 @@ async function requestJsonText(
   temperature: number
 ) {
   const completion = await withAiTimeout(
-    client.chat.completions.create({
+    client.chat.completions.create(deepSeekRequestBody({
       model,
       messages,
       response_format: { type: "json_object" },
       max_tokens: maxTokens,
       temperature
-    }),
+    })),
     timeoutMs
   );
   const raw = completion.choices[0]?.message?.content;
@@ -128,6 +134,10 @@ async function requestJsonText(
     raw,
     totalTokens: completion.usage?.total_tokens ?? 0
   };
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function buildRepairMessages(
@@ -139,7 +149,11 @@ function buildRepairMessages(
   return [
     {
       role: "system",
-      content: "Repair the assistant output into valid JSON matching the requested schema and validation rules. Use the original task context to fix exact text ranges, missing required fields, and invalid labels. Return JSON only. Do not add prose."
+      content: `Repair the assistant output into valid JSON matching the requested schema and validation rules. Use the original task context to fix exact text ranges, missing required fields, and invalid labels.
+
+If this is a refresh unit-label task, the repaired output must include one unitLabels item for every provided unit index. Do not return representative samples. If a unit is uncertain, label it "issue" with a concise reason rather than skipping it.
+
+Return JSON only. Do not add prose.`
     },
     {
       role: "user",

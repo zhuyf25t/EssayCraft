@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, type ClipboardEvent, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, type ClipboardEvent, type KeyboardEvent } from "react";
 import type { Annotation, Patch, TextRange } from "@/types/essaycraft";
 import { normalizeAnnotations, sentenceRangeAt } from "@/lib/annotations";
 import { LABELS } from "@/lib/labels";
@@ -64,6 +64,18 @@ export function Editor({
     onActiveSentenceChange(undefined);
   }, [resetKey, onSelectionChange, onActiveSentenceChange]);
 
+  useLayoutEffect(() => {
+    syncHighlightScroll();
+  }, [text, segments]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(syncHighlightScroll);
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, []);
+
   function currentRange(): TextRange {
     const textarea = textareaRef.current;
     if (!textarea) return EMPTY_RANGE;
@@ -95,6 +107,8 @@ export function Editor({
     const textarea = textareaRef.current;
     const content = highlightContentRef.current;
     if (!textarea || !content) return;
+    content.style.width = `${textarea.clientWidth}px`;
+    content.style.minHeight = `${textarea.scrollHeight}px`;
     content.style.transform = `translate(${-textarea.scrollLeft}px, ${-textarea.scrollTop}px)`;
   }
 

@@ -6,6 +6,7 @@ import {
   aiMetadata,
   AI_MOCK_MODEL,
   createAiClient,
+  deepSeekRequestBody,
   fallbackReasonFromError,
   forceMockEnabled,
   hasAiKey,
@@ -53,8 +54,20 @@ export async function POST(request: Request) {
       const maxTokens = generateMaxTokens();
       const messages = buildGenerateNextMessages(input);
       const first = await requestGenerateJson(client, messages, task.model, task.timeoutMs, maxTokens, 0.25);
-      let candidate = parseGenerateCandidate(first.raw, input, expectedTarget);
       let totalTokens = first.totalTokens;
+      let candidate = await parseOrRepairGenerateCandidate(
+        client,
+        input,
+        expectedTarget,
+        first.raw,
+        messages,
+        task.model,
+        task.timeoutMs,
+        maxTokens,
+        (tokens) => {
+          totalTokens += tokens;
+        }
+      );
 
       if (candidate.contractIssues.length) {
         const repaired = await requestGenerateJson(
@@ -120,13 +133,13 @@ async function requestGenerateJson(
   temperature: number
 ) {
   const completion = await withAiTimeout(
-    client.chat.completions.create({
+    client.chat.completions.create(deepSeekRequestBody({
       model,
       messages,
       response_format: { type: "json_object" },
       max_tokens: maxTokens,
       temperature
-    }),
+    })),
     timeoutMs
   );
   const raw = completion.choices[0]?.message?.content;
@@ -135,6 +148,39 @@ async function requestGenerateJson(
     raw,
     totalTokens: completion.usage?.total_tokens ?? 0
   };
+}
+
+type GenerateCandidate = ReturnType<typeof parseGenerateCandidate>;
+
+async function parseOrRepairGenerateCandidate(
+  client: ReturnType<typeof createAiClient>,
+  input: GenerateNextRequest,
+  expectedTarget: Exclude<ModuleNumber, 1>,
+  raw: string,
+  originalMessages: ChatCompletionMessageParam[],
+  model: string,
+  timeoutMs: number,
+  maxTokens: number,
+  addTokens: (tokens: number) => void
+): Promise<GenerateCandidate> {
+  try {
+    return parseGenerateCandidate(raw, input, expectedTarget);
+  } catch (parseError) {
+    const repaired = await requestGenerateJson(
+      client,
+      buildGenerateSchemaRepairMessages(input, raw, parseError, originalMessages),
+      model,
+      timeoutMs,
+      maxTokens,
+      0
+    );
+    addTokens(repaired.totalTokens);
+    try {
+      return parseGenerateCandidate(repaired.raw, input, expectedTarget);
+    } catch (repairParseError) {
+      throw new Error(`AI schema repair failed after first response: ${errorMessage(parseError)}; repair error: ${errorMessage(repairParseError)}`);
+    }
+  }
 }
 
 function parseGenerateCandidate(
@@ -161,11 +207,61 @@ function parseGenerateCandidate(
   };
 }
 
+function buildGenerateSchemaRepairMessages(
+  input: GenerateNextRequest,
+  rawOutput: string,
+  parseError: unknown,
+  originalMessages: ChatCompletionMessageParam[]
+): ChatCompletionMessageParam[] {
+  const transition = getTransitionPrompt(input.sourceModuleNumber);
+  return [
+    {
+      role: "system",
+      content: `Repair the previous EssayCraft Generate Next provider response into valid JSON only.
+
+The previous response failed JSON/schema validation. Do not rewrite the essay unless needed to satisfy the schema.
+Keep target moduleNumber ${transition.toModule} and title "${transition.name}".
+All annotation labels must be exactly one of:
+background, thesis, evidence, analysis, counterargument, citation, conclusion, issue, plain.
+Never use warning, claim, support, note, source-needed, or any other custom label. If the annotation is a warning/problem, use "issue".
+annotation.text must be an exact substring of text.
+Do not invent real citations, authors, years, titles, URLs, DOIs, journals, or reference entries.
+Return the full required object, including contractCheck.
+
+Required JSON shape:
+{"moduleNumber":${transition.toModule},"title":"${transition.name}","text":"Paragraph 1...\\n\\nParagraph 2...","annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.85,"comment":"brief reason"}],"sources":[],"contractCheck":{"passed":true,"missingItems":[],"notes":["brief self-check"]},"globalFeedback":["short feedback"],"warnings":[]}`
+    },
+    {
+      role: "user",
+      content: `Schema/validation error:
+${errorMessage(parseError)}
+
+Original task context:
+${serializeMessagesForRepair(originalMessages)}
+
+Previous raw provider output:
+${rawOutput}
+
+Return corrected JSON only.`
+    }
+  ];
+}
+
 function contractIssuesFromAiSelfCheck(check: GenerateNextResponse["contractCheck"]) {
   if (!check) return ["missing AI contract self-check"];
   if (check.passed) return [];
   const items = [...(check.missingItems ?? []), ...(check.notes ?? [])].map((item) => item.trim()).filter(Boolean);
   return items.length ? items : ["AI contract self-check did not pass"];
+}
+
+function serializeMessagesForRepair(messages: ChatCompletionMessageParam[]) {
+  return messages
+    .map((item) => `${item.role.toUpperCase()}:\n${typeof item.content === "string" ? item.content : JSON.stringify(item.content)}`)
+    .join("\n\n---\n\n");
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function buildGenerateRepairMessages(

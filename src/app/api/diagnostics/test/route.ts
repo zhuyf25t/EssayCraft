@@ -7,6 +7,7 @@ import {
   AI_FAST_MODEL,
   AI_MOCK_MODEL,
   createAiClient,
+  deepSeekRequestBody,
   fallbackReasonFromError,
   forceMockEnabled,
   hasAiKey,
@@ -36,7 +37,7 @@ export async function POST() {
   try {
     const client = createAiClient(Math.min(CHAT_TIMEOUT_MS, 15000));
     const completion = await withAiTimeout(
-      client.chat.completions.create({
+      client.chat.completions.create(deepSeekRequestBody({
         model: AI_FAST_MODEL,
         messages: [
           { role: "system", content: "Return a short plain-text provider health response." },
@@ -44,7 +45,7 @@ export async function POST() {
         ],
         max_tokens: 40,
         temperature: 0
-      }),
+      })),
       Math.min(CHAT_TIMEOUT_MS, 15000)
     );
     const message = completion.choices[0]?.message?.content?.trim() || "Provider responded.";
@@ -62,4 +63,3 @@ export async function POST() {
     }, aiMetadata(startedAt, "unavailable", "none", reason)), { status: 503 });
   }
 }
-

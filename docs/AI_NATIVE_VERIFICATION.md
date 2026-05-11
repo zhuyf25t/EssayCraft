@@ -7,9 +7,9 @@ Copy `.env.example` to `.env.local` and set:
 ```bash
 DEEPSEEK_API_KEY=your_key_here
 DEEPSEEK_BASE_URL=https://api.deepseek.com
-DEEPSEEK_MODEL=deepseek-v4-pro
-DEEPSEEK_FAST_MODEL=deepseek-v4-pro
-DEEPSEEK_HIGH_QUALITY_MODEL=deepseek-v4-pro
+DEEPSEEK_MODEL=deepseek-v4-flash
+DEEPSEEK_FAST_MODEL=deepseek-v4-flash
+DEEPSEEK_HIGH_QUALITY_MODEL=deepseek-v4-flash
 ESSAYCRAFT_GENERATE_MAX_TOKENS=16384
 ESSAYCRAFT_FORCE_MOCK_AI=0
 ```

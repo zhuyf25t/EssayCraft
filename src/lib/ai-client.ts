@@ -57,6 +57,15 @@ export function createAiClient(timeoutMs = ASSIST_TIMEOUT_MS) {
   });
 }
 
+export function deepSeekRequestBody<T extends object>(body: T): T & {
+  extra_body: { thinking: { type: "disabled" } };
+} {
+  return {
+    ...body,
+    extra_body: { thinking: { type: "disabled" } }
+  };
+}
+
 export async function withAiTimeout<T>(promise: Promise<T>, timeoutMs = interactiveTimeoutMs): Promise<T> {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {

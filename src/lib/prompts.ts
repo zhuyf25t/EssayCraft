@@ -126,6 +126,7 @@ Return json only.`;
 export function buildRefreshUnitMessages(input: RefreshRequest, units: RefreshUnitPromptItem[]) {
   const projectTitle = input.projectTitle || input.topic;
   const localInstruction = input.instruction?.trim();
+  const requiredIndexes = units.map((unit) => unit.index);
   const system = `You are EssayCraft's academic writing annotation engine. Return strict json only.
 
 Task:
@@ -137,7 +138,10 @@ Allowed labels:
 ${LABEL_RULES}
 
 Rules:
-- Return one unitLabels item for every provided unit index unless the unit is pure whitespace.
+- Return one unitLabels item for every provided unit index. The correct response for this request has exactly ${units.length} unitLabels.
+- Required unit indexes: ${requiredIndexes.join(", ")}.
+- Do not return only representative examples. Do not stop after the first paragraph. Missing any non-empty unit index is invalid.
+- If a unit is uncertain, use "issue" with a concise reason rather than skipping it.
 - Do not label a unit in isolation. Use the full essay context, the unit's paragraph position, and neighboring units.
 - Do not rewrite the user's text.
 - Do not invent citations, sources, authors, years, titles, URLs, or DOIs.
@@ -164,7 +168,7 @@ ${localInstruction ? `User local refresh note/correction:\n${JSON.stringify(loca
 Sentence/rhetorical units to label:
 ${JSON.stringify(units, null, 2)}
 
-Return json only.`;
+Return json only with exactly ${units.length} unitLabels covering indexes ${requiredIndexes.join(", ")}.`;
 
   return [
     { role: "system" as const, content: system },
@@ -204,6 +208,12 @@ AI-native contract self-check:
 Return json only. Required JSON shape:
 {"moduleNumber":${transition.toModule},"title":"${transition.name}","text":"Paragraph 1...\\n\\nParagraph 2...","annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.85,"comment":"brief reason"}],"sources":[],"contractCheck":{"passed":true,"missingItems":[],"notes":["brief self-check"]},"globalFeedback":["short feedback"],"warnings":[]}`;
 
+  const annotationRules = `Annotation label rules:
+- annotation.label must be exactly one of: ${LABEL_RULES}.
+- Do not use warning, claim, support, note, source-needed, source need, or custom labels.
+- Use issue for warning-like problems, unsupported claims, missing source needs, or unclear rhetorical function.
+- Use citation only for citation/reference signals, not for a whole evidence sentence.`;
+
   const user = `Topic: ${input.topic}
 Source module: ${input.sourceModuleNumber}
 Target module: ${transition.toModule}
@@ -223,6 +233,8 @@ ${JSON.stringify(input.sourceSources, null, 2)}
 
 Teacher-editable transition instruction:
 ${transition.userPromptTemplate}
+
+${annotationRules}
 
 Return json only.`;
 

@@ -100,9 +100,12 @@ body {
   font-size: 17px;
   line-height: 1.75;
   letter-spacing: 0;
+  font-kerning: none;
+  font-variant-ligatures: none;
   white-space: pre-wrap;
   overflow-wrap: break-word;
   tab-size: 2;
+  text-rendering: geometricPrecision;
 }
 
 .editor-content {
@@ -132,7 +135,9 @@ body {
 
 .editor-highlight-content {
   min-height: 100%;
-  color: transparent;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
+  user-select: none;
 }
 
 .editor-content::selection {
@@ -140,7 +145,8 @@ body {
 }
 
 .highlight-backdrop {
-  color: transparent;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent;
   border-radius: 4px;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
