@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { LABELS } from "@/lib/labels";
 import type { Annotation, AssistantMessage, AssistResponse, RefreshResponse, TextRange } from "@/types/essaycraft";
 
@@ -97,6 +97,7 @@ function ChatMode({
 }) {
   const [value, setValue] = useState("");
   const messagesRef = useRef<HTMLDivElement>(null);
+  const chatComposingRef = useRef(false);
 
   useEffect(() => {
     const node = messagesRef.current;
@@ -155,8 +156,15 @@ function ChatMode({
         <textarea
           value={value}
           onChange={(event) => setValue(event.target.value)}
+          onCompositionStart={() => {
+            chatComposingRef.current = true;
+          }}
+          onCompositionEnd={(event) => {
+            chatComposingRef.current = false;
+            setValue(event.currentTarget.value);
+          }}
           onKeyDown={(event) => {
-            if (event.nativeEvent.isComposing) return;
+            if (isComposingKeyEvent(event, chatComposingRef.current)) return;
             if (event.key !== "Enter") return;
             if (event.shiftKey && !event.ctrlKey && !event.metaKey) return;
             if (event.ctrlKey || event.metaKey || (!event.shiftKey && !event.altKey)) {
@@ -179,6 +187,7 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   const [instruction, setInstruction] = useState("");
   const [instructionLocked, setInstructionLocked] = useState(false);
   const instructionRef = useRef<HTMLTextAreaElement>(null);
+  const instructionComposingRef = useRef(false);
   const contextRange = props.hasSelection ? props.selectedRange : props.activeAnnotation
     ? { start: props.activeAnnotation.start, end: props.activeAnnotation.end }
     : props.activeSentenceRange;
@@ -245,6 +254,13 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
             ref={instructionRef}
             value={instruction}
             onChange={(event) => setInstruction(event.target.value)}
+            onCompositionStart={() => {
+              instructionComposingRef.current = true;
+            }}
+            onCompositionEnd={(event) => {
+              instructionComposingRef.current = false;
+              setInstruction(event.currentTarget.value);
+            }}
             placeholder="Tell EssayCraft what you want to change"
             className="min-h-9 w-full resize-none border-0 bg-transparent pr-8 text-[13px] leading-snug outline-none"
             disabled={!canEdit}
@@ -284,30 +300,35 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   );
 
   function runInstruction(baseAction: string) {
+    if (instructionComposingRef.current) return;
     const text = (instructionRef.current?.value ?? instruction).trim();
     props.onSelectionAction(text ? `${baseAction}: ${text}` : baseAction);
     clearInstructionIfUnlocked();
   }
 
   function runAnalyze() {
+    if (instructionComposingRef.current) return;
     const text = (instructionRef.current?.value ?? instruction).trim();
     props.onInspectAction(text ? `Analyze selected text: ${text}` : "Analyze selected text");
     clearInstructionIfUnlocked();
   }
 
   function runLocalRefresh() {
+    if (instructionComposingRef.current) return;
     const text = (instructionRef.current?.value ?? instruction).trim();
     props.onLocalRefresh(text);
     clearInstructionIfUnlocked();
   }
 
   function runTranslate() {
+    if (instructionComposingRef.current) return;
     const text = (instructionRef.current?.value ?? instruction).trim();
     props.onInspectAction(text ? `Translate selected text: ${text}` : "Translate selected text");
     clearInstructionIfUnlocked();
   }
 
   function runExplain() {
+    if (instructionComposingRef.current) return;
     const text = (instructionRef.current?.value ?? instruction).trim();
     props.onInspectAction(text ? `Explain this highlight: ${text}` : "Explain this highlight");
     clearInstructionIfUnlocked();
@@ -316,6 +337,11 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   function clearInstructionIfUnlocked() {
     if (!instructionLocked) setInstruction("");
   }
+}
+
+function isComposingKeyEvent(event: ReactKeyboardEvent<HTMLTextAreaElement>, composingRefValue = false) {
+  const nativeEvent = event.nativeEvent as KeyboardEvent & { isComposing?: boolean; keyCode?: number };
+  return composingRefValue || nativeEvent.isComposing || nativeEvent.keyCode === 229 || event.key === "Process";
 }
 
 function ClosedLockIcon() {

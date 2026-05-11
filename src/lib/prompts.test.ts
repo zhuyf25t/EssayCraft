@@ -33,13 +33,14 @@ describe("assistant prompts", () => {
 
     expect(messages[0].content).toContain('Use kind "inspect"');
     expect(messages[0].content).toContain("Inspect responses are read-only analysis, translation, or highlight explanation");
+    expect(messages[1].content).toContain("Analyze the complete Selected clean text");
   });
 
   it("keeps Translate read-only and carries the target-language instruction", () => {
     const messages = buildAssistMessages(request("Translate selected text: Please translate into Chinese"));
 
     expect(messages[0].content).toContain('Use kind "inspect"');
-    expect(messages[0].content).toContain("translate only the selected text");
+    expect(messages[0].content).toContain("translate the entire selected text exactly as selected");
     expect(messages[1].content).toContain("Please translate into Chinese");
   });
 
@@ -112,6 +113,8 @@ describe("assistant prompts", () => {
     expect(messages[1].content).toContain("Context profile: translation-selection");
     expect(messages[1].content).toContain("请翻译成中文");
     expect(messages[1].content).toContain("Translate this sentence only.");
+    expect(messages[1].content).toContain("Translate the complete Selected clean text");
+    expect(messages[1].content).toContain("Do not summarize, skip later sentences, or ask for a target language.");
     expect(messages[1].content).not.toContain("Do not send this unrelated paragraph");
     expect(messages[1].content).not.toContain("Full module text:");
   });

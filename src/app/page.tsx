@@ -798,14 +798,14 @@ function handleSaveSnapshot() {
 
   async function handleAssist(action: string, intent: AssistIntent) {
     const hasSelection = selectedRange.end > selectedRange.start;
-    const analyzeRequest = /(analy[sz]e|\u5206\u6790|\u8bc4\u4ef7|\u70b9\u8bc4|\u7528\u4e2d\u6587)/i.test(action);
+    const explainRequest = /^explain\b|highlight explanation/i.test(action);
     const requestAction = intent === "edit" && !/(rewrite|academic|analysis|translate|revise|sentence|passage)/i.test(action)
       ? `Revise selected passage: ${action}`
       : action;
     const chatContextRange = hasSelection ? selectedRange : activeSentenceRange;
     const submittedRange = intent === "chat"
       ? chatContextRange
-      : intent === "inspect" && activeAnnotation && !analyzeRequest
+      : intent === "inspect" && explainRequest && activeAnnotation
         ? { start: activeAnnotation.start, end: activeAnnotation.end }
         : hasSelection
           ? selectedRange

@@ -18,8 +18,8 @@ Edit: {"kind":"edit","reply":"brief preview note","proposedText":"replacement te
 Inspect: {"kind":"inspect","reply":"read-only answer, translation, or highlight explanation","originalExcerpt":"optional excerpt","annotations":[],"warnings":[]}
 
 Action-specific rules:
-- If the requested action is Translate, translate only the selected text. Use the user's extra instruction to decide the target language. If the instruction says Chinese or 中文, output Chinese in reply. Do not ask for a target language when it is already specified.
-- If the requested action is Analyze, answer the instruction about the selected text and do not rewrite it.
+- If the requested action is Translate, translate the entire selected text exactly as selected. If the user selects one word, translate that one word. If the user selects multiple paragraphs or list items, translate every paragraph and every item in order. Do not summarize, omit later sentences, or translate only the first sentence. Preserve paragraph breaks and list structure. Use the user's extra instruction to decide the target language. If the instruction says Chinese or 中文, output Chinese in reply. If no target is specified, translate English selections into Simplified Chinese and Chinese selections into English. Do not ask for a target language when a reasonable default is available.
+- If the requested action is Analyze, analyze the entire selected text, not only its first sentence. Use the user's instruction to decide focus and language. Do not rewrite it.
 - If the requested action is Explain, explain the active highlight/range with the actual text and label.
 - For local Edit actions, the prompt may intentionally include only selected text and surrounding paragraph/context. Do not ask for the full essay unless the user is using Chat for module-level discussion.
 

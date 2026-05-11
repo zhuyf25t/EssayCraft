@@ -254,7 +254,7 @@ ${JSON.stringify(activeAnnotations, null, 2)}
 Source summary:
 ${JSON.stringify(sourceSummary(input.sources), null, 2)}
 
-The full module text is intentionally omitted for this local Edit action to reduce latency. Use the selected text, surrounding paragraph, project title, and user instruction above.
+${assistContext.profile === "translation-selection" ? translationCompletenessInstruction(selectedText) : assistContext.profile === "analysis-selection" ? analysisCompletenessInstruction(selectedText) : "The full module text is intentionally omitted for this local Edit action to reduce latency. Use the selected text, surrounding paragraph, project title, and user instruction above."}
 Return json only.`;
 }
 
@@ -355,6 +355,18 @@ function compactPromptText(value: string, limit: number) {
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length <= limit) return normalized;
   return `${normalized.slice(0, Math.max(0, limit - 24))} ... ${normalized.slice(-18)}`;
+}
+
+function translationCompletenessInstruction(selectedText: string) {
+  const paragraphs = selectedText.split(/\n\s*\n/).filter((part) => part.trim()).length;
+  const lines = selectedText.split(/\n/).filter((part) => part.trim()).length;
+  return `Translate the complete Selected clean text above. The selection has ${selectedText.length} characters, ${Math.max(1, paragraphs)} paragraph block(s), and ${Math.max(1, lines)} non-empty line(s). The reply field must contain the full translation only, preserving paragraph breaks and list order. Do not summarize, skip later sentences, or ask for a target language.`;
+}
+
+function analysisCompletenessInstruction(selectedText: string) {
+  const paragraphs = selectedText.split(/\n\s*\n/).filter((part) => part.trim()).length;
+  const lines = selectedText.split(/\n/).filter((part) => part.trim()).length;
+  return `Analyze the complete Selected clean text above. The selection has ${selectedText.length} characters, ${Math.max(1, paragraphs)} paragraph block(s), and ${Math.max(1, lines)} non-empty line(s). If the user asks for a general evaluation, comment on the whole selection's role, structure, strengths, and issues. Do not analyze only the first sentence unless the selection is only one sentence.`;
 }
 
 export function buildTranslateMessages(input: TranslateRequest) {

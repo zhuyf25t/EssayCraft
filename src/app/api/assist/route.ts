@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       unavailable: (reason) => unavailableAssist(input, reason),
       parseProvider: (raw) => {
         const parsed = coerceAssistResponse(input, raw, "deepseek");
+      validateAssistCompleteness(input, parsed);
       const exact = exactAnnotations(input.text, parsed.annotations ?? []);
       const rangeWarning = validateAssistReplaceRange(input, parsed);
       if (rangeWarning && parsed.kind === "edit") {
@@ -46,7 +47,7 @@ export async function POST(request: Request) {
         warnings: [...(parsed.warnings ?? []), ...exact.warnings]
       } satisfies AssistResponse;
       },
-      maxTokens: 3500,
+      maxTokens: assistMaxTokens(input),
       temperature: 0.2
     });
     return NextResponse.json(result);
@@ -54,6 +55,30 @@ export async function POST(request: Request) {
     console.warn("Invalid assistant request:", error);
     return NextResponse.json({ error: "Assistant could not use that request." }, { status: 400 });
   }
+}
+
+function assistMaxTokens(input: AssistRequest) {
+  if (isTranslateAction(input.action)) return 16384;
+  if (isAnalyzeAction(input.action)) return 6000;
+  return 3500;
+}
+
+function validateAssistCompleteness(input: AssistRequest, response: AssistResponse) {
+  if (!isTranslateAction(input.action) || response.kind !== "inspect") return;
+  const original = (input.selectedText ?? "").trim();
+  const translated = response.reply.trim();
+  if (original.length < 280) return;
+  const originalBlocks = countNonEmptyBlocks(original);
+  const translatedBlocks = countNonEmptyBlocks(translated);
+  const suspiciouslyShort = translated.length < Math.max(80, original.length * 0.18);
+  const droppedParagraphs = originalBlocks >= 2 && translatedBlocks < Math.min(originalBlocks, 2);
+  if (suspiciouslyShort || droppedParagraphs) {
+    throw new Error(`Provider returned an incomplete selected-text translation (${translated.length}/${original.length} chars). Translate the entire selected clean text.`);
+  }
+}
+
+function countNonEmptyBlocks(value: string) {
+  return value.split(/\n\s*\n|\n/).filter((block) => block.trim()).length;
 }
 
 function normalizeAssistInput(input: AssistRequest): AssistRequest {

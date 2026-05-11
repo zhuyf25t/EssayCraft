@@ -47,6 +47,7 @@ export function Editor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const highlightContentRef = useRef<HTMLDivElement>(null);
   const lastResetKeyRef = useRef(resetKey);
+  const composingRef = useRef(false);
   const segments = useMemo(
     () => buildHighlightSegments(text, annotations, activeSentenceRange),
     [text, annotations, activeSentenceRange]
@@ -129,7 +130,7 @@ export function Editor({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.nativeEvent.isComposing) return;
+    if (isImeComposingEvent(event, composingRef.current)) return;
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       const range = currentRange();
@@ -180,7 +181,11 @@ export function Editor({
             requestAnimationFrame(syncSelectionFromTextarea);
           }}
           onInput={syncSelectionFromTextarea}
+          onCompositionStart={() => {
+            composingRef.current = true;
+          }}
           onCompositionEnd={(event) => {
+            composingRef.current = false;
             onTextChange(event.currentTarget.value);
             requestAnimationFrame(syncSelectionFromTextarea);
           }}
@@ -199,6 +204,11 @@ export function Editor({
       </div>
     </section>
   );
+}
+
+function isImeComposingEvent(event: KeyboardEvent<HTMLTextAreaElement>, composingRefValue = false) {
+  const nativeEvent = event.nativeEvent as globalThis.KeyboardEvent & { isComposing?: boolean; keyCode?: number };
+  return composingRefValue || nativeEvent.isComposing || nativeEvent.keyCode === 229 || event.key === "Process";
 }
 
 function buildHighlightSegments(text: string, annotations: Annotation[], activeSentenceRange?: TextRange): HighlightSegment[] {
