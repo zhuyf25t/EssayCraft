@@ -166,7 +166,7 @@ function isEditAction(action: string) {
 }
 
 function isAnalyzeAction(action: string) {
-  return /(analy[sz]e|critique|comment|grammar|rhetorical role|\u5206\u6790|\u8bc4\u4ef7|\u70b9\u8bc4|\u7528\u4e2d\u6587)/i.test(action);
+  return /^(analy[sz]e|critique|comment|grammar|rhetorical role)\b/i.test(action);
 }
 
 function isTranslateAction(action: string) {

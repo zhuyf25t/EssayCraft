@@ -156,47 +156,17 @@ Return json only.`;
 }
 
 export function buildAssistMessages(input: AssistRequest) {
-  const isAnalyze = isAnalyzeAssistAction(input.action);
-  const isTranslate = isTranslateAssistAction(input.action);
-  const isEdit = Boolean(input.selectedRange) && !isAnalyze && !isTranslate && isEditAssistAction(input.action);
-  const isInspect = (/(explain|relabel|highlight|citation)/i.test(input.action) || isAnalyze || isTranslate) && !isEdit;
-  const expectedKind = isEdit ? "edit" : isInspect ? "inspect" : "chat";
+  const assistContext = buildAssistContextProfile(input);
   const relevantNotes = relevantOpenNotesForAssist(input);
   const system = renderPrompt(readPromptFile("assist/system.md"), {
-    expectedKind,
+    expectedKind: assistContext.expectedKind,
     courseWorkflowContext: COURSE_WORKFLOW_CONTEXT
   });
 
   const projectTitle = input.projectTitle || input.topic;
-  const user = `Project title: ${projectTitle}
-Topic/context: ${input.topic}
-Module ${input.moduleNumber}: ${input.moduleTitle}
-Requested action: ${input.action}
-
-Selected range: ${JSON.stringify(input.selectedRange ?? null)}
-Selected text: ${JSON.stringify(input.selectedText ?? "")}
-Notes inside selected/active range:
-${JSON.stringify(input.selectedPatches ?? [], null, 2)}
-
-Full module text:
-${JSON.stringify(input.text)}
-
-Annotations:
-${JSON.stringify(input.annotations, null, 2)}
-
-Patches:
-${JSON.stringify(input.patches, null, 2)}
-
-Relevant open notes for the submitted selection/module:
-${JSON.stringify(relevantNotes, null, 2)}
-
-Sources:
-${JSON.stringify(input.sources, null, 2)}
-
-Recent assistant history:
-${JSON.stringify(input.history?.slice(-6) ?? [], null, 2)}
-
-Return json only.`;
+  const user = assistContext.expectedKind === "chat"
+    ? buildChatUserPrompt(input, projectTitle, relevantNotes)
+    : buildSelectionUserPrompt(input, projectTitle, relevantNotes, assistContext);
 
   return [
     { role: "system" as const, content: system },
@@ -204,8 +174,92 @@ Return json only.`;
   ];
 }
 
+type AssistContextProfile = {
+  expectedKind: "chat" | "edit" | "inspect";
+  profile: "chat-full-module" | "edit-selection" | "translation-selection" | "analysis-selection" | "highlight-explanation";
+};
+
+function buildAssistContextProfile(input: AssistRequest): AssistContextProfile {
+  const isAnalyze = isAnalyzeAssistAction(input.action);
+  const isTranslate = isTranslateAssistAction(input.action);
+  const isHighlightExplain = /(explain|relabel|highlight|citation)/i.test(input.action);
+  const isEdit = Boolean(input.selectedRange) && !isAnalyze && !isTranslate && !isHighlightExplain && isEditAssistAction(input.action);
+  if (isEdit) return { expectedKind: "edit", profile: "edit-selection" };
+  if (isTranslate) return { expectedKind: "inspect", profile: "translation-selection" };
+  if (isAnalyze) return { expectedKind: "inspect", profile: "analysis-selection" };
+  if (isHighlightExplain) return { expectedKind: "inspect", profile: "highlight-explanation" };
+  return { expectedKind: "chat", profile: "chat-full-module" };
+}
+
+function buildChatUserPrompt(input: AssistRequest, projectTitle: string, relevantNotes: AssistRequest["patches"]) {
+  return `Project title: ${projectTitle}
+Topic/context: ${input.topic}
+Module ${input.moduleNumber}: ${input.moduleTitle}
+Requested action: ${input.action}
+Context profile: chat-full-module
+
+Current module text:
+${JSON.stringify(input.text)}
+
+Selected/active context, if any:
+${JSON.stringify(selectionPayload(input), null, 2)}
+
+Annotation summary:
+${JSON.stringify(annotationSummary(input.annotations), null, 2)}
+
+Open notes summary:
+${JSON.stringify(noteSummary(relevantNotes), null, 2)}
+
+Source summary:
+${JSON.stringify(sourceSummary(input.sources), null, 2)}
+
+Recent assistant history:
+${JSON.stringify(input.history?.slice(-6) ?? [], null, 2)}
+
+Answer the user's actual chat message using the module text above. Do not return an edit preview. Return json only.`;
+}
+
+function buildSelectionUserPrompt(
+  input: AssistRequest,
+  projectTitle: string,
+  relevantNotes: AssistRequest["patches"],
+  assistContext: AssistContextProfile
+) {
+  const selectedRange = input.selectedRange ?? null;
+  const selectedText = selectedRange ? input.text.slice(selectedRange.start, selectedRange.end) : input.selectedText ?? "";
+  const surrounding = selectedRange ? surroundingParagraph(input.text, selectedRange) : "";
+  const activeAnnotations = selectedRange ? annotationsForRange(input.annotations, selectedRange) : [];
+
+  return `Project title: ${projectTitle}
+Topic/context: ${input.topic}
+Module ${input.moduleNumber}: ${input.moduleTitle}
+Requested action: ${input.action}
+Context profile: ${assistContext.profile}
+
+Selected range:
+${JSON.stringify(selectedRange)}
+
+Selected clean text:
+${JSON.stringify(selectedText)}
+
+Surrounding paragraph/context:
+${JSON.stringify(surrounding)}
+
+Notes inside selected/active range, as instructions only:
+${JSON.stringify(input.selectedPatches ?? relevantNotes, null, 2)}
+
+Active highlight/annotation context:
+${JSON.stringify(activeAnnotations, null, 2)}
+
+Source summary:
+${JSON.stringify(sourceSummary(input.sources), null, 2)}
+
+The full module text is intentionally omitted for this local Edit action to reduce latency. Use the selected text, surrounding paragraph, project title, and user instruction above.
+Return json only.`;
+}
+
 function isAnalyzeAssistAction(action: string) {
-  return /(analy[sz]e|critique|comment|grammar|\u5206\u6790|\u8bc4\u4ef7|\u70b9\u8bc4|\u7528\u4e2d\u6587)/i.test(action);
+  return /^(analy[sz]e|critique|comment|grammar|rhetorical role)\b/i.test(action);
 }
 
 function isTranslateAssistAction(action: string) {
@@ -214,6 +268,93 @@ function isTranslateAssistAction(action: string) {
 
 function isEditAssistAction(action: string) {
   return /(rewrite|academic|revise|sentence|passage|formal|longer|shorter|natural|awkward|\u91cd\u5199|\u6539\u5199|\u66f4\u5b66\u672f|\u5b66\u672f|\u6b63\u5f0f|\u66f4\u957f|\u5199\u957f|\u66f4\u77ed|\u7b80\u77ed|\u81ea\u7136|\u5446\u677f|\u6839\u636e.*title|\u6839\u636e.*\u6807\u9898|project title)/i.test(action);
+}
+
+function selectionPayload(input: AssistRequest) {
+  if (!input.selectedRange && !input.selectedText) return null;
+  return {
+    range: input.selectedRange ?? null,
+    text: input.selectedText ?? "",
+    notesInsideSelection: noteSummary(input.selectedPatches ?? [])
+  };
+}
+
+function annotationSummary(annotations: AssistRequest["annotations"]) {
+  const counts = annotations.reduce<Record<string, number>>((acc, annotation) => {
+    acc[annotation.label] = (acc[annotation.label] ?? 0) + 1;
+    return acc;
+  }, {});
+  return {
+    count: annotations.length,
+    labels: counts,
+    examples: annotations.slice(0, 8).map((annotation) => ({
+      label: annotation.label,
+      excerpt: compactPromptText(annotation.text, 140),
+      comment: compactPromptText(annotation.comment ?? "", 140)
+    }))
+  };
+}
+
+function noteSummary(patches: AssistRequest["patches"]) {
+  return patches
+    .filter((patch) => !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim())
+    .slice(0, 8)
+    .map((patch) => ({
+      id: patch.id,
+      anchorStart: patch.anchorStart,
+      anchorEnd: patch.anchorEnd,
+      anchorExcerpt: compactPromptText(patch.anchorQuote, 120),
+      note: patch.text
+    }));
+}
+
+function sourceSummary(sources: AssistRequest["sources"]) {
+  return {
+    total: sources.length,
+    real: sources.filter((source) => !source.placeholder).length,
+    placeholders: sources.filter((source) => source.placeholder).length,
+    examples: sources.slice(0, 5).map((source) => ({
+      title: source.title || "Untitled source",
+      authors: source.authors?.slice(0, 3) ?? [],
+      year: source.year ?? "",
+      type: source.sourceType ?? "unknown",
+      verified: Boolean(source.verified),
+      placeholder: Boolean(source.placeholder)
+    }))
+  };
+}
+
+function annotationsForRange(annotations: AssistRequest["annotations"], range: { start: number; end: number }) {
+  return annotations
+    .filter((annotation) => annotation.start < range.end && range.start < annotation.end)
+    .slice(0, 8)
+    .map((annotation) => ({
+      label: annotation.label,
+      range: { start: annotation.start, end: annotation.end },
+      text: annotation.text,
+      comment: annotation.comment ?? ""
+    }));
+}
+
+function surroundingParagraph(text: string, range: { start: number; end: number }) {
+  const start = Math.max(0, Math.min(text.length, range.start));
+  const end = Math.max(start, Math.min(text.length, range.end));
+  const beforeBreak = text.lastIndexOf("\n\n", start);
+  const afterBreak = text.indexOf("\n\n", end);
+  const paragraphStart = beforeBreak >= 0 ? beforeBreak + 2 : 0;
+  const paragraphEnd = afterBreak >= 0 ? afterBreak : text.length;
+  const paragraph = text.slice(paragraphStart, paragraphEnd).trim();
+  if (paragraph.length <= 1400) return paragraph;
+  const selected = text.slice(start, end);
+  const localStart = Math.max(0, start - paragraphStart - 450);
+  const localEnd = Math.min(paragraph.length, end - paragraphStart + 450);
+  return `${paragraph.slice(localStart, start - paragraphStart)}[[selection]]${selected}[[/selection]]${paragraph.slice(end - paragraphStart, localEnd)}`.trim();
+}
+
+function compactPromptText(value: string, limit: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= limit) return normalized;
+  return `${normalized.slice(0, Math.max(0, limit - 24))} ... ${normalized.slice(-18)}`;
 }
 
 export function buildTranslateMessages(input: TranslateRequest) {

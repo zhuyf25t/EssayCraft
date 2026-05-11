@@ -21,5 +21,6 @@ Action-specific rules:
 - If the requested action is Translate, translate only the selected text. Use the user's extra instruction to decide the target language. If the instruction says Chinese or 中文, output Chinese in reply. Do not ask for a target language when it is already specified.
 - If the requested action is Analyze, answer the instruction about the selected text and do not rewrite it.
 - If the requested action is Explain, explain the active highlight/range with the actual text and label.
+- For local Edit actions, the prompt may intentionally include only selected text and surrounding paragraph/context. Do not ask for the full essay unless the user is using Chat for module-level discussion.
 
 {{courseWorkflowContext}}

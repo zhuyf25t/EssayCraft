@@ -73,10 +73,62 @@ describe("assistant prompts", () => {
       ]
     });
 
-    expect(messages[1].content).toContain("Relevant open notes for the submitted selection/module");
-    const relevantSection = messages[1].content.split("Relevant open notes for the submitted selection/module:")[1].split("Sources:")[0];
+    expect(messages[1].content).toContain("Notes inside selected/active range, as instructions only");
+    const relevantSection = messages[1].content.split("Notes inside selected/active range, as instructions only:")[1].split("Active highlight/annotation context:")[0];
     expect(relevantSection).toContain("p-selected");
     expect(relevantSection).not.toContain("p-other");
+  });
+
+  it("keeps Rewrite prompts local instead of sending unrelated full module text", () => {
+    const text = [
+      "Research question: How can social media be healthier?",
+      "This selected paragraph has the local sentence that should be revised.",
+      "",
+      "UNRELATED FULL MODULE PARAGRAPH SHOULD NOT BE SENT TO LOCAL EDIT."
+    ].join("\n");
+    const messages = buildAssistMessages({
+      ...request("Rewrite selected passage: make it more specific"),
+      text,
+      selectedRange: { start: 0, end: 53 },
+      selectedText: text.slice(0, 53)
+    });
+
+    expect(messages[1].content).toContain("Context profile: edit-selection");
+    expect(messages[1].content).toContain("Selected clean text");
+    expect(messages[1].content).toContain("Surrounding paragraph/context");
+    expect(messages[1].content).not.toContain("Full module text:");
+    expect(messages[1].content).not.toContain("UNRELATED FULL MODULE PARAGRAPH");
+  });
+
+  it("keeps Edit-mode Translate scoped to selected text and target instruction", () => {
+    const text = "Translate this sentence only.\n\nDo not send this unrelated paragraph.";
+    const messages = buildAssistMessages({
+      ...request("Translate selected text: 请翻译成中文"),
+      text,
+      selectedRange: { start: 0, end: "Translate this sentence only.".length },
+      selectedText: "Translate this sentence only."
+    });
+
+    expect(messages[1].content).toContain("Context profile: translation-selection");
+    expect(messages[1].content).toContain("请翻译成中文");
+    expect(messages[1].content).toContain("Translate this sentence only.");
+    expect(messages[1].content).not.toContain("Do not send this unrelated paragraph");
+    expect(messages[1].content).not.toContain("Full module text:");
+  });
+
+  it("lets Chat prompts include full module context for module-level conversation", () => {
+    const text = "Topic: AI and humanities.\n\nUNRELATED BUT VALID FULL MODULE CONTEXT.";
+    const messages = buildAssistMessages({
+      ...request("为什么这个 research question 有点弱？用中文。"),
+      text,
+      selectedRange: undefined,
+      selectedText: undefined
+    });
+
+    expect(messages[0].content).toContain('Use kind "chat"');
+    expect(messages[1].content).toContain("Context profile: chat-full-module");
+    expect(messages[1].content).toContain("Current module text:");
+    expect(messages[1].content).toContain("UNRELATED BUT VALID FULL MODULE CONTEXT");
   });
 
   it("asks refresh to label pre-segmented units instead of returning fragile offsets", () => {

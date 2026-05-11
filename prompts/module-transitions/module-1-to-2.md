@@ -9,3 +9,10 @@ Formatting: headings and bullets with blank lines between sections.
 Citation behavior: never invent sources. Module 2 is a planning module, so prefer `source needed` language over `[citation needed]`.
 
 Failure behavior: if input is thin, return a short research plan and visible source needs without fabricating evidence.
+
+Instruction:
+- Input contains topic/question/thesis/early notes.
+- Create Module 2: Research & Evidence.
+- Include argument branches, evidence needs, suitable source types, possible search keywords, and CARS reminders: Credible, Accurate, Reasonable, Support.
+- Do not fabricate sources.
+- Use source-needed planning language, not fake author-year citations.

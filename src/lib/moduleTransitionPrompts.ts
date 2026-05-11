@@ -1,3 +1,5 @@
+import { readPromptFile } from "@/lib/promptFiles";
+
 export type ModuleNumber = 1 | 2 | 3 | 4 | 5 | 6;
 
 export type SegmentLabel =
@@ -75,12 +77,7 @@ export const MODULE_TRANSITION_PROMPTS: Record<ModuleTransitionId, ModuleTransit
     citationBehavior: "Do not create real citations. Suggest source types, search keywords, source status, and source-needed planning notes. Do not mark Module 2 planning as citation failure.",
     failureBehavior: "If source text is too thin, return a short research plan with clear source-needed planning notes rather than inventing evidence.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 1 to Module 2 generator. Create a research and evidence plan.`,
-    userPromptTemplate: `
-Input contains topic/question/thesis/early notes.
-Create Module 2: Research & Evidence.
-Include argument branches, evidence needs, suitable source types, possible search keywords, and CARS reminders: Credible, Accurate, Reasonable, Support.
-Do not fabricate sources. Use source-needed planning language, not fake author-year citations.
-`,
+    userPromptTemplate: readPromptFile("module-transitions/module-1-to-2.md"),
     validationRules: [
       "Must not contain fabricated author-year citations unless supplied by user.",
       "Must include at least three evidence needs when possible.",
@@ -108,15 +105,7 @@ Do not fabricate sources. Use source-needed planning language, not fake author-y
     citationBehavior: "Use [source needed: ...] for outline evidence slots with no supplied source. Never fabricate sources.",
     failureBehavior: "If evidence notes are incomplete, keep the outline scaffold and mark missing evidence explicitly.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 2 to Module 3 generator. Create a structured argumentative essay outline.`,
-    userPromptTemplate: `
-Convert the research/evidence plan into Module 3: Outline.
-Preserve the student's actual topic, working thesis, and named argument branches.
-Do not use generic filler such as "Present the first reason" when Module 2 includes branch text.
-For the introduction include hook/importance, background/context, focus/scope, thesis, thesis map.
-For each body paragraph include topic sentence, Evidence to use, analysis, and link back to thesis.
-If no source card exists for an evidence slot, write [source needed: ...].
-Include counterargument paragraph and a conclusion plan explaining why the argument matters.
-`,
+    userPromptTemplate: readPromptFile("module-transitions/module-2-to-3.md"),
     validationRules: [
       "Must include introduction, body, and conclusion plan.",
       "Evidence without supplied source should be marked [source needed: ...] in the outline, not [citation needed].",
@@ -147,16 +136,7 @@ Include counterargument paragraph and a conclusion plan explaining why the argum
     citationBehavior: "Use [citation needed] for unsupported factual claims. Never fabricate citations.",
     failureBehavior: "If the outline is sparse, draft cautious paragraphs and avoid adding unsupported facts.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 3 to Module 4 generator. Create an academic argumentative draft.`,
-    userPromptTemplate: `
-Convert the outline into Module 4: Drafting.
-Use paragraph form. Include an introduction with background, importance, thesis, and thesis map.
-Each body paragraph should include topic sentence, evidence, analysis, and link back to thesis.
-Use academic tone: formal, precise, unemotional, balanced.
-Use metadiscourse and signal devices where helpful: firstly, in addition, however, for example, therefore, this essay argues.
-Use hedging for uncertain claims: may, could, appears to, suggests.
-Do not invent citations; use [citation needed] for unsupported factual claims.
-Do not write about outline labels such as Introduction plan, Topic sentence, Evidence to use, Analysis purpose, or Link back. Use them only to compose real paragraphs.
-`,
+    userPromptTemplate: readPromptFile("module-transitions/module-3-to-4.md"),
     validationRules: [
       "Must be paragraph-like draft, not only bullets.",
       "Must not invent citations.",
@@ -185,16 +165,7 @@ Do not write about outline labels such as Introduction plan, Topic sentence, Evi
     citationBehavior: "Treat in-text citation and reference list as two halves. Mark missing citations and missing source details; never fabricate references.",
     failureBehavior: "If citation data is missing, preserve the draft and append a checklist of unresolved source needs.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 4 to Module 5 generator. Review citation and source integrity.`,
-    userPromptTemplate: `
-Create Module 5: Referencing / Citation Check.
-Preserve the user's draft as much as possible.
-Identify evidence and factual claims that need citation.
-Preserve existing in-text citations.
-Insert [citation needed] where support is required but no source is provided.
-Create a reference-list checklist: in-text citation present, matching reference entry present, missing source details.
-Flag potential plagiarism/paraphrase risks only if source notes are supplied and wording appears too close.
-Do not generate fake references.
-`,
+    userPromptTemplate: readPromptFile("module-transitions/module-4-to-5.md"),
     validationRules: [
       "Must not fabricate reference list entries.",
       "Must mark unsupported evidence.",
@@ -222,16 +193,7 @@ Do not generate fake references.
     citationBehavior: "Preserve unresolved citation issues; do not add unsupported evidence or fake references.",
     failureBehavior: "If unresolved citation issues remain, keep them visible and do not claim the essay is submission-ready.",
     systemPrompt: `${SHARED_GENERATION_RULES}\nYou are EssayCraft's Module 5 to Module 6 generator. Create final review and export-ready content.`,
-    userPromptTemplate: `
-Create Module 6: Final Review / Conclusion / Export.
-Preserve the user's argument and do not add unsupported evidence.
-Produce a final revised essay if enough information is available.
-Add editing checklist: content, structure, clarity, style.
-Add proofreading checklist: spelling, grammar, punctuation, formatting, citations, references.
-Check conclusion: rephrased thesis, synthesis of main points, significance/so-what, no major new evidence.
-Mark unresolved citation/source problems as issue.
-Avoid generic concluding phrases when possible.
-`,
+    userPromptTemplate: readPromptFile("module-transitions/module-5-to-6.md"),
     validationRules: [
       "Must include editing and proofreading checklists.",
       "Must not add unsupported evidence.",
