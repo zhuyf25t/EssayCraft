@@ -1,16 +1,9 @@
 import type { AssistRequest, GenerateNextRequest, RefreshRequest, TranslateRequest } from "@/types/essaycraft";
 import { relevantOpenNotesForAssist } from "@/lib/assistFallback";
 import { getTransitionPrompt } from "@/lib/moduleTransitionPrompts";
+import { readPromptFile, renderPrompt } from "@/lib/promptFiles";
 
-export const COURSE_WORKFLOW_CONTEXT = `
-EssayCraft is based on a six-module argumentative essay journey:
-Module 1: define topic, question, position, thesis, and essay structure.
-Module 2: brainstorm, plan arguments, gather/evaluate sources, summarize and paraphrase.
-Module 3: turn the plan into an outline with introduction, body paragraph structure, topic sentences, evidence, analysis, counterargument, and conclusion.
-Module 4: draft academic paragraphs with metadiscourse, signal devices, hedging/boosting, formal tone, and strong conclusion logic.
-Module 5: check ethical source use, plagiarism risk, in-text citations, and reference-list needs.
-Module 6: edit and proofread for content, structure, clarity, style, grammar, punctuation, formatting, citations, and final readiness.
-`;
+export const COURSE_WORKFLOW_CONTEXT = readPromptFile("shared/course-workflow.md");
 
 const LABEL_RULES = "background, thesis, evidence, analysis, counterargument, citation, conclusion, issue, plain";
 
@@ -25,26 +18,9 @@ export function buildRefreshMessages(input: RefreshRequest) {
   const openPatches = input.patches.filter((patch) => !patch.resolved && patch.status !== "resolved" && !patch.stale && patch.text.trim());
   const projectTitle = input.projectTitle || input.topic;
   if (openPatches.length) {
-    const system = `You are EssayCraft's revision-note engine. Return strict json only.
-
-Task:
-Use the user's temporary revision notes as instructions to propose a revised version of the current module text.
-
-Rules:
-- Return a preview only; do not claim the text has already been applied.
-- Preserve the student's topic, claim, paragraph breaks, and academic workflow module purpose.
-- Do not invent citations, sources, authors, years, URLs, DOIs, or reference entries.
-- Notes are instructions, not essay prose. Do not copy note text into the revised essay.
-- Resolve only the notes whose instructions are reflected in proposedText.
-- Also return proposedAnnotations over proposedText.
-- proposedAnnotations must be sentence-level or short rhetorical-unit ranges, not whole paragraphs.
-- Prefer one annotation per sentence. Split paragraphs that contain multiple rhetorical roles.
-- Keep ordinary annotation ranges under 250 characters unless the range is a reference-list entry or a short deliberate quote.
-- annotation.text must be an exact substring of proposedText.
-- Output valid json matching this shape:
-{"kind":"revision","annotations":[],"proposedText":"revised text","proposedAnnotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.9,"comment":"brief reason"}],"originalSummary":"one sentence summary","rationale":"one sentence rationale","patchResolutionPlan":["patch-id"],"globalFeedback":["short preview note"],"warnings":[]}
-
-${COURSE_WORKFLOW_CONTEXT}`;
+    const system = renderPrompt(readPromptFile("refresh/revision-system.md"), {
+      courseWorkflowContext: COURSE_WORKFLOW_CONTEXT
+    });
 
     const user = `Project title: ${projectTitle}
 Topic/context: ${input.topic}
@@ -70,34 +46,10 @@ Return json only.`;
     ];
   }
 
-  const system = `You are EssayCraft's academic writing annotation engine. Return strict json only.
-
-Task:
-Annotate the current module text by rhetorical function.
-
-Allowed labels:
-${LABEL_RULES}
-
-Rules:
-- Do not rewrite the user's text.
-- Return annotations with start/end offsets over the exact input text.
-- annotation.text must equal text.slice(start, end).
-- Annotate sentences or short rhetorical units, not whole paragraphs.
-- Prefer one annotation per sentence. A paragraph can contain background, evidence, citation, analysis, thesis, and conclusion labels.
-- Cover the full substantive essay: most non-empty sentences should receive a label.
-- For a long essay, return many sentence-level annotations. Do not return only a few representative examples.
-- Keep ordinary annotation ranges under 250 characters unless the range is a reference-list entry or a short deliberate quote.
-- Respect user patches when they are reasonable.
-- Use issue when a factual/evidence claim appears to need a source but has no citation, or when the role is unclear.
-- Use evidence for source-based facts, data, examples, findings, or source claims.
-- Use analysis for reasoning, explanation, interpretation, or connecting evidence to thesis.
-- Use thesis only for the main arguable position or thesis map.
-- Use citation only when the range's primary function is a source signal/citation rather than evidence content.
-- Never invent citations, authors, years, titles, journals, URLs, or DOIs.
-- Output valid json matching this shape:
-{"annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.9,"comment":"brief reason"}],"globalFeedback":["one short comment"],"warnings":[]}
-
-${COURSE_WORKFLOW_CONTEXT}`;
+  const system = renderPrompt(readPromptFile("refresh/range-annotation-system.md"), {
+    labelRules: LABEL_RULES,
+    courseWorkflowContext: COURSE_WORKFLOW_CONTEXT
+  });
 
   const user = `Project title: ${projectTitle}
 Topic/context: ${input.topic}
@@ -127,34 +79,12 @@ export function buildRefreshUnitMessages(input: RefreshRequest, units: RefreshUn
   const projectTitle = input.projectTitle || input.topic;
   const localInstruction = input.instruction?.trim();
   const requiredIndexes = units.map((unit) => unit.index);
-  const system = `You are EssayCraft's academic writing annotation engine. Return strict json only.
-
-Task:
-Label every provided sentence/rhetorical unit by academic function. Engineering already provides exact text ranges; you decide the semantic label and concise reason.
-First read the full essay context to understand the thesis, paragraph flow, evidence chain, counterargument, and conclusion. Then label each unit in order using that full-document understanding.
-If the user gives a local instruction or correction, consider it carefully, but still choose the most academically defensible label and explain briefly.
-
-Allowed labels:
-${LABEL_RULES}
-
-Rules:
-- Return one unitLabels item for every provided unit index. The correct response for this request has exactly ${units.length} unitLabels.
-- Required unit indexes: ${requiredIndexes.join(", ")}.
-- Do not return only representative examples. Do not stop after the first paragraph. Missing any non-empty unit index is invalid.
-- If a unit is uncertain, use "issue" with a concise reason rather than skipping it.
-- Do not label a unit in isolation. Use the full essay context, the unit's paragraph position, and neighboring units.
-- Do not rewrite the user's text.
-- Do not invent citations, sources, authors, years, titles, URLs, or DOIs.
-- Use evidence for source-based facts, data, examples, findings, or source claims.
-- Use citation only when the unit's primary function is a source signal/citation/reference entry, not for a whole paragraph.
-- Use analysis for interpretation, reasoning, explanation, or "so what" connections.
-- Use thesis for the central arguable claim or thesis map.
-- Use conclusion for closing synthesis or final implications.
-- Use issue for unclear function, unsupported source need, or citation-needed problems.
-- Output valid json matching this shape:
-{"kind":"annotations","unitLabels":[{"index":0,"label":"background","confidence":0.9,"comment":"brief reason for this exact unit"}],"globalFeedback":["short refresh summary"],"warnings":[]}
-
-${COURSE_WORKFLOW_CONTEXT}`;
+  const system = renderPrompt(readPromptFile("refresh/unit-label-system.md"), {
+    labelRules: LABEL_RULES,
+    unitCount: units.length,
+    requiredIndexes: requiredIndexes.join(", "),
+    courseWorkflowContext: COURSE_WORKFLOW_CONTEXT
+  });
 
   const user = `Project title: ${projectTitle}
 Topic/context: ${input.topic}
@@ -178,41 +108,22 @@ Return json only with exactly ${units.length} unitLabels covering indexes ${requ
 
 export function buildGenerateNextMessages(input: GenerateNextRequest) {
   const transition = getTransitionPrompt(input.sourceModuleNumber);
-
   const system = `${transition.systemPrompt}
 
-Use this transition-specific purpose:
-${transition.purpose}
+${renderPrompt(readPromptFile("generate-next/system-suffix.md"), {
+  transitionPurpose: transition.purpose,
+  outputContract: transition.outputContract.map((item) => `- ${item}`).join("\n"),
+  paragraphFormat: transition.paragraphFormat,
+  citationBehavior: transition.citationBehavior,
+  validationRules: transition.validationRules.map((item) => `- ${item}`).join("\n"),
+  failureBehavior: transition.failureBehavior,
+  targetModule: transition.toModule,
+  transitionName: transition.name
+})}`;
 
-Output contract:
-${transition.outputContract.map((item) => `- ${item}`).join("\n")}
-
-Paragraph format:
-${transition.paragraphFormat}
-
-Citation behavior:
-${transition.citationBehavior}
-
-Validation rules:
-${transition.validationRules.map((item) => `- ${item}`).join("\n")}
-
-Failure behavior:
-${transition.failureBehavior}
-
-AI-native contract self-check:
-- After writing the target module, evaluate the text against the output contract, paragraph format, citation behavior, and validation rules above.
-- Set contractCheck.passed to true only if your generated text satisfies the transition contract.
-- If any required item is missing, set contractCheck.passed to false and list the missing requirements in contractCheck.missingItems.
-- Do not rely on exact heading wording. Judge whether the academic function is present in the generated text.
-
-Return json only. Required JSON shape:
-{"moduleNumber":${transition.toModule},"title":"${transition.name}","text":"Paragraph 1...\\n\\nParagraph 2...","annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.85,"comment":"brief reason"}],"sources":[],"contractCheck":{"passed":true,"missingItems":[],"notes":["brief self-check"]},"globalFeedback":["short feedback"],"warnings":[]}`;
-
-  const annotationRules = `Annotation label rules:
-- annotation.label must be exactly one of: ${LABEL_RULES}.
-- Do not use warning, claim, support, note, source-needed, source need, or custom labels.
-- Use issue for warning-like problems, unsupported claims, missing source needs, or unclear rhetorical function.
-- Use citation only for citation/reference signals, not for a whole evidence sentence.`;
+  const annotationRules = renderPrompt(readPromptFile("generate-next/annotation-rules.md"), {
+    labelRules: LABEL_RULES
+  });
 
   const user = `Topic: ${input.topic}
 Source module: ${input.sourceModuleNumber}
@@ -251,31 +162,10 @@ export function buildAssistMessages(input: AssistRequest) {
   const isInspect = (/(explain|relabel|highlight|citation)/i.test(input.action) || isAnalyze || isTranslate) && !isEdit;
   const expectedKind = isEdit ? "edit" : isInspect ? "inspect" : "chat";
   const relevantNotes = relevantOpenNotesForAssist(input);
-  const system = `You are EssayCraft's AI Assistant. Return strict json only.
-
-Rules:
-- Help the student understand and revise their own writing.
-- Use kind "${expectedKind}" for this request.
-- Chat responses are conversational module feedback. They must not include proposedText or replaceRange.
-- Edit responses are selection previews. They must include proposedText and the exact selected replaceRange.
-- Inspect responses are read-only analysis, translation, or highlight explanation. They must not include proposedText or replaceRange.
-- Suggestions must be previewable; do not assume changes are applied.
-- Prefer selected-range replacement. Do not replace the full module unless explicitly requested.
-- Never invent citations or references. Use [citation needed] or source-search suggestions when sources are missing.
-- If you propose text, preserve the student's stance and paragraph breaks.
-- If the selection is a thesis map, outline, list, or multiple reason lines, keep each item on its own line. Do not glue Reason 1, Reason 2, and Reason 3 into one comma-separated sentence.
-- For normal student questions, answer the actual question about the current module and avoid generic capability text.
-- Output valid json matching one of these shapes:
-Chat: {"kind":"chat","reply":"human-readable module-level response","annotations":[],"warnings":[]}
-Edit: {"kind":"edit","reply":"brief preview note","proposedText":"replacement text","replaceRange":{"start":0,"end":10},"originalExcerpt":"optional excerpt","annotations":[],"warnings":[]}
-Inspect: {"kind":"inspect","reply":"read-only answer, translation, or highlight explanation","originalExcerpt":"optional excerpt","annotations":[],"warnings":[]}
-
-Action-specific rules:
-- If the requested action is Translate, translate only the selected text. Use the user's extra instruction to decide the target language. If the instruction says Chinese or 中文, output Chinese in reply. Do not ask for a target language when it is already specified.
-- If the requested action is Analyze, answer the instruction about the selected text and do not rewrite it.
-- If the requested action is Explain, explain the active highlight/range with the actual text and label.
-
-${COURSE_WORKFLOW_CONTEXT}`;
+  const system = renderPrompt(readPromptFile("assist/system.md"), {
+    expectedKind,
+    courseWorkflowContext: COURSE_WORKFLOW_CONTEXT
+  });
 
   const projectTitle = input.projectTitle || input.topic;
   const user = `Project title: ${projectTitle}
@@ -327,15 +217,9 @@ function isEditAssistAction(action: string) {
 }
 
 export function buildTranslateMessages(input: TranslateRequest) {
-  const system = `You are EssayCraft's bilingual academic translation assistant. Return strict json only.
-
-Rules:
-- Translate between English and Chinese using mode ${input.mode}.
-- Preserve academic meaning, citations, paragraph breaks, and bracketed placeholders such as [citation needed].
-- Do not overwrite the original. Return preview JSON only.
-- Never create new citations, authors, dates, or source details.
-- Output valid json:
-{"translatedText":"...","mode":"${input.mode}","annotations":[],"warnings":[]}`;
+  const system = renderPrompt(readPromptFile("translate/system.md"), {
+    mode: input.mode
+  });
 
   const user = `Topic: ${input.topic}
 Module: ${input.moduleNumber}

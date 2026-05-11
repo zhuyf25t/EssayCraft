@@ -17,6 +17,7 @@ import { buildMockAnnotations, exactAnnotations, findIssueRanges, normalizeAnnot
 import { buildCitationAudit } from "@/lib/citationAudit";
 import { getTransitionPrompt } from "@/lib/moduleTransitionPrompts";
 import { protectModuleText } from "@/lib/noteKernel";
+import { readPromptFile, renderPrompt } from "@/lib/promptFiles";
 import { buildGenerateNextMessages } from "@/lib/prompts";
 import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
 import { cleanGeneratedText } from "@/lib/textFormat";
@@ -217,19 +218,11 @@ function buildGenerateSchemaRepairMessages(
   return [
     {
       role: "system",
-      content: `Repair the previous EssayCraft Generate Next provider response into valid JSON only.
-
-The previous response failed JSON/schema validation. Do not rewrite the essay unless needed to satisfy the schema.
-Keep target moduleNumber ${transition.toModule} and title "${transition.name}".
-All annotation labels must be exactly one of:
-background, thesis, evidence, analysis, counterargument, citation, conclusion, issue, plain.
-Never use warning, claim, support, note, source-needed, or any other custom label. If the annotation is a warning/problem, use "issue".
-annotation.text must be an exact substring of text.
-Do not invent real citations, authors, years, titles, URLs, DOIs, journals, or reference entries.
-Return the full required object, including contractCheck.
-
-Required JSON shape:
-{"moduleNumber":${transition.toModule},"title":"${transition.name}","text":"Paragraph 1...\\n\\nParagraph 2...","annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.85,"comment":"brief reason"}],"sources":[],"contractCheck":{"passed":true,"missingItems":[],"notes":["brief self-check"]},"globalFeedback":["short feedback"],"warnings":[]}`
+      content: renderPrompt(readPromptFile("generate-next/schema-repair-system.md"), {
+        targetModule: transition.toModule,
+        transitionName: transition.name,
+        labelRules: "background, thesis, evidence, analysis, counterargument, citation, conclusion, issue, plain"
+      })
     },
     {
       role: "user",
@@ -274,28 +267,14 @@ function buildGenerateRepairMessages(
   return [
     {
       role: "system",
-      content: `Repair the previous EssayCraft Generate Next response. Return strict JSON only.
-
-The previous JSON was syntactically readable, but its AI contract self-check did not pass or was missing.
-Do not invent real citations, authors, years, titles, URLs, DOIs, journals, or reference entries.
-Keep the target moduleNumber ${transition.toModule} and title "${transition.name}".
-Rewrite the text so it satisfies the transition output contract, paragraph format, citation behavior, and validation rules.
-Then run your own contract self-check again.
-
-Output contract:
-${transition.outputContract.map((item) => `- ${item}`).join("\n")}
-
-Paragraph format:
-${transition.paragraphFormat}
-
-Citation behavior:
-${transition.citationBehavior}
-
-Validation rules:
-${transition.validationRules.map((item) => `- ${item}`).join("\n")}
-
-Required JSON shape:
-{"moduleNumber":${transition.toModule},"title":"${transition.name}","text":"Paragraph 1...\\n\\nParagraph 2...","annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.85,"comment":"brief reason"}],"sources":[],"contractCheck":{"passed":true,"missingItems":[],"notes":["brief self-check"]},"globalFeedback":["short feedback"],"warnings":[]}`
+      content: renderPrompt(readPromptFile("generate-next/contract-repair-system.md"), {
+        targetModule: transition.toModule,
+        transitionName: transition.name,
+        outputContract: transition.outputContract.map((item) => `- ${item}`).join("\n"),
+        paragraphFormat: transition.paragraphFormat,
+        citationBehavior: transition.citationBehavior,
+        validationRules: transition.validationRules.map((item) => `- ${item}`).join("\n")
+      })
     },
     {
       role: "user",

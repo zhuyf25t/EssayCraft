@@ -2,6 +2,7 @@ import "server-only";
 
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { z } from "zod";
+import { readPromptFile } from "@/lib/promptFiles";
 import {
   addAiMetadata,
   aiMetadata,
@@ -149,11 +150,7 @@ function buildRepairMessages(
   return [
     {
       role: "system",
-      content: `Repair the assistant output into valid JSON matching the requested schema and validation rules. Use the original task context to fix exact text ranges, missing required fields, and invalid labels.
-
-If this is a refresh unit-label task, the repaired output must include one unitLabels item for every provided unit index. Do not return representative samples. If a unit is uncertain, label it "issue" with a concise reason rather than skipping it.
-
-Return JSON only. Do not add prose.`
+      content: readPromptFile("repair/json-system.md")
     },
     {
       role: "user",
