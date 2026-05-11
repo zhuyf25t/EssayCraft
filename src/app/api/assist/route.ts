@@ -130,7 +130,7 @@ function validateAssistReplaceRange(input: AssistRequest, response: AssistRespon
 function coerceAssistResponse(input: AssistRequest, raw: unknown, providerMode: "deepseek" | "mock" | "unavailable"): AssistResponse {
   const parsed = assistResponseSchema.parse(raw) as AssistResponseLegacy;
   const expectedKind = expectedAssistKind(input);
-  const kind = expectedKind !== "edit" ? expectedKind : parsed.kind ?? expectedKind;
+  const kind = expectedKind;
   const base = {
     reply: parsed.reply,
     title: parsed.title,
@@ -186,8 +186,8 @@ function normalizedActionType(input: AssistRequest, actionType?: string) {
 
 function expectedAssistKind(input: AssistRequest): AssistResponse["kind"] {
   const action = input.action.toLowerCase();
-  if (isTranslateAction(input.action) || isAnalyzeAction(input.action) || /(explain|relabel|highlight|citation)/i.test(action)) return "inspect";
   if (input.selectedRange && isEditAction(action)) return "edit";
+  if (isTranslateAction(input.action) || isAnalyzeAction(input.action) || isHighlightExplainAction(action)) return "inspect";
   return "chat";
 }
 
@@ -201,6 +201,10 @@ function isAnalyzeAction(action: string) {
 
 function isTranslateAction(action: string) {
   return /translate|\u7ffb\u8bd1|\u8bd1\u6210/i.test(action);
+}
+
+function isHighlightExplainAction(action: string) {
+  return /^(explain|highlight explanation|explain this highlight)\b/i.test(action);
 }
 
 function assistTaskType(input: AssistRequest): AiTaskType {

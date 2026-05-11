@@ -71,10 +71,12 @@ test("assistant inputs do not clear Chinese composition on Enter", async ({ page
     const textarea = node as HTMLTextAreaElement;
     textarea.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "qing" }));
     textarea.value = "请";
+    const enterDuringIme = new KeyboardEvent("keydown", { bubbles: true, key: "Enter" });
+    Object.defineProperty(enterDuringIme, "keyCode", { value: 229 });
+    textarea.dispatchEvent(enterDuringIme);
     textarea.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "请" }));
     textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: "请", inputType: "insertFromComposition" }));
   });
-  await chatInput.press("Enter");
   await expect(chatInput).toHaveValue(/请/);
   await expect(page.getByTestId("assistant-chat-messages")).not.toContainText("请");
 
@@ -380,6 +382,20 @@ test("rewrite follows English and Chinese length instructions without meta text"
   await page.getByRole("button", { name: "Apply" }).click();
   expect(await h.editorText(page)).not.toBe(original);
   await expect.poll(async () => (await h.editorText(page)).length).toBeGreaterThan(original.length);
+});
+
+test("Rewrite remains an applyable edit when instruction mentions citation-needed markers", async ({ page }) => {
+  const original = "This claim needs support [citation needed].";
+  await h.setEditorText(page, original);
+  await h.selectEditorRange(page, 0, original.length);
+  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("Remove the citation needed issue without inventing sources.");
+
+  await page.getByRole("button", { name: "Rewrite", exact: true }).click();
+
+  const preview = page.getByTestId("assistant-edit-preview");
+  await expect(preview).toContainText("Revision preview", { timeout: 20_000 });
+  await expect(preview.getByRole("button", { name: "Apply" })).toBeVisible();
+  await expect(page.getByTestId("assistant-highlight-explanation")).toHaveCount(0);
 });
 
 test("selected text translation is read-only in Edit mode", async ({ page }) => {

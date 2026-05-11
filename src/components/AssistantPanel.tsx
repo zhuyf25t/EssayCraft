@@ -97,8 +97,9 @@ function ChatMode({
 }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
-  const chatComposingRef = useRef(false);
-  const chatCompositionEndedAtRef = useRef(0);
+  const composingRef = useRef(false);
+  const compositionEndedAtRef = useRef(0);
+  const [draft, setDraft] = useState("");
 
   useEffect(() => {
     const node = messagesRef.current;
@@ -111,6 +112,7 @@ function ChatMode({
     const text = (input?.value ?? "").trim();
     if (!text || loading) return;
     onChat(text);
+    setDraft("");
     if (input) input.value = "";
   }
 
@@ -157,24 +159,23 @@ function ChatMode({
       <div data-testid="assistant-chat-composer" className="mt-1.5 shrink-0 rounded-lg border border-slate-200 bg-white p-1.5">
         <textarea
           ref={inputRef}
-          defaultValue=""
+          value={draft}
           translate="no"
           lang="zh-CN"
+          inputMode="text"
+          spellCheck={false}
           className="notranslate min-h-12 w-full resize-none border-0 bg-transparent text-[13px] leading-snug outline-none"
+          autoComplete="off"
+          onChange={(event) => setDraft(event.currentTarget.value)}
           onCompositionStart={() => {
-            chatComposingRef.current = true;
+            composingRef.current = true;
           }}
           onCompositionEnd={() => {
-            chatComposingRef.current = false;
-            chatCompositionEndedAtRef.current = Date.now();
-          }}
-          onBlur={() => {
-            chatComposingRef.current = false;
+            composingRef.current = false;
+            compositionEndedAtRef.current = Date.now();
           }}
           onKeyDown={(event) => {
-            if (isComposingKeyEvent(event, chatComposingRef.current, chatCompositionEndedAtRef.current)) {
-              return;
-            }
+            if (isNativeImeEvent(event, composingRef.current, compositionEndedAtRef.current)) return;
             if (event.key !== "Enter") return;
             if (event.shiftKey && !event.ctrlKey && !event.metaKey) return;
             if (event.ctrlKey || event.metaKey || (!event.shiftKey && !event.altKey)) {
@@ -194,8 +195,8 @@ function ChatMode({
 
 function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   const [instructionLocked, setInstructionLocked] = useState(false);
+  const [instruction, setInstruction] = useState("");
   const instructionRef = useRef<HTMLTextAreaElement>(null);
-  const instructionComposingRef = useRef(false);
   const contextRange = props.hasSelection ? props.selectedRange : props.activeAnnotation
     ? { start: props.activeAnnotation.start, end: props.activeAnnotation.end }
     : props.activeSentenceRange;
@@ -260,19 +261,14 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
         <div className="relative">
           <textarea
             ref={instructionRef}
-            defaultValue=""
+            value={instruction}
             translate="no"
             lang="zh-CN"
+            inputMode="text"
+            spellCheck={false}
             className="notranslate min-h-9 w-full resize-none border-0 bg-transparent pr-8 text-[13px] leading-snug outline-none"
-            onCompositionStart={() => {
-              instructionComposingRef.current = true;
-            }}
-            onCompositionEnd={() => {
-              instructionComposingRef.current = false;
-            }}
-            onBlur={() => {
-              instructionComposingRef.current = false;
-            }}
+            autoComplete="off"
+            onChange={(event) => setInstruction(event.currentTarget.value)}
             placeholder="Tell EssayCraft what you want to change"
           />
           <button
@@ -341,17 +337,20 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
 
   function clearInstructionIfUnlocked() {
     if (instructionLocked) return;
+    setInstruction("");
     if (instructionRef.current) instructionRef.current.value = "";
   }
 }
 
-function isComposingKeyEvent(event: ReactKeyboardEvent<HTMLTextAreaElement>, composingRefValue = false, compositionEndedAt = 0) {
+function isNativeImeEvent(event: ReactKeyboardEvent<HTMLTextAreaElement>, composingRefValue = false, compositionEndedAt = 0) {
   const nativeEvent = event.nativeEvent as KeyboardEvent & { isComposing?: boolean; keyCode?: number };
-  return composingRefValue || nativeEvent.isComposing || nativeEvent.keyCode === 229 || event.key === "Process" || (event.key === "Enter" && isRecentComposition(compositionEndedAt));
-}
-
-function isRecentComposition(compositionEndedAt: number) {
-  return compositionEndedAt > 0 && Date.now() - compositionEndedAt < 800;
+  return Boolean(
+    composingRefValue ||
+    nativeEvent.isComposing ||
+    nativeEvent.keyCode === 229 ||
+    event.key === "Process" ||
+    (event.key === "Enter" && compositionEndedAt > 0 && Date.now() - compositionEndedAt < 800)
+  );
 }
 
 function ClosedLockIcon() {

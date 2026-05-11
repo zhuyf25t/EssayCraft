@@ -44,6 +44,15 @@ describe("assistant prompts", () => {
     expect(messages[1].content).toContain("Please translate into Chinese");
   });
 
+  it("keeps Rewrite as an edit preview even when the instruction mentions citation-needed markers", () => {
+    const messages = buildAssistMessages(request("Rewrite selected passage: remove every citation needed issue without inventing sources"));
+
+    expect(messages[0].content).toContain('Use kind "edit"');
+    expect(messages[0].content).toContain("still return an Edit response with proposedText");
+    expect(messages[1].content).toContain("Context profile: edit-selection");
+    expect(messages[1].content).toContain("remove every citation needed issue");
+  });
+
   it("includes relevant open notes separately from all module patches", () => {
     const base = request("Rewrite using the selected note");
     const messages = buildAssistMessages({

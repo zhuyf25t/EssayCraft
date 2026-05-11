@@ -184,17 +184,25 @@ function annotationsFromUnitLabels(
   const byIndex = new Map(labels.map((item) => [item.index, item]));
   return units.flatMap((unit) => {
     const labeled = byIndex.get(unit.index);
-    if (!labeled || labeled.label === "plain") return [];
+    const explicitNeedMarker = hasExplicitNeedMarker(unit.text);
+    if (!labeled || (labeled.label === "plain" && !explicitNeedMarker)) return [];
+    const label = explicitNeedMarker ? "issue" : labeled.label;
     return [{
       id: `unit-${unit.index}`,
       start: unit.start,
       end: unit.end,
       text: unit.text,
-      label: labeled.label,
+      label,
       confidence: labeled.confidence,
-      comment: labeled.comment
+      comment: explicitNeedMarker
+        ? "This text contains an evidence/citation-needed placeholder that must be resolved with real support."
+        : labeled.comment
     }];
   });
+}
+
+function hasExplicitNeedMarker(text: string) {
+  return /\[(?:citation|evidence) needed(?::[^\]]*)?\]/i.test(text);
 }
 
 function unavailableRefresh(input: Pick<RefreshRequest, "text" | "annotations">, reason: string): RefreshResponse {

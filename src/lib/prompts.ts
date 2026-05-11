@@ -182,8 +182,8 @@ type AssistContextProfile = {
 function buildAssistContextProfile(input: AssistRequest): AssistContextProfile {
   const isAnalyze = isAnalyzeAssistAction(input.action);
   const isTranslate = isTranslateAssistAction(input.action);
-  const isHighlightExplain = /(explain|relabel|highlight|citation)/i.test(input.action);
-  const isEdit = Boolean(input.selectedRange) && !isAnalyze && !isTranslate && !isHighlightExplain && isEditAssistAction(input.action);
+  const isHighlightExplain = isHighlightExplainAssistAction(input.action);
+  const isEdit = Boolean(input.selectedRange) && !isAnalyze && !isTranslate && isEditAssistAction(input.action);
   if (isEdit) return { expectedKind: "edit", profile: "edit-selection" };
   if (isTranslate) return { expectedKind: "inspect", profile: "translation-selection" };
   if (isAnalyze) return { expectedKind: "inspect", profile: "analysis-selection" };
@@ -264,6 +264,10 @@ function isAnalyzeAssistAction(action: string) {
 
 function isTranslateAssistAction(action: string) {
   return /translate|\u7ffb\u8bd1|\u8bd1\u6210/i.test(action);
+}
+
+function isHighlightExplainAssistAction(action: string) {
+  return /^(explain|highlight explanation|explain this highlight)\b/i.test(action);
 }
 
 function isEditAssistAction(action: string) {

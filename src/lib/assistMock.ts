@@ -18,19 +18,6 @@ export function mockAssist(input: AssistRequest): AssistResponse {
   const action = input.action.toLowerCase();
   const warnings: string[] = [];
 
-  if (action.includes("citation")) {
-    return {
-      title: "Citation-gap check",
-      kind: "inspect",
-      actionType: "citation-check",
-      reply: buildCitationCheckReply(input),
-      explanation: "This check only marks possible citation gaps. It does not invent authors, dates, titles, or references.",
-      annotations: normalizeAnnotations(input.text, buildMockAnnotations(input.text).filter((annotation) => annotation.label === "issue" || annotation.text.includes("[citation needed]"))),
-      warnings,
-      providerMode: "mock"
-    };
-  }
-
   if (action.includes("explain current module")) {
     return {
       title: "Module highlight explanation",
@@ -142,6 +129,19 @@ export function mockAssist(input: AssistRequest): AssistResponse {
       replaceRange: range,
       annotations: [],
       explanation: "Cleaner replacement; apply only if it preserves your meaning.",
+      warnings,
+      providerMode: "mock"
+    };
+  }
+
+  if (action.includes("citation")) {
+    return {
+      title: "Citation-gap check",
+      kind: "inspect",
+      actionType: "citation-check",
+      reply: buildCitationCheckReply(input),
+      explanation: "This check only marks possible citation gaps. It does not invent authors, dates, titles, or references.",
+      annotations: normalizeAnnotations(input.text, buildMockAnnotations(input.text).filter((annotation) => annotation.label === "issue" || annotation.text.includes("[citation needed]"))),
       warnings,
       providerMode: "mock"
     };
