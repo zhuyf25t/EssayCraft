@@ -479,13 +479,20 @@ function InspectCard({ suggestion, onDismiss }: { suggestion: AssistResponse; on
   const isLocalRefresh = suggestion.actionType === "local-refresh";
   const isTranslate = suggestion.actionType === "translate-selection";
   const title = suggestion.title || (isTranslate ? "Translation preview" : isAnalyze ? "Analysis" : "Highlight explanation");
+  const cardClass = isTranslate
+    ? "rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950 shadow-sm"
+    : "rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700";
+  const titleClass = isTranslate ? "font-semibold text-emerald-950" : "font-semibold text-slate-800";
+  const bodyClass = isTranslate
+    ? "max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-white/75 p-2 leading-relaxed text-emerald-950"
+    : "whitespace-pre-wrap";
   return (
-    <article data-testid={isLocalRefresh ? "assistant-local-refresh-result" : isTranslate ? "assistant-translation-result" : isAnalyze ? "assistant-analysis-result" : "assistant-highlight-explanation"} className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700">
+    <article data-testid={isLocalRefresh ? "assistant-local-refresh-result" : isTranslate ? "assistant-translation-result" : isAnalyze ? "assistant-analysis-result" : "assistant-highlight-explanation"} className={cardClass}>
       <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="font-semibold text-slate-800">{title}</span>
+        <span className={titleClass}>{title}</span>
         <ProviderBadge mode={suggestion.providerMode} latencyMs={suggestion.latencyMs} totalTokens={suggestion.totalTokens} />
       </div>
-      <p className="whitespace-pre-wrap">{suggestion.reply}</p>
+      <p className={bodyClass}>{suggestion.reply}</p>
       <div className="mt-2 flex gap-2">
         <button className="btn-secondary px-2 py-1 text-xs" onClick={() => void navigator.clipboard?.writeText(suggestion.reply)}>Copy</button>
         <button className="btn-secondary px-2 py-1 text-xs" onClick={onDismiss}>Dismiss</button>
