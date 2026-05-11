@@ -99,7 +99,6 @@ function ChatMode({
   const messagesRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
   const compositionEndedAtRef = useRef(0);
-  const [draft, setDraft] = useState("");
 
   useEffect(() => {
     const node = messagesRef.current;
@@ -112,7 +111,6 @@ function ChatMode({
     const text = (input?.value ?? "").trim();
     if (!text || loading) return;
     onChat(text);
-    setDraft("");
     if (input) input.value = "";
   }
 
@@ -159,14 +157,13 @@ function ChatMode({
       <div data-testid="assistant-chat-composer" className="mt-1.5 shrink-0 rounded-lg border border-slate-200 bg-white p-1.5">
         <textarea
           ref={inputRef}
-          value={draft}
+          defaultValue=""
           translate="no"
           lang="zh-CN"
           inputMode="text"
           spellCheck={false}
           className="notranslate min-h-12 w-full resize-none border-0 bg-transparent text-[13px] leading-snug outline-none"
           autoComplete="off"
-          onChange={(event) => setDraft(event.currentTarget.value)}
           onCompositionStart={() => {
             composingRef.current = true;
           }}
@@ -195,7 +192,6 @@ function ChatMode({
 
 function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   const [instructionLocked, setInstructionLocked] = useState(false);
-  const [instruction, setInstruction] = useState("");
   const instructionRef = useRef<HTMLTextAreaElement>(null);
   const contextRange = props.hasSelection ? props.selectedRange : props.activeAnnotation
     ? { start: props.activeAnnotation.start, end: props.activeAnnotation.end }
@@ -261,14 +257,13 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
         <div className="relative">
           <textarea
             ref={instructionRef}
-            value={instruction}
+            defaultValue=""
             translate="no"
             lang="zh-CN"
             inputMode="text"
             spellCheck={false}
             className="notranslate min-h-9 w-full resize-none border-0 bg-transparent pr-8 text-[13px] leading-snug outline-none"
             autoComplete="off"
-            onChange={(event) => setInstruction(event.currentTarget.value)}
             placeholder="Tell EssayCraft what you want to change"
           />
           <button
@@ -337,7 +332,6 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
 
   function clearInstructionIfUnlocked() {
     if (instructionLocked) return;
-    setInstruction("");
     if (instructionRef.current) instructionRef.current.value = "";
   }
 }
