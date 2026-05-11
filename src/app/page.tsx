@@ -17,12 +17,12 @@ import { copyRichText, downloadCurrentModuleHtml, downloadProjectJson } from "@/
 import { protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { repairPatchesForText } from "@/lib/patches";
 import { MODULE_TITLES, addSnapshot, clearModule, importProject, replaceModuleContent, restoreSnapshot } from "@/lib/project";
-import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
 import { loadProject, resetProjectStorage, saveProject } from "@/lib/storage";
 import { clampModule, id, nowIso } from "@/lib/utils";
 import type {
   AssistantMessage,
   AssistResponse,
+  GenerateNextRequest,
   GenerateNextResponse,
   ModuleDocument,
   ModuleNumber,
@@ -557,7 +557,7 @@ export default function Home() {
     const controller = beginAiRun("generate", `Generate Module ${target} from Module ${sourceModuleNumber}`);
     try {
       const instruction = assistantEditInstruction();
-      const payload = generateNextRequestSchema.parse({
+      const payload: GenerateNextRequest = {
         topic: activeProject.topic,
         sourceModuleNumber,
         sourceTitle: activeDoc.title,
@@ -566,7 +566,7 @@ export default function Home() {
         sourcePatches: INLINE_NOTES_ENABLED ? activeDoc.patches : [],
         sourceSources: activeDoc.sources,
         instruction
-      });
+      };
       const response = await fetch("/api/generate-next", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -576,7 +576,7 @@ export default function Home() {
 
       const json = (await response.json().catch(() => ({}))) as Partial<GenerateNextResponse> & { error?: string };
       if (!response.ok) throw new Error(json.error ?? `Generate Next failed with HTTP ${response.status}. Restart the dev server if this persists.`);
-      const data = generateNextResponseSchema.parse(json);
+      const data = parseGenerateNextClientResponse(json);
       if (data.moduleNumber !== target) throw new Error(`Expected Module ${target}, received Module ${data.moduleNumber}.`);
       if (!data.text.trim()) throw new Error("Generate Next returned empty text.");
 
@@ -1424,6 +1424,36 @@ function formatLocalRefreshReply(
   }
   const labels = annotations.length === 1 ? "1 label" : `${annotations.length} labels`;
   return `Updated. ${labels} refreshed in the selected sentence${range.end > range.start ? " range" : ""}.`;
+}
+
+function parseGenerateNextClientResponse(json: Partial<GenerateNextResponse> & { error?: string }): GenerateNextResponse {
+  if (!json || typeof json !== "object") throw new Error("Generate Next returned an invalid response.");
+  if (!isTargetModuleNumber(json.moduleNumber)) throw new Error("Generate Next returned an invalid module number.");
+  if (typeof json.text !== "string" || !json.text.trim()) throw new Error("Generate Next returned empty text.");
+  if (typeof json.title !== "string") throw new Error("Generate Next returned an invalid title.");
+  return {
+    moduleNumber: json.moduleNumber,
+    title: json.title,
+    text: json.text,
+    annotations: Array.isArray(json.annotations) ? json.annotations : [],
+    sources: Array.isArray(json.sources) ? json.sources : [],
+    contractCheck: json.contractCheck,
+    globalFeedback: Array.isArray(json.globalFeedback) ? json.globalFeedback : [],
+    warnings: Array.isArray(json.warnings) ? json.warnings : [],
+    providerMode: isProviderMode(json.providerMode) ? json.providerMode : "unavailable",
+    modelUsed: typeof json.modelUsed === "string" ? json.modelUsed : undefined,
+    latencyMs: typeof json.latencyMs === "number" ? Math.max(0, Math.round(json.latencyMs)) : undefined,
+    totalTokens: typeof json.totalTokens === "number" ? Math.max(0, Math.round(json.totalTokens)) : undefined,
+    fallbackReason: typeof json.fallbackReason === "string" ? json.fallbackReason : undefined
+  };
+}
+
+function isTargetModuleNumber(value: unknown): value is Exclude<ModuleNumber, 1> {
+  return value === 2 || value === 3 || value === 4 || value === 5 || value === 6;
+}
+
+function isProviderMode(value: unknown): value is GenerateNextResponse["providerMode"] {
+  return value === "deepseek" || value === "mock" || value === "unavailable";
 }
 
 function extractModuleOneQuestion(text: string) {
