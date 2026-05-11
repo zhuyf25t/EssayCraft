@@ -42,6 +42,75 @@ export function normalizeAnnotations(text: string, annotations: Annotation[]) {
   return result;
 }
 
+export function transformAnnotationsForTextEdit(oldText: string, newText: string, annotations: Annotation[]) {
+  const before = normalizeText(oldText);
+  const after = normalizeText(newText);
+  const edit = changedRange(before, after);
+  if (!edit) return normalizeAnnotations(after, annotations);
+  if (isLargeReplacement(before, after, edit)) return [];
+
+  const delta = edit.newEnd - edit.oldEnd;
+  const transformed = annotations.map((annotation) => {
+    const start = Math.max(0, Math.min(before.length, annotation.start));
+    const end = Math.max(start, Math.min(before.length, annotation.end));
+
+    let nextStart = start;
+    let nextEnd = end;
+
+    if (edit.oldEnd <= start) {
+      nextStart = start + delta;
+      nextEnd = end + delta;
+    } else if (edit.oldStart >= end) {
+      nextStart = start;
+      nextEnd = end;
+    } else {
+      nextStart = Math.min(start, edit.oldStart);
+      nextEnd = end + delta;
+    }
+
+    nextStart = Math.max(0, Math.min(after.length, nextStart));
+    nextEnd = Math.max(nextStart, Math.min(after.length, nextEnd));
+    const nextText = after.slice(nextStart, nextEnd);
+    return {
+      ...annotation,
+      start: nextStart,
+      end: nextEnd,
+      text: nextText
+    };
+  }).filter((annotation) => annotation.text.trim().length > 0);
+
+  return normalizeAnnotations(after, transformed);
+}
+
+function changedRange(oldText: string, newText: string) {
+  if (oldText === newText) return null;
+  let start = 0;
+  while (start < oldText.length && start < newText.length && oldText[start] === newText[start]) {
+    start += 1;
+  }
+
+  let oldEnd = oldText.length;
+  let newEnd = newText.length;
+  while (oldEnd > start && newEnd > start && oldText[oldEnd - 1] === newText[newEnd - 1]) {
+    oldEnd -= 1;
+    newEnd -= 1;
+  }
+
+  return { oldStart: start, oldEnd, newEnd };
+}
+
+function isLargeReplacement(
+  oldText: string,
+  newText: string,
+  edit: NonNullable<ReturnType<typeof changedRange>>
+) {
+  const oldChanged = edit.oldEnd - edit.oldStart;
+  const newChanged = edit.newEnd - edit.oldStart;
+  const oldRatio = oldText.length ? oldChanged / oldText.length : 0;
+  const newRatio = newText.length ? newChanged / newText.length : 0;
+  return oldText.length >= 80 && newText.length >= 20 && oldRatio > 0.65 && newRatio > 0.65;
+}
+
 export function guardAgainstCitationOverlabeling(text: string, annotations: Annotation[]) {
   const normalizedText = normalizeText(text);
   const normalized = normalizeAnnotations(normalizedText, annotations).map(relabelCitationIfOverbroad);

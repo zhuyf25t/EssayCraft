@@ -28,7 +28,7 @@ export async function POST(request: Request) {
         mock: () => mockRefresh(input, "Highlights refreshed. Text was not rewritten."),
         unavailable: (reason) => unavailableRefresh(input, reason),
         parseProvider: (parsed) => {
-          const unitWarnings = validateUnitLabelCoverage(units, parsed.unitLabels);
+          const unitWarnings = validateUnitLabelCoverage(units, parsed.unitLabels, { allowSparseVisibleLabels: Boolean(input.selectedRange) });
           const annotations = annotationsFromUnitLabels(units, parsed.unitLabels);
           const warnings = [...(parsed.warnings ?? []), ...unitWarnings.warnings];
           if (unitWarnings.reason) {
@@ -150,7 +150,8 @@ function buildRefreshUnits(text: string, selectedRange?: RefreshRequest["selecte
 
 function validateUnitLabelCoverage(
   units: ReturnType<typeof buildRefreshUnits>,
-  labels: Array<{ index: number; label: Annotation["label"]; confidence?: number; comment?: string }>
+  labels: Array<{ index: number; label: Annotation["label"]; confidence?: number; comment?: string }>,
+  options: { allowSparseVisibleLabels?: boolean } = {}
 ) {
   const expected = new Set(units.map((unit) => unit.index));
   const seen = new Set<number>();
@@ -174,6 +175,23 @@ function validateUnitLabelCoverage(
       warnings,
       reason: `Provider omitted ${missing.length} unit label(s), including ${missing.slice(0, 8).join(", ")}.`
     };
+  }
+
+  if (!options.allowSparseVisibleLabels) {
+    const meaningfulUnits = units.filter((unit) => unit.text.trim().length >= 16);
+    const visibleIndexes = new Set(
+      labels
+        .filter((label) => label.label !== "plain" || hasExplicitNeedMarker(units[label.index]?.text ?? ""))
+        .map((label) => label.index)
+    );
+    const visibleCount = meaningfulUnits.filter((unit) => visibleIndexes.has(unit.index)).length;
+    const minimumVisible = Math.max(1, Math.ceil(meaningfulUnits.length * 0.65));
+    if (meaningfulUnits.length >= 6 && visibleCount < minimumVisible) {
+      return {
+        warnings,
+        reason: `Provider marked too many non-empty units as plain (${visibleCount}/${meaningfulUnits.length} visible; need at least ${minimumVisible}).`
+      };
+    }
   }
   return { warnings };
 }

@@ -11,7 +11,7 @@ import { SnapshotPanel } from "@/components/SnapshotPanel";
 import { SourceWorkbench } from "@/components/SourceWorkbench";
 import { Toolbar } from "@/components/Toolbar";
 import { TranslateModal } from "@/components/TranslateModal";
-import { annotationAtOffset, normalizeAnnotations, normalizeText, sentenceRangeAt } from "@/lib/annotations";
+import { annotationAtOffset, normalizeAnnotations, normalizeText, sentenceRangeAt, transformAnnotationsForTextEdit } from "@/lib/annotations";
 import { inTextCitationPreview } from "@/lib/citationAudit";
 import { copyRichText, downloadCurrentModuleHtml, downloadProjectJson } from "@/lib/export";
 import { protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
@@ -283,7 +283,7 @@ export default function Home() {
     updateCurrentModule((doc) => ({
       ...doc,
       text,
-      annotations: normalizeAnnotations(text, doc.annotations),
+      annotations: transformAnnotationsForTextEdit(doc.text, text, doc.annotations),
       patches: nextPatches ? repairPatchesForText(text, nextPatches) : repairPatchesForText(text, doc.patches),
       updatedAt: nowIso()
     }));

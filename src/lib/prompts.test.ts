@@ -163,6 +163,8 @@ describe("assistant prompts", () => {
     expect(messages[0].content).toContain("Required unit indexes: 0, 1");
     expect(messages[0].content).toContain("First read the full essay context");
     expect(messages[0].content).toContain("Do not label a unit in isolation");
+    expect(messages[0].content).toContain("most non-empty units should receive a visible label");
+    expect(messages[0].content).toContain("Use \"plain\" only for decorative separators");
     expect(messages[0].content).toContain("[evidence needed]");
     expect(messages[0].content).toContain("high-priority issue markers");
     expect(messages[0].content).toContain("unitLabels");

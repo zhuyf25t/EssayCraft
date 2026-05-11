@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildMockAnnotations, normalizeAnnotations, rhetoricalUnitRanges, sentenceRanges } from "./annotations";
+import { buildMockAnnotations, normalizeAnnotations, rhetoricalUnitRanges, sentenceRanges, transformAnnotationsForTextEdit } from "./annotations";
 
 function labelFor(text: string, needle: string) {
   const annotation = buildMockAnnotations(text).find((item) => item.text.includes(needle));
@@ -234,5 +234,49 @@ Conclusion plan
 
     expect(annotations).toHaveLength(1);
     expect(annotations[0].text).toBe(text);
+  });
+
+  it("keeps highlights anchored when typing before annotated text", () => {
+    const oldText = "Topic: AI\n\nWorking thesis: Humans guide technology.";
+    const target = "Working thesis: Humans guide technology.";
+    const start = oldText.indexOf(target);
+    const annotations = normalizeAnnotations(oldText, [{
+      id: "thesis",
+      start,
+      end: start + target.length,
+      text: target,
+      label: "thesis",
+      comment: "Central claim."
+    }]);
+    const newText = "Topic: useful AI\n\nWorking thesis: Humans guide technology.";
+    const next = transformAnnotationsForTextEdit(oldText, newText, annotations);
+    expect(next).toHaveLength(1);
+    expect(next[0].text).toBe(target);
+    expect(newText.slice(next[0].start, next[0].end)).toBe(target);
+  });
+
+  it("keeps the active annotation around edited text inside a highlight", () => {
+    const oldText = "Working thesis: Humans guide technology.";
+    const newText = "Working thesis: Humans should guide technology.";
+    const annotations = normalizeAnnotations(oldText, [{
+      id: "thesis",
+      start: 0,
+      end: oldText.length,
+      text: oldText,
+      label: "thesis",
+      comment: "Central claim."
+    }]);
+    const next = transformAnnotationsForTextEdit(oldText, newText, annotations);
+    expect(next).toHaveLength(1);
+    expect(next[0].start).toBe(0);
+    expect(next[0].end).toBe(newText.length);
+    expect(next[0].text).toBe(newText);
+  });
+
+  it("drops stale highlights when most of the document is replaced", () => {
+    const oldText = "Topic: AI\n\nWorking thesis: Humans guide technology.\n\nReason 1: People need judgment.";
+    const annotations = buildMockAnnotations(oldText);
+    const next = transformAnnotationsForTextEdit(oldText, "Plain draft without refreshed annotations.", annotations);
+    expect(next).toEqual([]);
   });
 });

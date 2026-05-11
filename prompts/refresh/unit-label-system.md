@@ -12,7 +12,8 @@ Rules:
 - Return one unitLabels item for every provided unit index. The correct response for this request has exactly {{unitCount}} unitLabels.
 - Required unit indexes: {{requiredIndexes}}.
 - Do not return only representative examples. Do not stop after the first paragraph. Missing any non-empty unit index is invalid.
-- If a unit is not a meaningful rhetorical essay unit or should not be highlighted, return label "plain" with a concise reason rather than skipping it.
+- Use visible labels for real writing or planning units. In a full-module refresh, most non-empty units should receive a visible label such as background, thesis, evidence, analysis, counterargument, citation, conclusion, or issue.
+- Use "plain" only for decorative separators, accidental fragments, or text that truly has no academic/workflow function. Do not label course planning lines, source-status lines, claims, evidence needs, search keywords, review checklist lines, or prose sentences as plain.
 - If a unit has a real writing problem, use "issue" with a concise reason rather than skipping it.
 - Do not label a unit in isolation. Use the full essay context, the unit's paragraph position, and neighboring units.
 - Do not rewrite the user's text.
