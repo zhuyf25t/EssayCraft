@@ -42,7 +42,7 @@ export async function POST(request: Request) {
               reviewSummary: parsed.reviewSummary,
               reviewChecklist: parsed.reviewChecklist,
               reviewSuggestions: parsed.reviewSuggestions,
-              issueCount: parsed.issueCount,
+              issueCount: issueCountFromAnnotations([], parsed.issueCount),
               citationGaps: parsed.citationGaps,
               inTextCitations: parsed.inTextCitations,
               realSourceCards: parsed.realSourceCards,
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
             reviewSummary: parsed.reviewSummary,
             reviewChecklist: parsed.reviewChecklist,
             reviewSuggestions: parsed.reviewSuggestions,
-            issueCount: parsed.issueCount,
+            issueCount: issueCountFromAnnotations(validation.annotations, parsed.issueCount),
             citationGaps: parsed.citationGaps,
             inTextCitations: parsed.inTextCitations,
             realSourceCards: parsed.realSourceCards,
@@ -198,13 +198,20 @@ function annotationsFromUnitLabels(
 }
 
 function unavailableRefresh(input: Pick<RefreshRequest, "text" | "annotations">, reason: string): RefreshResponse {
+  const annotations = normalizeAnnotations(input.text, input.annotations ?? []);
   return {
     kind: "annotations",
-    annotations: normalizeAnnotations(input.text, input.annotations ?? []),
+    annotations,
     globalFeedback: ["AI unavailable. Existing text and highlights were preserved."],
     warnings: [safeUnavailableReason(reason)],
-    providerMode: "unavailable"
+    providerMode: "unavailable",
+    issueCount: issueCountFromAnnotations(annotations)
   };
+}
+
+function issueCountFromAnnotations(annotations: Annotation[], providerIssueCount = 0) {
+  const localIssueCount = annotations.filter((annotation) => annotation.label === "issue").length;
+  return Math.max(providerIssueCount, localIssueCount);
 }
 
 function refreshMaxTokens() {

@@ -52,12 +52,16 @@ test("assistant Chat and Edit inputs keep Chinese text", async ({ page }) => {
   const chatText = "\u8bf7\u4f60\u8bc4\u4ef7\u8fd9\u7bc7\u6587\u7ae0";
   const editText = "\u8bf7\u4f60\u7528\u4e2d\u6587\u89e3\u91ca\u4e00\u4e0b";
 
-  await page.getByPlaceholder("Ask EssayCraft about this module...").fill(chatText);
-  await expect(page.getByPlaceholder("Ask EssayCraft about this module...")).toHaveValue(chatText);
+  const chatInput = page.getByPlaceholder("Ask EssayCraft about this module...");
+  await chatInput.click();
+  await page.keyboard.insertText(chatText);
+  await expect(chatInput).toHaveValue(chatText);
 
   await page.getByRole("button", { name: "Edit" }).click();
-  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill(editText);
-  await expect(page.getByPlaceholder("Tell EssayCraft what you want to change")).toHaveValue(editText);
+  const editInput = page.getByPlaceholder("Tell EssayCraft what you want to change");
+  await editInput.click();
+  await page.keyboard.insertText(editText);
+  await expect(editInput).toHaveValue(editText);
 });
 
 test("assistant chat history can be cleared after confirmation", async ({ page }) => {

@@ -132,7 +132,6 @@ export function Editor({
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (isImeComposingEvent(event, composingRef.current, compositionEndedAtRef.current)) {
-      if (event.key === "Enter") event.preventDefault();
       return;
     }
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
@@ -178,6 +177,7 @@ export function Editor({
           data-testid="editor-textarea"
           aria-label="Writing canvas"
           value={text}
+          translate="no"
           spellCheck
           className="editor-content editor-textarea-control"
           onChange={(event) => {

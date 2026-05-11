@@ -95,7 +95,6 @@ function ChatMode({
   onChat: (message: string) => void;
   onClearChat: () => void;
 }) {
-  const [draftValue, setDraftValue] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const chatComposingRef = useRef(false);
@@ -113,7 +112,6 @@ function ChatMode({
     if (!text || loading) return;
     onChat(text);
     if (input) input.value = "";
-    setDraftValue("");
   }
 
   return (
@@ -160,18 +158,16 @@ function ChatMode({
         <textarea
           ref={inputRef}
           defaultValue=""
-          onInput={(event) => setDraftValue(event.currentTarget.value)}
+          translate="no"
           onCompositionStart={() => {
             chatComposingRef.current = true;
           }}
-          onCompositionEnd={(event) => {
+          onCompositionEnd={() => {
             chatComposingRef.current = false;
             chatCompositionEndedAtRef.current = Date.now();
-            setDraftValue(event.currentTarget.value);
           }}
           onKeyDown={(event) => {
             if (isComposingKeyEvent(event, chatComposingRef.current, chatCompositionEndedAtRef.current)) {
-              if (event.key === "Enter") event.preventDefault();
               return;
             }
             if (event.key !== "Enter") return;
@@ -185,7 +181,7 @@ function ChatMode({
           className="min-h-12 w-full resize-none border-0 bg-transparent text-[13px] leading-snug outline-none"
         />
         <div className="flex justify-end">
-          <button className="btn-primary h-7 px-3 py-0 text-xs shadow-none" onClick={submit} disabled={!draftValue.trim() || loading}>Send</button>
+          <button className="btn-primary h-7 px-3 py-0 text-xs shadow-none" onClick={submit} disabled={loading}>Send</button>
         </div>
       </div>
     </div>
@@ -193,7 +189,6 @@ function ChatMode({
 }
 
 function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
-  const [instructionDraft, setInstructionDraft] = useState("");
   const [instructionLocked, setInstructionLocked] = useState(false);
   const instructionRef = useRef<HTMLTextAreaElement>(null);
   const instructionComposingRef = useRef(false);
@@ -262,13 +257,12 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
           <textarea
             ref={instructionRef}
             defaultValue=""
-            onInput={(event) => setInstructionDraft(event.currentTarget.value)}
+            translate="no"
             onCompositionStart={() => {
               instructionComposingRef.current = true;
             }}
-            onCompositionEnd={(event) => {
+            onCompositionEnd={() => {
               instructionComposingRef.current = false;
-              setInstructionDraft(event.currentTarget.value);
             }}
             placeholder="Tell EssayCraft what you want to change"
             className="min-h-9 w-full resize-none border-0 bg-transparent pr-8 text-[13px] leading-snug outline-none"
@@ -309,35 +303,35 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
 
   function runInstruction(baseAction: string) {
     if (instructionComposingRef.current) return;
-    const text = (instructionRef.current?.value ?? instructionDraft).trim();
+    const text = (instructionRef.current?.value ?? "").trim();
     props.onSelectionAction(text ? `${baseAction}: ${text}` : baseAction);
     clearInstructionIfUnlocked();
   }
 
   function runAnalyze() {
     if (instructionComposingRef.current) return;
-    const text = (instructionRef.current?.value ?? instructionDraft).trim();
+    const text = (instructionRef.current?.value ?? "").trim();
     props.onInspectAction(text ? `Analyze selected text: ${text}` : "Analyze selected text");
     clearInstructionIfUnlocked();
   }
 
   function runLocalRefresh() {
     if (instructionComposingRef.current) return;
-    const text = (instructionRef.current?.value ?? instructionDraft).trim();
+    const text = (instructionRef.current?.value ?? "").trim();
     props.onLocalRefresh(text);
     clearInstructionIfUnlocked();
   }
 
   function runTranslate() {
     if (instructionComposingRef.current) return;
-    const text = (instructionRef.current?.value ?? instructionDraft).trim();
+    const text = (instructionRef.current?.value ?? "").trim();
     props.onInspectAction(text ? `Translate selected text: ${text}` : "Translate selected text");
     clearInstructionIfUnlocked();
   }
 
   function runExplain() {
     if (instructionComposingRef.current) return;
-    const text = (instructionRef.current?.value ?? instructionDraft).trim();
+    const text = (instructionRef.current?.value ?? "").trim();
     props.onInspectAction(text ? `Explain this highlight: ${text}` : "Explain this highlight");
     clearInstructionIfUnlocked();
   }
@@ -345,7 +339,6 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   function clearInstructionIfUnlocked() {
     if (instructionLocked) return;
     if (instructionRef.current) instructionRef.current.value = "";
-    setInstructionDraft("");
   }
 }
 

@@ -35,7 +35,13 @@ export function validateProviderRefreshAnnotations(
     };
   }
 
-  const granular = splitOverbroadProviderAnnotations(text, relabeled, warnings);
+  const granular = splitOverbroadProviderAnnotations(text, relabeled, warnings).map((annotation) => {
+    const next = relabelExplicitCitationNeeded(annotation);
+    if (next.label !== annotation.label) {
+      warnings.push(`Marked explicit citation-needed placeholder as issue at ${annotation.start}-${annotation.end}.`);
+    }
+    return next;
+  });
   const coverageWarning = options.requireCoverage === false ? "" : insufficientLongTextCoverage(text, granular);
   if (coverageWarning) {
     return {
@@ -77,6 +83,17 @@ export function fallbackRefreshAnnotations(text: string, warnings: string[] = []
     warnings: [...warnings, reason],
     usedFallback: true,
     reason
+  };
+}
+
+function relabelExplicitCitationNeeded(annotation: Annotation): Annotation {
+  if (!/\[citation needed\]/i.test(annotation.text)) return annotation;
+  return {
+    ...annotation,
+    label: "issue",
+    comment: annotation.comment?.trim()
+      ? annotation.comment
+      : "This text contains a citation-needed placeholder that must be resolved with a real source."
   };
 }
 
