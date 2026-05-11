@@ -110,13 +110,13 @@ test("left sidebar highlight key uses visible marker chips", async ({ page }) =>
   const key = page.getByTestId("highlight-key");
   await expect(key).toBeVisible();
   await expect(page.getByTestId("module-sidebar").getByTestId("highlight-key")).toBeVisible();
-  for (const label of ["Background", "Thesis", "Evidence", "Analysis", "Counterargument", "Citation", "Conclusion", "Issue"]) {
+  for (const label of ["Background", "Thesis", "Evidence", "Analysis", "Counterargument", "Citation", "Conclusion", "Issue", "Plain / no highlight"]) {
     await expect(key).toContainText(label);
   }
   const swatches = await key.locator('span[style*="background-color"]').evaluateAll((nodes) =>
     nodes.map((node) => getComputedStyle(node as HTMLElement).backgroundColor)
   );
-  expect(swatches.length).toBeGreaterThanOrEqual(8);
+  expect(swatches.length).toBeGreaterThanOrEqual(9);
   expect(swatches.every((color) => color && color !== "rgba(0, 0, 0, 0)" && color !== "transparent")).toBe(true);
   await expect(page.getByText("Project title and Module 1 research question differ")).toHaveCount(0);
 });

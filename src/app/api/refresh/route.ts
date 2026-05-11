@@ -27,11 +27,34 @@ export async function POST(request: Request) {
         mock: () => mockRefresh(input, "Highlights refreshed. Text was not rewritten."),
         unavailable: (reason) => unavailableRefresh(input, reason),
         parseProvider: (parsed) => {
+          const unitWarnings = validateUnitLabelCoverage(units, parsed.unitLabels);
           const annotations = annotationsFromUnitLabels(units, parsed.unitLabels);
+          const warnings = [...(parsed.warnings ?? []), ...unitWarnings.warnings];
+          if (unitWarnings.reason) {
+            throw new Error(unitWarnings.reason);
+          }
+          if (!annotations.length) {
+            return addModuleReviewIfNeeded(input, {
+              kind: parsed.kind ?? "annotations",
+              annotations: [],
+              globalFeedback: parsed.globalFeedback?.length ? parsed.globalFeedback : ["Refresh completed. No visible highlight labels were needed."],
+              warnings,
+              reviewSummary: parsed.reviewSummary,
+              reviewChecklist: parsed.reviewChecklist,
+              reviewSuggestions: parsed.reviewSuggestions,
+              issueCount: parsed.issueCount,
+              citationGaps: parsed.citationGaps,
+              inTextCitations: parsed.inTextCitations,
+              realSourceCards: parsed.realSourceCards,
+              referenceStatus: parsed.referenceStatus,
+              nextStep: parsed.nextStep,
+              providerMode: "deepseek"
+            }) satisfies RefreshResponse;
+          }
           const validation = validateProviderRefreshAnnotations(input.text, annotations, input.moduleNumber, {
-            requireCoverage: !input.selectedRange
+            requireCoverage: false
           });
-          const warnings = [...(parsed.warnings ?? []), ...validation.warnings];
+          warnings.push(...validation.warnings);
           if (validation.usedFallback) {
             throw new Error(validation.reason ?? "Provider returned invalid unit labels.");
           }
@@ -53,7 +76,7 @@ export async function POST(request: Request) {
             providerMode: "deepseek"
           }) satisfies RefreshResponse;
         },
-        maxTokens: 16384,
+        maxTokens: refreshMaxTokens(),
         temperature: 0.1
       });
       return NextResponse.json(result);
@@ -92,7 +115,7 @@ export async function POST(request: Request) {
         }
         throw new Error("Provider returned non-revision output for open notes.");
       },
-      maxTokens: 16384,
+      maxTokens: refreshMaxTokens(),
       temperature: 0.1
     });
     return NextResponse.json(result);
@@ -124,6 +147,36 @@ function buildRefreshUnits(text: string, selectedRange?: RefreshRequest["selecte
   }));
 }
 
+function validateUnitLabelCoverage(
+  units: ReturnType<typeof buildRefreshUnits>,
+  labels: Array<{ index: number; label: Annotation["label"]; confidence?: number; comment?: string }>
+) {
+  const expected = new Set(units.map((unit) => unit.index));
+  const seen = new Set<number>();
+  const duplicates = new Set<number>();
+  const outOfRange: number[] = [];
+  for (const label of labels) {
+    if (!expected.has(label.index)) {
+      outOfRange.push(label.index);
+      continue;
+    }
+    if (seen.has(label.index)) duplicates.add(label.index);
+    seen.add(label.index);
+  }
+
+  const missing = [...expected].filter((index) => !seen.has(index));
+  const warnings: string[] = [];
+  if (duplicates.size) warnings.push(`Provider returned duplicate unit labels for ${[...duplicates].slice(0, 8).join(", ")}.`);
+  if (outOfRange.length) warnings.push(`Ignored ${outOfRange.length} out-of-range unit label(s).`);
+  if (missing.length) {
+    return {
+      warnings,
+      reason: `Provider omitted ${missing.length} unit label(s), including ${missing.slice(0, 8).join(", ")}.`
+    };
+  }
+  return { warnings };
+}
+
 function annotationsFromUnitLabels(
   units: ReturnType<typeof buildRefreshUnits>,
   labels: Array<{ index: number; label: Annotation["label"]; confidence?: number; comment?: string }>
@@ -152,6 +205,11 @@ function unavailableRefresh(input: Pick<RefreshRequest, "text" | "annotations">,
     warnings: [safeUnavailableReason(reason)],
     providerMode: "unavailable"
   };
+}
+
+function refreshMaxTokens() {
+  const configured = Number(process.env.ESSAYCRAFT_REFRESH_MAX_TOKENS ?? process.env.ESSAYCRAFT_MAX_TOKENS);
+  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 32768;
 }
 
 function safeUnavailableReason(reason: string) {

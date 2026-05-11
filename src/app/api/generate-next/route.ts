@@ -303,7 +303,7 @@ Return corrected JSON only.`
 
 function generateMaxTokens() {
   const configured = Number(process.env.ESSAYCRAFT_GENERATE_MAX_TOKENS ?? process.env.ESSAYCRAFT_MAX_TOKENS);
-  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 16384;
+  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 32768;
 }
 
 function mockGenerate(topic: string, sourceModuleNumber: Exclude<ModuleNumber, 6>, sourceText: string, sourceSources: SourceCard[] = [], sourceAnnotations: Annotation[] = []): GenerateNextResponse {

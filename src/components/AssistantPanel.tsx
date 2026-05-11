@@ -95,9 +95,11 @@ function ChatMode({
   onChat: (message: string) => void;
   onClearChat: () => void;
 }) {
-  const [value, setValue] = useState("");
+  const [draftValue, setDraftValue] = useState("");
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const chatComposingRef = useRef(false);
+  const chatCompositionEndedAtRef = useRef(0);
 
   useEffect(() => {
     const node = messagesRef.current;
@@ -106,10 +108,12 @@ function ChatMode({
   }, [messages.length, loading]);
 
   function submit() {
-    const text = value.trim();
+    const input = inputRef.current;
+    const text = (input?.value ?? "").trim();
     if (!text || loading) return;
     onChat(text);
-    setValue("");
+    if (input) input.value = "";
+    setDraftValue("");
   }
 
   return (
@@ -139,7 +143,7 @@ function ChatMode({
         className="min-h-0 flex-1 space-y-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50/70 p-2"
       >
         {messages.length ? messages.map((message) => (
-          <article key={message.id} className={`max-w-[92%] rounded-xl px-3 py-2 text-sm ${message.role === "user" ? "ml-auto bg-blue-600 text-white" : "bg-white text-slate-700 shadow-sm"}`}>
+          <article key={message.id} className={`max-w-[92%] rounded-xl border px-3 py-2 text-sm ${chatMessageClass(message)}`}>
             {message.role === "assistant" && message.providerMode ? (
               <ProviderBadge mode={message.providerMode} latencyMs={message.latencyMs} totalTokens={message.totalTokens} />
             ) : null}
@@ -154,17 +158,22 @@ function ChatMode({
       </div>
       <div data-testid="assistant-chat-composer" className="mt-1.5 shrink-0 rounded-lg border border-slate-200 bg-white p-1.5">
         <textarea
-          value={value}
-          onChange={(event) => setValue(event.target.value)}
+          ref={inputRef}
+          defaultValue=""
+          onInput={(event) => setDraftValue(event.currentTarget.value)}
           onCompositionStart={() => {
             chatComposingRef.current = true;
           }}
           onCompositionEnd={(event) => {
             chatComposingRef.current = false;
-            setValue(event.currentTarget.value);
+            chatCompositionEndedAtRef.current = Date.now();
+            setDraftValue(event.currentTarget.value);
           }}
           onKeyDown={(event) => {
-            if (isComposingKeyEvent(event, chatComposingRef.current)) return;
+            if (isComposingKeyEvent(event, chatComposingRef.current, chatCompositionEndedAtRef.current)) {
+              if (event.key === "Enter") event.preventDefault();
+              return;
+            }
             if (event.key !== "Enter") return;
             if (event.shiftKey && !event.ctrlKey && !event.metaKey) return;
             if (event.ctrlKey || event.metaKey || (!event.shiftKey && !event.altKey)) {
@@ -176,7 +185,7 @@ function ChatMode({
           className="min-h-12 w-full resize-none border-0 bg-transparent text-[13px] leading-snug outline-none"
         />
         <div className="flex justify-end">
-          <button className="btn-primary h-7 px-3 py-0 text-xs shadow-none" onClick={submit} disabled={!value.trim() || loading}>Send</button>
+          <button className="btn-primary h-7 px-3 py-0 text-xs shadow-none" onClick={submit} disabled={!draftValue.trim() || loading}>Send</button>
         </div>
       </div>
     </div>
@@ -184,7 +193,7 @@ function ChatMode({
 }
 
 function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
-  const [instruction, setInstruction] = useState("");
+  const [instructionDraft, setInstructionDraft] = useState("");
   const [instructionLocked, setInstructionLocked] = useState(false);
   const instructionRef = useRef<HTMLTextAreaElement>(null);
   const instructionComposingRef = useRef(false);
@@ -252,18 +261,17 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
         <div className="relative">
           <textarea
             ref={instructionRef}
-            value={instruction}
-            onChange={(event) => setInstruction(event.target.value)}
+            defaultValue=""
+            onInput={(event) => setInstructionDraft(event.currentTarget.value)}
             onCompositionStart={() => {
               instructionComposingRef.current = true;
             }}
             onCompositionEnd={(event) => {
               instructionComposingRef.current = false;
-              setInstruction(event.currentTarget.value);
+              setInstructionDraft(event.currentTarget.value);
             }}
             placeholder="Tell EssayCraft what you want to change"
             className="min-h-9 w-full resize-none border-0 bg-transparent pr-8 text-[13px] leading-snug outline-none"
-            disabled={!canEdit}
           />
           <button
             type="button"
@@ -301,47 +309,53 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
 
   function runInstruction(baseAction: string) {
     if (instructionComposingRef.current) return;
-    const text = (instructionRef.current?.value ?? instruction).trim();
+    const text = (instructionRef.current?.value ?? instructionDraft).trim();
     props.onSelectionAction(text ? `${baseAction}: ${text}` : baseAction);
     clearInstructionIfUnlocked();
   }
 
   function runAnalyze() {
     if (instructionComposingRef.current) return;
-    const text = (instructionRef.current?.value ?? instruction).trim();
+    const text = (instructionRef.current?.value ?? instructionDraft).trim();
     props.onInspectAction(text ? `Analyze selected text: ${text}` : "Analyze selected text");
     clearInstructionIfUnlocked();
   }
 
   function runLocalRefresh() {
     if (instructionComposingRef.current) return;
-    const text = (instructionRef.current?.value ?? instruction).trim();
+    const text = (instructionRef.current?.value ?? instructionDraft).trim();
     props.onLocalRefresh(text);
     clearInstructionIfUnlocked();
   }
 
   function runTranslate() {
     if (instructionComposingRef.current) return;
-    const text = (instructionRef.current?.value ?? instruction).trim();
+    const text = (instructionRef.current?.value ?? instructionDraft).trim();
     props.onInspectAction(text ? `Translate selected text: ${text}` : "Translate selected text");
     clearInstructionIfUnlocked();
   }
 
   function runExplain() {
     if (instructionComposingRef.current) return;
-    const text = (instructionRef.current?.value ?? instruction).trim();
+    const text = (instructionRef.current?.value ?? instructionDraft).trim();
     props.onInspectAction(text ? `Explain this highlight: ${text}` : "Explain this highlight");
     clearInstructionIfUnlocked();
   }
 
   function clearInstructionIfUnlocked() {
-    if (!instructionLocked) setInstruction("");
+    if (instructionLocked) return;
+    if (instructionRef.current) instructionRef.current.value = "";
+    setInstructionDraft("");
   }
 }
 
-function isComposingKeyEvent(event: ReactKeyboardEvent<HTMLTextAreaElement>, composingRefValue = false) {
+function isComposingKeyEvent(event: ReactKeyboardEvent<HTMLTextAreaElement>, composingRefValue = false, compositionEndedAt = 0) {
   const nativeEvent = event.nativeEvent as KeyboardEvent & { isComposing?: boolean; keyCode?: number };
-  return composingRefValue || nativeEvent.isComposing || nativeEvent.keyCode === 229 || event.key === "Process";
+  return composingRefValue || nativeEvent.isComposing || nativeEvent.keyCode === 229 || event.key === "Process" || (event.key === "Enter" && isRecentComposition(compositionEndedAt));
+}
+
+function isRecentComposition(compositionEndedAt: number) {
+  return compositionEndedAt > 0 && Date.now() - compositionEndedAt < 160;
 }
 
 function ClosedLockIcon() {
@@ -373,21 +387,21 @@ function EditPreview({
 }) {
   const readOnly = /translate/i.test(`${suggestion.actionType ?? ""} ${suggestion.title ?? ""}`);
   return (
-    <article data-testid="assistant-edit-preview" className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-950">
+    <article data-testid="assistant-edit-preview" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold">{readOnly ? "Translation preview" : "Revision preview"}</span>
         <ProviderBadge mode={suggestion.providerMode} latencyMs={suggestion.latencyMs} totalTokens={suggestion.totalTokens} />
       </div>
       <div className="space-y-2">
         <div>
-          <div className="font-semibold text-blue-900/80">Original</div>
+          <div className="font-semibold text-emerald-900/80">Original</div>
           <p className="mt-1 max-h-20 overflow-auto whitespace-pre-wrap rounded-md bg-white/80 p-2 text-slate-700">{compactExcerpt(suggestion.originalText ?? suggestion.originalExcerpt ?? "").text}</p>
         </div>
         <div>
-          <div className="font-semibold text-blue-900/80">Proposed</div>
+          <div className="font-semibold text-emerald-900/80">Proposed</div>
           <p className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap rounded-md bg-white p-2 text-slate-800">{suggestion.proposedText}</p>
         </div>
-        {suggestion.reply ? <p className="text-blue-900/70">{firstSentence(suggestion.reply)}</p> : null}
+        {suggestion.reply ? <p className="text-emerald-900/80">{firstSentence(suggestion.reply)}</p> : null}
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
         {!readOnly ? <button className="btn-primary px-2 py-1 text-xs" onClick={onApply}>Apply</button> : null}
@@ -408,14 +422,14 @@ function RevisionPreview({
   onReject: () => void;
 }) {
   return (
-    <article data-testid="apply-notes-preview" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950">
+    <article data-testid="apply-notes-preview" className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950">
       <div className="mb-2 flex items-center justify-between gap-2">
         <span className="font-semibold">Apply notes preview</span>
         <ProviderBadge mode={preview.providerMode} latencyMs={preview.latencyMs} totalTokens={preview.totalTokens} />
       </div>
-      {preview.originalSummary ? <p className="mb-2 text-amber-900/80">{preview.originalSummary}</p> : null}
+      {preview.originalSummary ? <p className="mb-2 text-emerald-900/80">{preview.originalSummary}</p> : null}
       <pre className="max-h-52 overflow-auto whitespace-pre-wrap rounded-md bg-white p-2 font-sans text-slate-800">{preview.proposedText}</pre>
-      {preview.rationale ? <p className="mt-2 text-amber-900/80">{firstSentence(preview.rationale)}</p> : null}
+      {preview.rationale ? <p className="mt-2 text-emerald-900/80">{firstSentence(preview.rationale)}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
         <button className="btn-primary px-2 py-1 text-xs" onClick={onAccept}>Accept</button>
         <button className="btn-secondary px-2 py-1 text-xs" onClick={onReject}>Reject</button>
@@ -431,10 +445,10 @@ function RefreshResultCard({ result, onDismiss }: { result: RefreshResponse; onD
   const unavailable = result.providerMode === "unavailable";
   const title = isReview ? (result.globalFeedback[0] ?? "Review ready") : "Refresh result";
   return (
-    <article data-testid="refresh-result-card" className={`rounded-lg border p-3 text-xs ${unavailable ? "border-amber-200 bg-amber-50 text-amber-950" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}>
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="font-semibold">{title}</div>
-        <div className="flex items-center gap-2">
+    <article data-testid="refresh-result-card" className={`rounded-lg border p-3 text-xs ${unavailable ? "border-rose-200 bg-rose-50 text-rose-950" : "border-emerald-200 bg-emerald-50 text-emerald-950"}`}>
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1 font-semibold leading-snug">{title}</div>
+        <div className="flex shrink-0 items-center gap-2">
           <ProviderBadge mode={result.providerMode} latencyMs={result.latencyMs} totalTokens={result.totalTokens} />
           <button className="btn-secondary px-2 py-1 text-[11px]" onClick={onDismiss}>Dismiss</button>
         </div>
@@ -479,11 +493,16 @@ function InspectCard({ suggestion, onDismiss }: { suggestion: AssistResponse; on
   const isLocalRefresh = suggestion.actionType === "local-refresh";
   const isTranslate = suggestion.actionType === "translate-selection";
   const title = suggestion.title || (isTranslate ? "Translation preview" : isAnalyze ? "Analysis" : "Highlight explanation");
-  const cardClass = isTranslate
+  const unavailable = suggestion.providerMode === "unavailable";
+  const cardClass = unavailable
+    ? "rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-950 shadow-sm"
+    : isTranslate || isAnalyze || isLocalRefresh
     ? "rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950 shadow-sm"
-    : "rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-700";
-  const titleClass = isTranslate ? "font-semibold text-emerald-950" : "font-semibold text-slate-800";
-  const bodyClass = isTranslate
+    : "rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-950";
+  const titleClass = unavailable ? "font-semibold text-rose-950" : "font-semibold text-emerald-950";
+  const bodyClass = unavailable
+    ? "max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-white/75 p-2 leading-relaxed text-rose-950"
+    : isTranslate || isAnalyze
     ? "max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-white/75 p-2 leading-relaxed text-emerald-950"
     : "whitespace-pre-wrap";
   return (
@@ -499,6 +518,12 @@ function InspectCard({ suggestion, onDismiss }: { suggestion: AssistResponse; on
       </div>
     </article>
   );
+}
+
+function chatMessageClass(message: AssistantMessage) {
+  if (message.role === "user") return "ml-auto border-blue-600 bg-blue-600 text-white";
+  if (message.providerMode === "unavailable") return "border-rose-200 bg-rose-50 text-rose-950 shadow-sm";
+  return "border-emerald-200 bg-emerald-50 text-emerald-950 shadow-sm";
 }
 
 function compactExcerpt(value: string) {
@@ -530,7 +555,7 @@ function ProviderBadge({
       ? "border-blue-200 bg-blue-50 text-blue-700"
       : "border-slate-200 bg-slate-50 text-slate-500";
   return (
-    <span className="mb-1 inline-flex flex-wrap items-center gap-1.5">
+    <span className="inline-flex shrink-0 flex-wrap items-center gap-1.5">
       <span data-testid="provider-mode-badge" className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${classes}`}>
         {label}
       </span>

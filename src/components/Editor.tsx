@@ -48,6 +48,7 @@ export function Editor({
   const highlightContentRef = useRef<HTMLDivElement>(null);
   const lastResetKeyRef = useRef(resetKey);
   const composingRef = useRef(false);
+  const compositionEndedAtRef = useRef(0);
   const segments = useMemo(
     () => buildHighlightSegments(text, annotations, activeSentenceRange),
     [text, annotations, activeSentenceRange]
@@ -130,7 +131,10 @@ export function Editor({
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
-    if (isImeComposingEvent(event, composingRef.current)) return;
+    if (isImeComposingEvent(event, composingRef.current, compositionEndedAtRef.current)) {
+      if (event.key === "Enter") event.preventDefault();
+      return;
+    }
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
       const range = currentRange();
@@ -186,6 +190,7 @@ export function Editor({
           }}
           onCompositionEnd={(event) => {
             composingRef.current = false;
+            compositionEndedAtRef.current = Date.now();
             onTextChange(event.currentTarget.value);
             requestAnimationFrame(syncSelectionFromTextarea);
           }}
@@ -206,9 +211,13 @@ export function Editor({
   );
 }
 
-function isImeComposingEvent(event: KeyboardEvent<HTMLTextAreaElement>, composingRefValue = false) {
+function isImeComposingEvent(event: KeyboardEvent<HTMLTextAreaElement>, composingRefValue = false, compositionEndedAt = 0) {
   const nativeEvent = event.nativeEvent as globalThis.KeyboardEvent & { isComposing?: boolean; keyCode?: number };
-  return composingRefValue || nativeEvent.isComposing || nativeEvent.keyCode === 229 || event.key === "Process";
+  return composingRefValue || nativeEvent.isComposing || nativeEvent.keyCode === 229 || event.key === "Process" || (event.key === "Enter" && isRecentComposition(compositionEndedAt));
+}
+
+function isRecentComposition(compositionEndedAt: number) {
+  return compositionEndedAt > 0 && Date.now() - compositionEndedAt < 160;
 }
 
 function buildHighlightSegments(text: string, annotations: Annotation[], activeSentenceRange?: TextRange): HighlightSegment[] {

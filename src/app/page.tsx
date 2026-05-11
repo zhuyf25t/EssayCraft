@@ -13,7 +13,6 @@ import { Toolbar } from "@/components/Toolbar";
 import { TranslateModal } from "@/components/TranslateModal";
 import { annotationAtOffset, normalizeAnnotations, normalizeText, sentenceRangeAt } from "@/lib/annotations";
 import { inTextCitationPreview } from "@/lib/citationAudit";
-import { LABELS } from "@/lib/labels";
 import { copyRichText, downloadCurrentModuleHtml, downloadProjectJson } from "@/lib/export";
 import { protectModuleText, stripEditorKernelMarkers } from "@/lib/noteKernel";
 import { repairPatchesForText } from "@/lib/patches";
@@ -464,7 +463,17 @@ export default function Home() {
 
       const localAnnotations = normalizeAnnotations(activeDoc.text, data.annotations)
         .filter((annotation) => rangesOverlap(annotation, expandedRange));
-      const reply = formatLocalRefreshReply(activeDoc.text, expandedRange, localAnnotations, data, instruction);
+      if (data.providerMode !== "unavailable") {
+        updateCurrentModule((doc) => {
+          if (doc.text !== activeDoc.text) return doc;
+          return {
+            ...doc,
+            annotations: mergeLocalAnnotations(doc.annotations, localAnnotations, expandedRange, doc.text),
+            updatedAt: nowIso()
+          };
+        });
+      }
+      const reply = formatLocalRefreshReply(expandedRange, localAnnotations, data);
       setAssistantSuggestion({
         kind: "inspect",
         title: "Local label refresh",
@@ -481,7 +490,7 @@ export default function Home() {
       });
       setRightTab("assistant");
       requestAssistantMode("edit");
-      setStatus(data.providerMode === "unavailable" ? "Local refresh unavailable." : "Local label refresh ready.");
+      setStatus(data.providerMode === "unavailable" ? "Local refresh unavailable." : "Local labels updated.");
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Local refresh failed.");
     } finally {
@@ -1111,12 +1120,12 @@ function handleSaveSnapshot() {
 
           <input ref={importInputRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void handleImportJson(event.target.files?.[0])} />
 
-          <div data-testid="workspace-body" className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-3 xl:grid-cols-[minmax(0,1fr)_420px] 2xl:grid-cols-[minmax(0,1fr)_440px]">
+          <div data-testid="workspace-body" className="grid min-h-0 flex-1 grid-cols-1 gap-2.5 overflow-hidden px-3 pb-2 pt-2 xl:grid-cols-[minmax(0,1fr)_460px] 2xl:grid-cols-[minmax(0,1fr)_480px]">
             <div data-testid="editor-column" className="flex min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
               <div className="shrink-0">
                 <div>
-                  <h1 className="text-lg font-semibold text-slate-800">Module {activeProject.currentModule}: {activeDoc.title}</h1>
-                  <p className="text-sm text-slate-500">Edit normally. Select text, then use Edit actions for local AI help.</p>
+                  <h1 className="text-base font-semibold leading-tight text-slate-800">Module {activeProject.currentModule}: {activeDoc.title}</h1>
+                  <p className="text-xs leading-tight text-slate-500">Edit normally. Select text, then use Edit actions for local AI help.</p>
                 </div>
               </div>
 
@@ -1327,30 +1336,28 @@ function rangesOverlap(annotation: TextRange, range: TextRange) {
   return annotation.start < range.end && range.start < annotation.end;
 }
 
+function mergeLocalAnnotations(
+  existing: RefreshResponse["annotations"],
+  localAnnotations: RefreshResponse["annotations"],
+  range: TextRange,
+  text: string
+) {
+  return normalizeAnnotations(text, [
+    ...existing.filter((annotation) => !rangesOverlap(annotation, range)),
+    ...localAnnotations
+  ]);
+}
+
 function formatLocalRefreshReply(
-  text: string,
   range: TextRange,
   annotations: RefreshResponse["annotations"],
-  result: RefreshResponse,
-  instruction: string
+  result: RefreshResponse
 ) {
   if (result.providerMode === "unavailable") {
-    return "AI unavailable. The selected sentence labels were not refreshed.";
+    return "AI unavailable. Local labels were not changed.";
   }
-  const excerpt = text.slice(range.start, range.end).replace(/\s+/g, " ").trim();
-  const header = [
-    "Selected range was expanded to complete sentence boundaries.",
-    instruction.trim() ? `Your note: ${instruction.trim()}` : "",
-    excerpt ? `Text: ${excerpt}` : ""
-  ].filter(Boolean).join("\n");
-  const labels = annotations.length
-    ? annotations.map((annotation, index) => {
-        const label = LABELS[annotation.label]?.name ?? annotation.label;
-        const reason = annotation.comment ? ` ${annotation.comment}` : "";
-        return `${index + 1}. ${label}: ${annotation.text}${reason}`;
-      }).join("\n")
-    : "No label suggestion was returned for the selected sentence(s).";
-  return `${header}\n\n${labels}`;
+  const labels = annotations.length === 1 ? "1 label" : `${annotations.length} labels`;
+  return `Updated. ${labels} refreshed in the selected sentence${range.end > range.start ? " range" : ""}.`;
 }
 
 function extractModuleOneQuestion(text: string) {

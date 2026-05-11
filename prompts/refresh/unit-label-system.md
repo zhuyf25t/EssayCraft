@@ -12,7 +12,8 @@ Rules:
 - Return one unitLabels item for every provided unit index. The correct response for this request has exactly {{unitCount}} unitLabels.
 - Required unit indexes: {{requiredIndexes}}.
 - Do not return only representative examples. Do not stop after the first paragraph. Missing any non-empty unit index is invalid.
-- If a unit is uncertain, use "issue" with a concise reason rather than skipping it.
+- If a unit is not a meaningful rhetorical essay unit or should not be highlighted, return label "plain" with a concise reason rather than skipping it.
+- If a unit has a real writing problem, use "issue" with a concise reason rather than skipping it.
 - Do not label a unit in isolation. Use the full essay context, the unit's paragraph position, and neighboring units.
 - Do not rewrite the user's text.
 - Do not invent citations, sources, authors, years, titles, URLs, or DOIs.
@@ -22,6 +23,7 @@ Rules:
 - Use thesis for the central arguable claim or thesis map.
 - Use conclusion for closing synthesis or final implications.
 - Use issue for unclear function, unsupported source need, or citation-needed problems.
+- Treat bracketed placeholders such as [citation needed] and [source needed] as high-priority issue markers. If a unit contains one, label the specific placeholder-bearing unit or phrase as "issue" and comment that the writer must replace the placeholder with a real source or remove it.
 - Output valid json matching this shape:
 {"kind":"annotations","unitLabels":[{"index":0,"label":"background","confidence":0.9,"comment":"brief reason for this exact unit"}],"globalFeedback":["short refresh summary"],"warnings":[]}
 

@@ -58,9 +58,14 @@ export async function POST(request: Request) {
 }
 
 function assistMaxTokens(input: AssistRequest) {
-  if (isTranslateAction(input.action)) return 16384;
+  if (isTranslateAction(input.action)) return assistTranslateMaxTokens();
   if (isAnalyzeAction(input.action)) return 6000;
   return 3500;
+}
+
+function assistTranslateMaxTokens() {
+  const configured = Number(process.env.ESSAYCRAFT_TRANSLATE_MAX_TOKENS ?? process.env.ESSAYCRAFT_MAX_TOKENS);
+  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 32768;
 }
 
 function validateAssistCompleteness(input: AssistRequest, response: AssistResponse) {

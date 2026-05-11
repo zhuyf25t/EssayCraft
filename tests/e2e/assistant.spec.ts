@@ -48,6 +48,18 @@ test("assistant chat composer sends on Enter or Ctrl Enter and keeps Shift Enter
   await expect(messages).toContainText("Plain Enter sends");
 });
 
+test("assistant Chat and Edit inputs keep Chinese text", async ({ page }) => {
+  const chatText = "\u8bf7\u4f60\u8bc4\u4ef7\u8fd9\u7bc7\u6587\u7ae0";
+  const editText = "\u8bf7\u4f60\u7528\u4e2d\u6587\u89e3\u91ca\u4e00\u4e0b";
+
+  await page.getByPlaceholder("Ask EssayCraft about this module...").fill(chatText);
+  await expect(page.getByPlaceholder("Ask EssayCraft about this module...")).toHaveValue(chatText);
+
+  await page.getByRole("button", { name: "Edit" }).click();
+  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill(editText);
+  await expect(page.getByPlaceholder("Tell EssayCraft what you want to change")).toHaveValue(editText);
+});
+
 test("assistant chat history can be cleared after confirmation", async ({ page }) => {
   const composer = page.getByPlaceholder("Ask EssayCraft about this module...");
   const messages = page.getByTestId("assistant-chat-messages");
@@ -99,6 +111,7 @@ test("clicking a sentence activates Edit selection mode", async ({ page }) => {
 
 test("Edit mode explains active highlight without confidence or relabel controls", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Inspect" })).toHaveCount(0);
+  await expect(page.getByTestId("highlight-key-plain")).toContainText("Plain / no highlight");
   await h.selectEditorRange(page, 0, "Topic: Social media balance and youth wellbeing".length);
   const editContext = page.getByTestId("assistant-edit-context");
   await expect(editContext).toContainText("Background");
@@ -206,8 +219,7 @@ test("local Refresh completes partial selection and returns a read-only result",
   await page.getByRole("button", { name: "Refresh selected labels" }).click();
   const result = page.getByTestId("assistant-local-refresh-result");
   await expect(result).toContainText("Local label refresh");
-  await expect(result).toContainText("Second sentence stays clean.");
-  await expect(result).toContainText("Evidence");
+  await expect(result).toContainText("Updated. 1 label refreshed");
   await expect(result.getByRole("button", { name: "Copy" })).toBeVisible();
   await expect(result.getByRole("button", { name: "Dismiss" })).toBeVisible();
   await expect(result.getByRole("button", { name: "Apply" })).toHaveCount(0);

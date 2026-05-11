@@ -20,9 +20,9 @@ describe("AI provider routing config", () => {
     expect(config.CHAT_TIMEOUT_MS).toBe(60000);
     expect(config.EDIT_TIMEOUT_MS).toBe(60000);
     expect(config.ASSIST_TIMEOUT_MS).toBe(60000);
-    expect(config.REFRESH_TIMEOUT_MS).toBe(60000);
+    expect(config.REFRESH_TIMEOUT_MS).toBe(120000);
     expect(config.TRANSLATE_TIMEOUT_MS).toBe(60000);
-    expect(config.GENERATE_TIMEOUT_MS).toBe(90000);
+    expect(config.GENERATE_TIMEOUT_MS).toBe(120000);
   });
 
   it("attempts the provider when a key exists and mock is not forced", async () => {

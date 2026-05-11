@@ -21,6 +21,7 @@ Rules:
 - Use analysis for reasoning, explanation, interpretation, or connecting evidence to thesis.
 - Use thesis only for the main arguable position or thesis map.
 - Use citation only when the range's primary function is a source signal/citation rather than evidence content.
+- Treat bracketed placeholders such as [citation needed] and [source needed] as high-priority issue markers. If a range contains one, label that placeholder-bearing sentence or phrase as "issue" and comment that the writer must replace the placeholder with a real source or remove it.
 - Never invent citations, authors, years, titles, journals, URLs, or DOIs.
 - Output valid json matching this shape:
 {"annotations":[{"id":"a1","start":0,"end":20,"text":"exact substring","label":"background","confidence":0.9,"comment":"brief reason"}],"globalFeedback":["one short comment"],"warnings":[]}
