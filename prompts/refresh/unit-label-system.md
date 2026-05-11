@@ -23,7 +23,8 @@ Rules:
 - Use thesis for the central arguable claim or thesis map.
 - Use conclusion for closing synthesis or final implications.
 - Use issue for unclear function, unsupported source need, or citation-needed problems.
-- Treat bracketed placeholders such as [citation needed] and [source needed] as high-priority issue markers. If a unit contains one, label the specific placeholder-bearing unit or phrase as "issue" and comment that the writer must replace the placeholder with a real source or remove it.
+- Treat bracketed placeholders such as [citation needed] and [evidence needed] as high-priority issue markers. If a unit contains one, label the placeholder-bearing unit as "issue" and comment that the writer must replace the placeholder with real evidence/source support or remove it.
+- Treat [source needed] as an issue in drafted/final essay prose. In early planning modules, [source needed] may be an evidence-planning cue if it is clearly part of a source plan.
 - Output valid json matching this shape:
 {"kind":"annotations","unitLabels":[{"index":0,"label":"background","confidence":0.9,"comment":"brief reason for this exact unit"}],"globalFeedback":["short refresh summary"],"warnings":[]}
 

@@ -38,7 +38,7 @@ export function validateProviderRefreshAnnotations(
   const granular = splitOverbroadProviderAnnotations(text, relabeled, warnings).map((annotation) => {
     const next = relabelExplicitCitationNeeded(annotation);
     if (next.label !== annotation.label) {
-      warnings.push(`Marked explicit citation-needed placeholder as issue at ${annotation.start}-${annotation.end}.`);
+      warnings.push(`Marked explicit evidence/citation-needed placeholder as issue at ${annotation.start}-${annotation.end}.`);
     }
     return next;
   });
@@ -87,13 +87,13 @@ export function fallbackRefreshAnnotations(text: string, warnings: string[] = []
 }
 
 function relabelExplicitCitationNeeded(annotation: Annotation): Annotation {
-  if (!/\[citation needed\]/i.test(annotation.text)) return annotation;
+  if (!/\[(?:citation|evidence) needed(?::[^\]]*)?\]/i.test(annotation.text)) return annotation;
   return {
     ...annotation,
     label: "issue",
     comment: annotation.comment?.trim()
       ? annotation.comment
-      : "This text contains a citation-needed placeholder that must be resolved with a real source."
+      : "This text contains an evidence/citation-needed placeholder that must be resolved with real support."
   };
 }
 

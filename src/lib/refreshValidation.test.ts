@@ -73,7 +73,16 @@ describe("refresh validation", () => {
     expect(result.usedFallback).toBe(false);
     expect(result.annotations[0].label).toBe("issue");
     expect(result.annotations[0].text).toContain("[citation needed]");
-    expect(result.warnings.join(" ")).toMatch(/citation-needed placeholder as issue/i);
+    expect(result.warnings.join(" ")).toMatch(/evidence\/citation-needed placeholder as issue/i);
+  });
+
+  it("marks explicit evidence-needed placeholders as issue if the AI misses the problem", () => {
+    const text = "This claim would be stronger with a peer-reviewed source [evidence needed].";
+    const result = validateProviderRefreshAnnotations(text, [exactAnnotation(text, "analysis")], 4);
+
+    expect(result.usedFallback).toBe(false);
+    expect(result.annotations[0].label).toBe("issue");
+    expect(result.annotations[0].text).toContain("[evidence needed]");
   });
 
   it("rejects provider annotations that do not match the submitted text", () => {

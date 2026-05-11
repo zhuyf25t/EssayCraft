@@ -64,6 +64,33 @@ test("assistant Chat and Edit inputs keep Chinese text", async ({ page }) => {
   await expect(editInput).toHaveValue(editText);
 });
 
+test("assistant inputs do not clear Chinese composition on Enter", async ({ page }) => {
+  const chatInput = page.getByPlaceholder("Ask EssayCraft about this module...");
+  await chatInput.click();
+  await chatInput.evaluate((node) => {
+    const textarea = node as HTMLTextAreaElement;
+    textarea.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "qing" }));
+    textarea.value = "请";
+    textarea.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "请" }));
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: "请", inputType: "insertFromComposition" }));
+  });
+  await chatInput.press("Enter");
+  await expect(chatInput).toHaveValue(/请/);
+  await expect(page.getByTestId("assistant-chat-messages")).not.toContainText("请");
+
+  await page.getByRole("button", { name: "Edit" }).click();
+  const editInput = page.getByPlaceholder("Tell EssayCraft what you want to change");
+  await editInput.click();
+  await editInput.evaluate((node) => {
+    const textarea = node as HTMLTextAreaElement;
+    textarea.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "zhong" }));
+    textarea.value = "中文";
+    textarea.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "中文" }));
+    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: "中文", inputType: "insertFromComposition" }));
+  });
+  await expect(editInput).toHaveValue("中文");
+});
+
 test("assistant chat history can be cleared after confirmation", async ({ page }) => {
   const composer = page.getByPlaceholder("Ask EssayCraft about this module...");
   const messages = page.getByTestId("assistant-chat-messages");

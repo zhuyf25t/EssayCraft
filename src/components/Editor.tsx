@@ -178,8 +178,9 @@ export function Editor({
           aria-label="Writing canvas"
           value={text}
           translate="no"
+          lang="en"
           spellCheck
-          className="editor-content editor-textarea-control"
+          className="notranslate editor-content editor-textarea-control"
           onChange={(event) => {
             onTextChange(event.currentTarget.value);
             requestAnimationFrame(syncSelectionFromTextarea);
@@ -217,7 +218,7 @@ function isImeComposingEvent(event: KeyboardEvent<HTMLTextAreaElement>, composin
 }
 
 function isRecentComposition(compositionEndedAt: number) {
-  return compositionEndedAt > 0 && Date.now() - compositionEndedAt < 160;
+  return compositionEndedAt > 0 && Date.now() - compositionEndedAt < 800;
 }
 
 function buildHighlightSegments(text: string, annotations: Annotation[], activeSentenceRange?: TextRange): HighlightSegment[] {

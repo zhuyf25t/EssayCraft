@@ -159,12 +159,17 @@ function ChatMode({
           ref={inputRef}
           defaultValue=""
           translate="no"
+          lang="zh-CN"
+          className="notranslate min-h-12 w-full resize-none border-0 bg-transparent text-[13px] leading-snug outline-none"
           onCompositionStart={() => {
             chatComposingRef.current = true;
           }}
           onCompositionEnd={() => {
             chatComposingRef.current = false;
             chatCompositionEndedAtRef.current = Date.now();
+          }}
+          onBlur={() => {
+            chatComposingRef.current = false;
           }}
           onKeyDown={(event) => {
             if (isComposingKeyEvent(event, chatComposingRef.current, chatCompositionEndedAtRef.current)) {
@@ -178,7 +183,6 @@ function ChatMode({
             }
           }}
           placeholder="Ask EssayCraft about this module..."
-          className="min-h-12 w-full resize-none border-0 bg-transparent text-[13px] leading-snug outline-none"
         />
         <div className="flex justify-end">
           <button className="btn-primary h-7 px-3 py-0 text-xs shadow-none" onClick={submit} disabled={loading}>Send</button>
@@ -258,14 +262,18 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
             ref={instructionRef}
             defaultValue=""
             translate="no"
+            lang="zh-CN"
+            className="notranslate min-h-9 w-full resize-none border-0 bg-transparent pr-8 text-[13px] leading-snug outline-none"
             onCompositionStart={() => {
               instructionComposingRef.current = true;
             }}
             onCompositionEnd={() => {
               instructionComposingRef.current = false;
             }}
+            onBlur={() => {
+              instructionComposingRef.current = false;
+            }}
             placeholder="Tell EssayCraft what you want to change"
-            className="min-h-9 w-full resize-none border-0 bg-transparent pr-8 text-[13px] leading-snug outline-none"
           />
           <button
             type="button"
@@ -302,35 +310,30 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   );
 
   function runInstruction(baseAction: string) {
-    if (instructionComposingRef.current) return;
     const text = (instructionRef.current?.value ?? "").trim();
     props.onSelectionAction(text ? `${baseAction}: ${text}` : baseAction);
     clearInstructionIfUnlocked();
   }
 
   function runAnalyze() {
-    if (instructionComposingRef.current) return;
     const text = (instructionRef.current?.value ?? "").trim();
     props.onInspectAction(text ? `Analyze selected text: ${text}` : "Analyze selected text");
     clearInstructionIfUnlocked();
   }
 
   function runLocalRefresh() {
-    if (instructionComposingRef.current) return;
     const text = (instructionRef.current?.value ?? "").trim();
     props.onLocalRefresh(text);
     clearInstructionIfUnlocked();
   }
 
   function runTranslate() {
-    if (instructionComposingRef.current) return;
     const text = (instructionRef.current?.value ?? "").trim();
     props.onInspectAction(text ? `Translate selected text: ${text}` : "Translate selected text");
     clearInstructionIfUnlocked();
   }
 
   function runExplain() {
-    if (instructionComposingRef.current) return;
     const text = (instructionRef.current?.value ?? "").trim();
     props.onInspectAction(text ? `Explain this highlight: ${text}` : "Explain this highlight");
     clearInstructionIfUnlocked();
@@ -348,7 +351,7 @@ function isComposingKeyEvent(event: ReactKeyboardEvent<HTMLTextAreaElement>, com
 }
 
 function isRecentComposition(compositionEndedAt: number) {
-  return compositionEndedAt > 0 && Date.now() - compositionEndedAt < 160;
+  return compositionEndedAt > 0 && Date.now() - compositionEndedAt < 800;
 }
 
 function ClosedLockIcon() {
