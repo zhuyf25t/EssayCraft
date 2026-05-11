@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCurrentModuleHtml, documentHtmlFragment } from "./export";
+import { buildCurrentModuleHtml, currentModuleHtmlFilename, documentHtmlFragment } from "./export";
 import { createInitialProject } from "./project";
 
 describe("essay export rendering", () => {
@@ -34,5 +34,14 @@ describe("essay export rendering", () => {
     expect(html).toContain("Final essay text.");
     expect(html).not.toContain("<strong>Module:</strong>");
     expect(html).not.toContain("Final Review / Conclusion / Export");
+  });
+
+  it("uses a clean final filename for Module 6 export", () => {
+    expect(currentModuleHtmlFilename({ title: "What is The Most Essential Competency", currentModule: 6 })).toBe(
+      "what-is-the-most-essential-competency.html"
+    );
+    expect(currentModuleHtmlFilename({ title: "What is The Most Essential Competency", currentModule: 3 })).toBe(
+      "what-is-the-most-essential-competency-module-3.html"
+    );
   });
 });

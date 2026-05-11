@@ -39,7 +39,12 @@ export function downloadProjectJson(project: Project) {
 
 export function downloadCurrentModuleHtml(project: Project) {
   const html = buildCurrentModuleHtml(project);
-  triggerDownload(new Blob([html], { type: "text/html" }), `${slugify(project.title || "essaycraft")}-module-${project.currentModule}.html`);
+  triggerDownload(new Blob([html], { type: "text/html" }), currentModuleHtmlFilename(project));
+}
+
+export function currentModuleHtmlFilename(project: Pick<Project, "title" | "currentModule">) {
+  const base = slugify(project.title || "essaycraft");
+  return project.currentModule === 6 ? `${base}.html` : `${base}-module-${project.currentModule}.html`;
 }
 
 export function buildCurrentModuleHtml(project: Project) {
