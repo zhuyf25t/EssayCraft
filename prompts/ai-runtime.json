@@ -7,9 +7,9 @@
     "analyzeSelection": 60000,
     "translateSelection": 60000,
     "explainHighlight": 60000,
-    "refreshAnnotations": 120000,
+    "refreshAnnotations": 300000,
     "applyNotesRevision": 120000,
-    "generateNextModule": 120000,
+    "generateNextModule": 300000,
     "citationReview": 120000,
     "finalReview": 120000
   },
@@ -20,5 +20,6 @@
     "translateSelection": 32768,
     "refreshAnnotations": 32768,
     "generateNextModule": 32768
-  }
+  },
+  "deepseekThinking": "disabled"
 }

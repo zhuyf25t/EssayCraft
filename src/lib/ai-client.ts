@@ -17,6 +17,7 @@ export type AiResponseMetadata = {
 type AiRuntimeConfig = {
   timeoutsMs?: Record<string, number>;
   maxTokens?: Record<string, number>;
+  deepseekThinking?: string;
 };
 
 let runtimeConfigCache: AiRuntimeConfig | undefined;
@@ -27,9 +28,9 @@ export const AI_FAST_MODEL = process.env.DEEPSEEK_FAST_MODEL || process.env.DEEP
 export const AI_MOCK_MODEL = "deterministic-mock";
 export const CHAT_TIMEOUT_MS = readTimeout("ESSAYCRAFT_CHAT_TIMEOUT_MS", readTimeout("ESSAYCRAFT_ASSIST_TIMEOUT_MS", readAiRuntimeTimeout("chatModule", 60000)));
 export const EDIT_TIMEOUT_MS = readTimeout("ESSAYCRAFT_EDIT_TIMEOUT_MS", readTimeout("ESSAYCRAFT_ASSIST_TIMEOUT_MS", readAiRuntimeTimeout("editActions", 60000)));
-export const REFRESH_TIMEOUT_MS = readTimeout("ESSAYCRAFT_REFRESH_TIMEOUT_MS", readAiRuntimeTimeout("refreshAnnotations", 120000));
+export const REFRESH_TIMEOUT_MS = readTimeout("ESSAYCRAFT_REFRESH_TIMEOUT_MS", readAiRuntimeTimeout("refreshAnnotations", 300000));
 export const TRANSLATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_TRANSLATE_TIMEOUT_MS", readAiRuntimeTimeout("translateSelection", 60000));
-export const GENERATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_GENERATE_TIMEOUT_MS", readAiRuntimeTimeout("generateNextModule", 120000));
+export const GENERATE_TIMEOUT_MS = readTimeout("ESSAYCRAFT_GENERATE_TIMEOUT_MS", readAiRuntimeTimeout("generateNextModule", 300000));
 export const ASSIST_TIMEOUT_MS = EDIT_TIMEOUT_MS;
 export const FAST_FALLBACK_MS = readTimeout("ESSAYCRAFT_FAST_FALLBACK_MS", process.env.NODE_ENV === "development" ? 2500 : 8000);
 export const interactiveTimeoutMs = EDIT_TIMEOUT_MS;
@@ -66,12 +67,14 @@ export function createAiClient(timeoutMs = ASSIST_TIMEOUT_MS) {
   });
 }
 
-export function deepSeekRequestBody<T extends object>(body: T): T & {
-  thinking: { type: "disabled" };
-} {
+export function deepSeekRequestBody<T extends object>(body: T): T | (T & {
+  thinking: { type: "disabled" | "enabled" };
+}) {
+  const mode = deepSeekThinkingMode();
+  if (mode === "omit") return body;
   return {
     ...body,
-    thinking: { type: "disabled" }
+    thinking: { type: mode }
   };
 }
 
@@ -135,6 +138,11 @@ export function readAiRuntimeMaxTokens(key: string, fallback: number) {
 
 export function aiRuntimeConfigSource() {
   return path.join(process.cwd(), "prompts", "ai-runtime.json");
+}
+
+export function deepSeekThinkingMode(): "disabled" | "enabled" | "omit" {
+  const value = (process.env.ESSAYCRAFT_DEEPSEEK_THINKING || runtimeConfig().deepseekThinking || "disabled").trim().toLowerCase();
+  return value === "enabled" || value === "omit" ? value : "disabled";
 }
 
 function runtimeConfig(): AiRuntimeConfig {

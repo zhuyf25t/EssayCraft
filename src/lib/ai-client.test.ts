@@ -20,9 +20,9 @@ describe("AI provider routing config", () => {
     expect(config.CHAT_TIMEOUT_MS).toBe(60000);
     expect(config.EDIT_TIMEOUT_MS).toBe(60000);
     expect(config.ASSIST_TIMEOUT_MS).toBe(60000);
-    expect(config.REFRESH_TIMEOUT_MS).toBe(120000);
+    expect(config.REFRESH_TIMEOUT_MS).toBe(300000);
     expect(config.TRANSLATE_TIMEOUT_MS).toBe(60000);
-    expect(config.GENERATE_TIMEOUT_MS).toBe(120000);
+    expect(config.GENERATE_TIMEOUT_MS).toBe(300000);
   });
 
   it("attempts the provider when a key exists and mock is not forced", async () => {
@@ -48,5 +48,19 @@ describe("AI provider routing config", () => {
     config = await import("./ai-client");
     expect(config.hasAiKey()).toBe(false);
     expect(config.providerSkipReason()).toBe("missing-api-key");
+  });
+
+  it("keeps DeepSeek thinking configurable", async () => {
+    vi.stubEnv("ESSAYCRAFT_DEEPSEEK_THINKING", "enabled");
+    let config = await import("./ai-client");
+    expect(config.deepSeekThinkingMode()).toBe("enabled");
+    expect(config.deepSeekRequestBody({ model: "x" })).toMatchObject({ thinking: { type: "enabled" } });
+
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv("ESSAYCRAFT_DEEPSEEK_THINKING", "omit");
+    config = await import("./ai-client");
+    expect(config.deepSeekThinkingMode()).toBe("omit");
+    expect(config.deepSeekRequestBody({ model: "x" })).toEqual({ model: "x" });
   });
 });

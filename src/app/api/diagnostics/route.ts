@@ -12,6 +12,7 @@ import {
   REFRESH_TIMEOUT_MS,
   TRANSLATE_TIMEOUT_MS,
   aiRuntimeConfigSource,
+  deepSeekThinkingMode,
   hasAiKey,
   interactiveTimeoutMs,
   offlineMockAllowed
@@ -27,6 +28,7 @@ export function GET() {
     model: AI_MODEL,
     fastModel: AI_FAST_MODEL,
     highQualityModel: AI_HIGH_QUALITY_MODEL,
+    deepseekThinking: deepSeekThinkingMode(),
     interactiveTimeoutMs,
     chatTimeoutMs: CHAT_TIMEOUT_MS,
     editTimeoutMs: EDIT_TIMEOUT_MS,
