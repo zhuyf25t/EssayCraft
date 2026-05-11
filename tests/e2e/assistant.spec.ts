@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+﻿import { expect, test } from "@playwright/test";
 import * as h from "./helpers";
 
 test.beforeEach(h.setupPage);
@@ -9,7 +9,7 @@ test("assistant chat mode answers module-level Ask without a preview card", asyn
   const overflow = await page.getByTestId("assistant-chat-messages").evaluate((node) => getComputedStyle(node as HTMLElement).overflowY);
   expect(overflow).toBe("auto");
 
-  await page.getByPlaceholder("Ask EssayCraft about this module...").fill("What do you think of this paragraph?");
+  await page.getByTestId("assistant-chat-input").fill("What do you think of this paragraph?");
   await page.getByRole("button", { name: "Send" }).click();
 
   const messages = page.getByTestId("assistant-chat-messages");
@@ -29,13 +29,13 @@ test("assistant chat mode answers module-level Ask without a preview card", asyn
 });
 
 test("assistant chat composer sends on Enter or Ctrl Enter and keeps Shift Enter newline", async ({ page }) => {
-  const composer = page.getByPlaceholder("Ask EssayCraft about this module...");
+  const composer = page.getByTestId("assistant-chat-input");
   const messages = page.getByTestId("assistant-chat-messages");
 
   await composer.fill("Line one");
   await composer.press("Shift+Enter");
   await composer.pressSequentially("Line two");
-  await expect(composer).toHaveValue("Line one\nLine two");
+  await expect(composer).toHaveText("Line one\nLine two");
   await expect(messages).not.toContainText("Line two");
 
   await composer.press("Control+Enter");
@@ -52,49 +52,49 @@ test("assistant Chat and Edit inputs keep Chinese text", async ({ page }) => {
   const chatText = "\u8bf7\u4f60\u8bc4\u4ef7\u8fd9\u7bc7\u6587\u7ae0";
   const editText = "\u8bf7\u4f60\u7528\u4e2d\u6587\u89e3\u91ca\u4e00\u4e0b";
 
-  const chatInput = page.getByPlaceholder("Ask EssayCraft about this module...");
+  const chatInput = page.getByTestId("assistant-chat-input");
   await chatInput.click();
   await page.keyboard.insertText(chatText);
-  await expect(chatInput).toHaveValue(chatText);
+  await expect(chatInput).toHaveText(chatText);
 
   await page.getByRole("button", { name: "Edit" }).click();
-  const editInput = page.getByPlaceholder("Tell EssayCraft what you want to change");
+  const editInput = page.getByTestId("assistant-edit-instruction");
   await editInput.click();
   await page.keyboard.insertText(editText);
-  await expect(editInput).toHaveValue(editText);
+  await expect(editInput).toHaveText(editText);
 });
 
 test("assistant inputs do not clear Chinese composition on Enter", async ({ page }) => {
-  const chatInput = page.getByPlaceholder("Ask EssayCraft about this module...");
+  const chatInput = page.getByTestId("assistant-chat-input");
   await chatInput.click();
   await chatInput.evaluate((node) => {
-    const textarea = node as HTMLTextAreaElement;
-    textarea.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "qing" }));
-    textarea.value = "请";
+    const input = node as HTMLElement;
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "qing" }));
+    input.textContent = "请";
     const enterDuringIme = new KeyboardEvent("keydown", { bubbles: true, key: "Enter" });
     Object.defineProperty(enterDuringIme, "keyCode", { value: 229 });
-    textarea.dispatchEvent(enterDuringIme);
-    textarea.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "请" }));
-    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: "请", inputType: "insertFromComposition" }));
+    input.dispatchEvent(enterDuringIme);
+    input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "请" }));
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "请", inputType: "insertFromComposition" }));
   });
-  await expect(chatInput).toHaveValue(/请/);
+  await expect(chatInput).toHaveText(/请/);
   await expect(page.getByTestId("assistant-chat-messages")).not.toContainText("请");
 
   await page.getByRole("button", { name: "Edit" }).click();
-  const editInput = page.getByPlaceholder("Tell EssayCraft what you want to change");
+  const editInput = page.getByTestId("assistant-edit-instruction");
   await editInput.click();
   await editInput.evaluate((node) => {
-    const textarea = node as HTMLTextAreaElement;
-    textarea.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "zhong" }));
-    textarea.value = "中文";
-    textarea.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "中文" }));
-    textarea.dispatchEvent(new InputEvent("input", { bubbles: true, data: "中文", inputType: "insertFromComposition" }));
+    const input = node as HTMLElement;
+    input.dispatchEvent(new CompositionEvent("compositionstart", { bubbles: true, data: "zhong" }));
+    input.textContent = "中文";
+    input.dispatchEvent(new CompositionEvent("compositionend", { bubbles: true, data: "中文" }));
+    input.dispatchEvent(new InputEvent("input", { bubbles: true, data: "中文", inputType: "insertFromComposition" }));
   });
-  await expect(editInput).toHaveValue("中文");
+  await expect(editInput).toHaveText("中文");
 });
 
 test("assistant chat history can be cleared after confirmation", async ({ page }) => {
-  const composer = page.getByPlaceholder("Ask EssayCraft about this module...");
+  const composer = page.getByTestId("assistant-chat-input");
   const messages = page.getByTestId("assistant-chat-messages");
 
   await composer.fill("Clear this chat later");
@@ -118,7 +118,7 @@ test("assistant chat history can be cleared after confirmation", async ({ page }
 });
 
 test("assistant chat answers Chinese contextual questions instead of a template", async ({ page }) => {
-  const composer = page.getByPlaceholder("Ask EssayCraft about this module...");
+  const composer = page.getByTestId("assistant-chat-input");
   const messages = page.getByTestId("assistant-chat-messages");
 
   await composer.fill("为什么这个 research question 有点弱？用中文。");
@@ -224,7 +224,7 @@ test("local Refresh completes partial selection and returns a read-only result",
   const partialEnd = partialStart + "sentence".length;
   const fullSecondStart = original.indexOf("Second");
   await h.selectEditorRange(page, partialStart, partialEnd);
-  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("I think this sentence is evidence, not background.");
+  await page.getByTestId("assistant-edit-instruction").fill("I think this sentence is evidence, not background.");
 
   await page.route("**/api/refresh", async (route) => {
     capturedPayload = JSON.parse(route.request().postData() ?? "{}");
@@ -320,7 +320,7 @@ test.skip("accepted rewrite resolves notes inside the selected range", async ({ 
 
   await h.selectEditorRange(page, 0, original.length);
   await expect(page.getByTestId("assistant-edit-context")).toContainText("1 note included");
-  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("结合 project title");
+  await page.getByTestId("assistant-edit-instruction").fill("结合 project title");
   await page.getByRole("button", { name: "Rewrite", exact: true }).click();
   await expect(page.getByTestId("assistant-edit-preview")).toContainText("Revision preview", { timeout: 20_000 });
   await expect(page.getByTestId("assistant-edit-preview")).not.toContainText("可以把问题写得更长一点");
@@ -339,7 +339,7 @@ test("Analyze uses instruction language and is read-only", async ({ page }) => {
   const original = "Technology has always changed the way human beings live.";
   await h.setEditorText(page, original);
   await h.selectEditorRange(page, 0, original.length);
-  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("你评价一下这句话。用中文。");
+  await page.getByTestId("assistant-edit-instruction").fill("你评价一下这句话。用中文。");
   await page.getByRole("button", { name: "Analyze" }).click();
 
   const analysis = page.getByTestId("assistant-analysis-result");
@@ -356,7 +356,7 @@ test("rewrite follows English and Chinese length instructions without meta text"
   await h.setEditorText(page, original);
   await h.selectEditorRange(page, 0, original.length);
 
-  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("可以把问题写得更长一点，并且结合 project title");
+  await page.getByTestId("assistant-edit-instruction").fill("可以把问题写得更长一点，并且结合 project title");
   await page.getByRole("button", { name: "Rewrite", exact: true }).click();
   await expect(page.getByTestId("assistant-edit-preview")).toContainText("Revision preview", { timeout: 20_000 });
 
@@ -388,7 +388,7 @@ test("Rewrite remains an applyable edit when instruction mentions citation-neede
   const original = "This claim needs support [citation needed].";
   await h.setEditorText(page, original);
   await h.selectEditorRange(page, 0, original.length);
-  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("Remove the citation needed issue without inventing sources.");
+  await page.getByTestId("assistant-edit-instruction").fill("Remove the citation needed issue without inventing sources.");
 
   await page.getByRole("button", { name: "Rewrite", exact: true }).click();
 
@@ -422,7 +422,7 @@ test("selected text translation is read-only in Edit mode", async ({ page }) => 
     });
   });
 
-  await page.getByPlaceholder("Tell EssayCraft what you want to change").fill("Please translate into Chinese");
+  await page.getByTestId("assistant-edit-instruction").fill("Please translate into Chinese");
   await page.getByRole("button", { name: "Translate" }).click();
   const translation = page.getByTestId("assistant-translation-result");
   await expect(translation).toContainText("Translation preview", { timeout: 20_000 });
@@ -440,3 +440,4 @@ test("selected text translation is read-only in Edit mode", async ({ page }) => 
   await page.getByRole("button", { name: "Dismiss" }).click();
   await h.expectEditorText(page, original);
 });
+

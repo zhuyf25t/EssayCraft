@@ -50,6 +50,20 @@ body {
   }
 }
 
+.assistant-native-input {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  cursor: text;
+  color: #0f172a;
+}
+
+.assistant-native-input:empty::before {
+  content: attr(data-placeholder);
+  color: #94a3b8;
+  pointer-events: none;
+}
+
 .editor-shell {
   border: 1px solid #d7dde8;
   border-radius: 10px;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { LABELS } from "@/lib/labels";
 import type { Annotation, AssistantMessage, AssistResponse, RefreshResponse, TextRange } from "@/types/essaycraft";
 
@@ -95,7 +95,7 @@ function ChatMode({
   onChat: (message: string) => void;
   onClearChat: () => void;
 }) {
-  const inputRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const composingRef = useRef(false);
   const compositionEndedAtRef = useRef(0);
@@ -108,10 +108,10 @@ function ChatMode({
 
   function submit() {
     const input = inputRef.current;
-    const text = (input?.value ?? "").trim();
+    const text = readEditableText(input).trim();
     if (!text || loading) return;
     onChat(text);
-    if (input) input.value = "";
+    clearEditableText(input);
   }
 
   return (
@@ -155,15 +155,16 @@ function ChatMode({
         {loading ? <div className="rounded-lg bg-white p-2 text-xs text-slate-500">Thinking...</div> : null}
       </div>
       <div data-testid="assistant-chat-composer" className="mt-1.5 shrink-0 rounded-lg border border-slate-200 bg-white p-1.5">
-        <textarea
+        <div
           ref={inputRef}
-          defaultValue=""
-          translate="no"
-          lang="zh-CN"
-          inputMode="text"
-          spellCheck={false}
-          className="notranslate min-h-12 w-full resize-none border-0 bg-transparent text-[13px] leading-snug outline-none"
-          autoComplete="off"
+          data-testid="assistant-chat-input"
+          role="textbox"
+          aria-label="Ask EssayCraft about this module"
+          aria-multiline="true"
+          contentEditable
+          suppressContentEditableWarning
+          data-placeholder="Ask EssayCraft about this module..."
+          className="assistant-native-input min-h-12 w-full text-[13px] leading-snug outline-none"
           onCompositionStart={() => {
             composingRef.current = true;
           }}
@@ -174,13 +175,17 @@ function ChatMode({
           onKeyDown={(event) => {
             if (isNativeImeEvent(event, composingRef.current, compositionEndedAtRef.current)) return;
             if (event.key !== "Enter") return;
-            if (event.shiftKey && !event.ctrlKey && !event.metaKey) return;
+            if (event.shiftKey && !event.ctrlKey && !event.metaKey) {
+              event.preventDefault();
+              insertEditableLineBreak();
+              return;
+            }
             if (event.ctrlKey || event.metaKey || (!event.shiftKey && !event.altKey)) {
               event.preventDefault();
               submit();
             }
           }}
-          placeholder="Ask EssayCraft about this module..."
+          onPaste={pastePlainText}
         />
         <div className="flex justify-end">
           <button className="btn-primary h-7 px-3 py-0 text-xs shadow-none" onClick={submit} disabled={loading}>Send</button>
@@ -192,7 +197,7 @@ function ChatMode({
 
 function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   const [instructionLocked, setInstructionLocked] = useState(false);
-  const instructionRef = useRef<HTMLTextAreaElement>(null);
+  const instructionRef = useRef<HTMLDivElement>(null);
   const contextRange = props.hasSelection ? props.selectedRange : props.activeAnnotation
     ? { start: props.activeAnnotation.start, end: props.activeAnnotation.end }
     : props.activeSentenceRange;
@@ -255,16 +260,17 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
 
       <div className="mt-1.5 shrink-0 rounded-lg border border-slate-200 bg-white p-1.5">
         <div className="relative">
-          <textarea
+          <div
             ref={instructionRef}
-            defaultValue=""
-            translate="no"
-            lang="zh-CN"
-            inputMode="text"
-            spellCheck={false}
-            className="notranslate min-h-9 w-full resize-none border-0 bg-transparent pr-8 text-[13px] leading-snug outline-none"
-            autoComplete="off"
-            placeholder="Tell EssayCraft what you want to change"
+            data-testid="assistant-edit-instruction"
+            role="textbox"
+            aria-label="Tell EssayCraft what you want to change"
+            aria-multiline="true"
+            contentEditable
+            suppressContentEditableWarning
+            data-placeholder="Tell EssayCraft what you want to change"
+            className="assistant-native-input min-h-9 w-full pr-8 text-[13px] leading-snug outline-none"
+            onPaste={pastePlainText}
           />
           <button
             type="button"
@@ -301,42 +307,42 @@ function EditMode(props: AssistantPanelProps & { hasSelection: boolean }) {
   );
 
   function runInstruction(baseAction: string) {
-    const text = (instructionRef.current?.value ?? "").trim();
+    const text = readEditableText(instructionRef.current).trim();
     props.onSelectionAction(text ? `${baseAction}: ${text}` : baseAction);
     clearInstructionIfUnlocked();
   }
 
   function runAnalyze() {
-    const text = (instructionRef.current?.value ?? "").trim();
+    const text = readEditableText(instructionRef.current).trim();
     props.onInspectAction(text ? `Analyze selected text: ${text}` : "Analyze selected text");
     clearInstructionIfUnlocked();
   }
 
   function runLocalRefresh() {
-    const text = (instructionRef.current?.value ?? "").trim();
+    const text = readEditableText(instructionRef.current).trim();
     props.onLocalRefresh(text);
     clearInstructionIfUnlocked();
   }
 
   function runTranslate() {
-    const text = (instructionRef.current?.value ?? "").trim();
+    const text = readEditableText(instructionRef.current).trim();
     props.onInspectAction(text ? `Translate selected text: ${text}` : "Translate selected text");
     clearInstructionIfUnlocked();
   }
 
   function runExplain() {
-    const text = (instructionRef.current?.value ?? "").trim();
+    const text = readEditableText(instructionRef.current).trim();
     props.onInspectAction(text ? `Explain this highlight: ${text}` : "Explain this highlight");
     clearInstructionIfUnlocked();
   }
 
   function clearInstructionIfUnlocked() {
     if (instructionLocked) return;
-    if (instructionRef.current) instructionRef.current.value = "";
+    clearEditableText(instructionRef.current);
   }
 }
 
-function isNativeImeEvent(event: ReactKeyboardEvent<HTMLTextAreaElement>, composingRefValue = false, compositionEndedAt = 0) {
+function isNativeImeEvent(event: ReactKeyboardEvent<HTMLElement>, composingRefValue = false, compositionEndedAt = 0) {
   const nativeEvent = event.nativeEvent as KeyboardEvent & { isComposing?: boolean; keyCode?: number };
   return Boolean(
     composingRefValue ||
@@ -345,6 +351,54 @@ function isNativeImeEvent(event: ReactKeyboardEvent<HTMLTextAreaElement>, compos
     event.key === "Process" ||
     (event.key === "Enter" && compositionEndedAt > 0 && Date.now() - compositionEndedAt < 800)
   );
+}
+
+function readEditableText(node: HTMLElement | null) {
+  if (!node) return "";
+  return (node.innerText || node.textContent || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\u00a0/g, " ")
+    .replace(/\n$/u, "");
+}
+
+function clearEditableText(node: HTMLElement | null) {
+  if (!node) return;
+  node.replaceChildren();
+}
+
+function pastePlainText(event: ReactClipboardEvent<HTMLElement>) {
+  event.preventDefault();
+  insertPlainText(event.clipboardData.getData("text/plain"));
+}
+
+function insertPlainText(text: string) {
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return;
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const node = document.createTextNode(text);
+  range.insertNode(node);
+  range.setStartAfter(node);
+  range.setEndAfter(node);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+function insertEditableLineBreak() {
+  if (document.queryCommandSupported?.("insertLineBreak")) {
+    document.execCommand("insertLineBreak");
+    return;
+  }
+  const selection = window.getSelection();
+  if (!selection?.rangeCount) return;
+  const range = selection.getRangeAt(0);
+  range.deleteContents();
+  const br = document.createElement("br");
+  range.insertNode(br);
+  range.setStartAfter(br);
+  range.setEndAfter(br);
+  selection.removeAllRanges();
+  selection.addRange(range);
 }
 
 function ClosedLockIcon() {
