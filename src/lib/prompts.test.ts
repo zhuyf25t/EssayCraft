@@ -192,6 +192,8 @@ describe("assistant prompts", () => {
     expect(messages[0].content).toContain("Do not rely on exact heading wording");
     expect(messages[0].content).toContain("Do not use Markdown heading markers");
     expect(messages[0].content).toContain("Do not replace existing concrete citations or references");
+    expect(messages[0].content).toContain("copy that section to the end of the generated target module");
+    expect(messages[0].content).toContain("Never make the user copy a supplied reference list manually");
     expect(messages[1].content).toContain("User generation instruction from the Edit box");
     expect(messages[1].content).toContain("Preserve existing citations and references.");
     expect(messages[0].content).toContain("contractCheck");

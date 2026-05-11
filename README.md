@@ -63,7 +63,7 @@ Default AI timeouts and max-token limits live in `prompts/ai-runtime.json` so pr
 
 Next.js dev-server messages such as `Compiled /api/refresh` are normal local compile logs, not EssayCraft product errors. If DeepSeek is unreachable because of proxy/network latency, the result is marked unavailable unless explicit mock mode is enabled.
 
-Do not run multiple manual Next processes against the same cache directory. Next rewrites server chunks during build/start, which can make an already-running dev server report errors like `Cannot find module './331.js'`. `npm run dev` now starts through `scripts/dev-server.mjs`, which clears `.next` before startup and writes a workspace lock so a second dev server does not corrupt the same chunk cache. If a dev server is already corrupted, stop every `next dev`/`node` process for this repo and restart `npm run dev`.
+Do not run multiple manual Next processes against the same cache directory. Next rewrites server chunks during build/start, which can make an already-running dev server report errors like `Cannot find module './331.js'`. `npm run dev` now starts through `scripts/dev-server.mjs`, uses an isolated `.next-dev` cache, clears that cache before startup, and writes a workspace lock so a second dev server does not corrupt the same chunk cache. `npm run build` keeps using the normal `.next` production build directory. If a dev server is already corrupted, stop every `next dev`/`node` process for this repo and restart `npm run dev`.
 
 ## Validation
 

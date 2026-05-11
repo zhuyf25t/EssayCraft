@@ -20,6 +20,7 @@ import { getTransitionPrompt } from "@/lib/moduleTransitionPrompts";
 import { protectModuleText } from "@/lib/noteKernel";
 import { readPromptFile, renderPrompt } from "@/lib/promptFiles";
 import { buildGenerateNextMessages } from "@/lib/prompts";
+import { preserveSourceReferenceSection } from "@/lib/referencePreservation";
 import { generateNextRequestSchema, generateNextResponseSchema } from "@/lib/schemas";
 import { cleanGeneratedText } from "@/lib/textFormat";
 
@@ -195,9 +196,12 @@ function parseGenerateCandidate(
     throw new Error(`AI returned Module ${parsed.moduleNumber}, expected Module ${expectedTarget}.`);
   }
 
-  const text = normalizeGeneratedModuleText(
-    sanitizeUnsupportedCitations(cleanGeneratedText(parsed.text, parsed.moduleNumber), input.sourceSources, input.sourceText),
-    parsed.moduleNumber
+  const text = preserveSourceReferenceSection(
+    normalizeGeneratedModuleText(
+      sanitizeUnsupportedCitations(cleanGeneratedText(parsed.text, parsed.moduleNumber), input.sourceSources, input.sourceText),
+      parsed.moduleNumber
+    ),
+    input.sourceText
   );
   if (!text.trim()) {
     throw new Error("AI returned empty generated text after cleanup.");

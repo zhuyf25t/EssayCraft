@@ -38,6 +38,11 @@ export function downloadProjectJson(project: Project) {
 }
 
 export function downloadCurrentModuleHtml(project: Project) {
+  const html = buildCurrentModuleHtml(project);
+  triggerDownload(new Blob([html], { type: "text/html" }), `${slugify(project.title || "essaycraft")}-module-${project.currentModule}.html`);
+}
+
+export function buildCurrentModuleHtml(project: Project) {
   const doc = project.modules[project.currentModule];
   const legend = Object.entries(LABELS)
     .map(([key, value]) => {
@@ -50,12 +55,16 @@ export function downloadCurrentModuleHtml(project: Project) {
     .map((source) => `<li>${escapeHtml(formatSource(source))}</li>`)
     .join("\n");
 
-  const html = `<!doctype html>
+  const moduleLine = project.currentModule === 6
+    ? ""
+    : `<p><strong>Module:</strong> ${project.currentModule} - ${escapeHtml(doc.title)}</p>`;
+
+  return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${escapeHtml(project.title)}</title></head>
 <body style="font-family:Arial,sans-serif; line-height:1.7; padding:32px; max-width:900px; margin:auto; color:#172033;">
 <h1>${escapeHtml(project.title)}</h1>
 <p><strong>Topic:</strong> ${escapeHtml(project.topic)}</p>
-<p><strong>Module:</strong> ${project.currentModule} - ${escapeHtml(doc.title)}</p>
+${moduleLine}
 ${documentHtmlFragment(doc.text, doc.annotations)}
 <h2>Highlight Key</h2>
 <ul>${legend}</ul>
@@ -63,8 +72,6 @@ ${sources ? `<h2>Source Cards</h2><ul>${sources}</ul>` : ""}
 <hr />
 <p style="color:#64748b;">Generated with EssayCraft. Inspired by John-Paul Grima's argumentative essay journey.</p>
 </body></html>`;
-
-  triggerDownload(new Blob([html], { type: "text/html" }), `${slugify(project.title || "essaycraft")}-module-${project.currentModule}.html`);
 }
 
 export function documentHtmlFragment(text: string, annotations: Annotation[]) {

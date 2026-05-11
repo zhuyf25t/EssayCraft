@@ -14,6 +14,8 @@ Citation/reference preservation:
 - If the source module already contains concrete in-text citations, reference-list entries, source names, years, or user-supplied source cards, preserve and carry them forward when they support the generated target module.
 - Do not replace existing concrete citations or references with `[citation needed]`.
 - Use `[citation needed]` only for claims that still lack supplied or verifiable source support.
+- If the source module contains a final standalone `References`, `Reference list`, `Works Cited`, or `Bibliography` section, copy that section to the end of the generated target module unless the target module already includes the same reference entries.
+- Never make the user copy a supplied reference list manually from one module to the next.
 
 Validation rules:
 {{validationRules}}

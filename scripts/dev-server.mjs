@@ -5,10 +5,15 @@ import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const nextDir = path.join(root, ".next");
+const distDir = process.env.NEXT_DIST_DIR?.trim() || ".next-dev";
+const nextDir = path.resolve(root, distDir);
 const lockFile = path.join(nextDir, "essaycraft-dev.lock.json");
 const allowMultiDev = process.env.ESSAYCRAFT_ALLOW_MULTI_DEV === "1";
 const cleanNext = process.env.ESSAYCRAFT_CLEAN_NEXT !== "0";
+const childEnv = {
+  ...process.env,
+  NEXT_DIST_DIR: distDir
+};
 
 const existing = readLock();
 if (existing && existing.pid !== process.pid && isProcessAlive(existing.pid) && !allowMultiDev) {
@@ -16,7 +21,8 @@ if (existing && existing.pid !== process.pid && isProcessAlive(existing.pid) && 
     [
       "EssayCraft dev server is already running for this workspace.",
       `Existing PID: ${existing.pid}`,
-      "Stop the existing npm run dev process first. Two Next dev servers can corrupt .next chunks and cause MODULE_NOT_FOUND 500s.",
+      `Dist dir: ${distDir}`,
+      "Stop the existing npm run dev process first. Two Next dev servers can corrupt server chunks and cause MODULE_NOT_FOUND 500s.",
       "Set ESSAYCRAFT_ALLOW_MULTI_DEV=1 only if you intentionally use a separate build directory."
     ].join("\n")
   );
@@ -24,6 +30,7 @@ if (existing && existing.pid !== process.pid && isProcessAlive(existing.pid) && 
 }
 
 if (cleanNext) {
+  ensureSafeDistDir(nextDir);
   fs.rmSync(nextDir, { recursive: true, force: true });
 }
 fs.mkdirSync(nextDir, { recursive: true });
@@ -32,7 +39,7 @@ writeLock();
 const nextBin = path.join(root, "node_modules", "next", "dist", "bin", "next");
 const child = spawn(process.execPath, [nextBin, "dev", ...process.argv.slice(2)], {
   cwd: root,
-  env: process.env,
+  env: childEnv,
   stdio: "inherit",
   shell: false
 });
@@ -85,6 +92,16 @@ function cleanupLock() {
     fs.unlinkSync(lockFile);
   } catch {
     // Best effort cleanup only.
+  }
+}
+
+function ensureSafeDistDir(target) {
+  const relative = path.relative(root, target);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    throw new Error(`Refusing to remove dist dir outside repository: ${target}`);
+  }
+  if (!relative.startsWith(".next")) {
+    throw new Error(`Refusing to remove unexpected dist dir: ${target}`);
   }
 }
 
