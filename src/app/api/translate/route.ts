@@ -6,6 +6,11 @@ import { runJsonAiTask } from "@/lib/ai/taskRouter";
 import { readAiRuntimeMaxTokens } from "@/lib/ai-client";
 import { translateRequestSchema, translateResponseSchema } from "@/lib/schemas";
 import { cleanGeneratedText } from "@/lib/textFormat";
+import {
+  echoesSourceEnglish,
+  hasBannedTranslationCommentary as hasBannedTranslationCommentaryQuality,
+  hasUsefulChinese
+} from "@/lib/translationQuality";
 
 export const dynamic = "force-dynamic";
 
@@ -237,20 +242,7 @@ function mockEnglishPreview(value: string) {
     .join("\n");
 }
 
-function hasUsefulChinese(value: string) {
-  const chineseChars = value.match(/[\u4e00-\u9fff]/g)?.length ?? 0;
-  return chineseChars >= 12;
-}
-
-function echoesSourceEnglish(source: string, translated: string) {
-  const stopWords = new Set(["about", "after", "also", "because", "between", "could", "every", "first", "from", "have", "into", "more", "should", "their", "there", "these", "this", "when", "where", "which", "with", "without", "would"]);
-  const tokens = Array.from(new Set((source.toLowerCase().match(/[a-z]{4,}/g) ?? []).filter((token) => !stopWords.has(token))));
-  if (tokens.length < 5) return false;
-  const output = translated.toLowerCase();
-  const echoed = tokens.filter((token) => output.includes(token)).length;
-  return echoed / tokens.length > 0.25;
-}
-
 function hasBannedTranslationCommentary(value: string) {
+  if (hasBannedTranslationCommentaryQuality(value)) return true;
   return /中文参考翻译|这句话讨论了|这句话强调|核心论点是|本地参考翻译|译文\s*[:：]/.test(value);
 }
